@@ -1,0 +1,87 @@
+
+
+CREATE COMPUTE MODULE UpdateTribrandId_RetrieveTribrandIdReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieving Tribrand Id from Salesforce contact ...', rEnv);
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';   
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.id = rEnv.Temp.ContactSFId;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].NCLHID__c = true;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UpdateTribrandId_UpdateTribrandId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		
+		DECLARE DSN CHARACTER '';
+
+		IF rOrgMsg.Metadata.Source = 'oci' THEN
+			SET DSN = OCIDB;
+		ELSE
+			SET DSN = RSSCDB;
+		END IF;
+		
+		IF COALESCE(InputRoot.JSON.Data.NCLHID__c, '') <> '' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Updating Tribrand Id in NVS ...', rEnv);
+
+			UPDATE Database.{DSN}.dbo.mpaudit AS M SET NCLHID = InputRoot.JSON.Data.NCLHID__c WHERE M.MPCARD = rOrgMsg.Details.MPAUDIT.MPCARD;
+			SET rEnv.Temp.FoundNCLHID = true; 
+		ELSE
+			SET rEnv.Temp.FoundNCLHID = false;			
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UpdateTribrandId_LogTribandID
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE cQuery CHARACTER '';
+		
+		SET rEnv.Temp.brand = rOrgMsg.Metadata.Source;
+		SET rEnv.Temp.ClientID = rOrgMsg.Metadata.Key;
+		SET rEnv.Temp.FoundNCLHID = false;
+		
+		IF rEnv.Temp.FoundNCLHID = true THEN
+			DELETE FROM Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG AS L WHERE L.CLIENT_ID = rOrgMsg.Metadata.Key AND L.COMPANY_CD = rOrgMsg.Metadata.Source;	
+		ELSE
+			SET rEnv.db.result[] = SELECT L.CLIENT_ID, L.CREATED_DAT FROM Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG AS L 
+										WHERE L.CLIENT_ID = rOrgMsg.Metadata.Key AND L.COMPANY_CD = rOrgMsg.Metadata.Source;
+			
+			IF EXISTS(rEnv.db.result[]) THEN
+				SET cQuery = 'UPDATE NCLSEA.NCL_CLIENT_SF_SYNC_LOG ' ||
+									'SET MODIFIED_DAT = sysdate, ' ||
+										'CREATED_DAT = ? ' ||
+									'WHERE CLIENT_ID = ? AND COMPANY_CD=?';
+				SET rEnv.db.result = PASSTHRU(cQuery VALUES(rEnv.db.result.CREATED_DAT, rOrgMsg.Metadata.Key, rOrgMsg.Metadata.Source));
+			ELSE
+				INSERT INTO Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG(CLIENT_ID, COMPANY_CD) VALUES(rOrgMsg.Metadata.Key, rOrgMsg.Metadata.Source);
+			END IF;
+		END IF;
+		 
+		RETURN TRUE;
+	END;
+
+	
+
+	
+END MODULE;
+
+

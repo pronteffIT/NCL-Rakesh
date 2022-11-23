@@ -1,0 +1,66 @@
+
+
+CREATE COMPUTE MODULE Casino_UpdateContactPreferences_UpdateContact
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv REFERENCE TO Environment;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request = NULL;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';   
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+				
+		IF EXISTS(InputRoot.JSON.Data.Item[]) THEN
+			CREATE FIELD OutputRoot.JSON.Data AS rOut;			
+			SET rOut.Id = InputRoot.JSON.Data.Item.Id;
+
+			IF rEnv.Temp.Brand = 'OCE' THEN 
+				IF rEnv.Record.sendmail_pref = 'N' THEN
+					SET rOut.OCI_Mail_Opt_Out__c = true;
+				ELSE
+					SET rOut.OCI_Mail_Opt_Out__c = false;	
+				END IF ;
+				
+				IF rEnv.Record.email_pref = 'N' THEN
+					SET rOut.OCI_Email_Opt_Out__c = true;
+				ELSE
+					SET rOut.OCI_Email_Opt_Out__c = false;	
+				END IF ;
+				
+				IF rEnv.Record.phone_pref = 'N' THEN
+					SET rOut.OCI_Do_Not_Call__c = true;
+				ELSE
+					SET rOut.OCI_Do_Not_Call__c = false;	
+				END IF ;
+			ELSEIF rEnv.Temp.Brand = 'SSC' THEN
+				IF rEnv.Record.sendmail_pref = 'N' THEN
+					SET rOut.RSSC_Mail_opt_out__c = true;
+				ELSE
+					SET rOut.RSSC_Mail_opt_out__c = false;	
+				END IF;
+				
+				IF rEnv.Record.email_pref = 'N' THEN
+					SET rOut.RSSC_Email_Opt_Out__c = true;
+				ELSE
+					SET rOut.RSSC_Email_Opt_Out__c = false;	
+				END IF;
+				
+				IF rEnv.Record.phone_pref = 'N' THEN
+					SET rOut.RSSC_Do_Not_Call__c = true;
+				ELSE
+					SET rOut.RSSC_Do_Not_Call__c = false;	
+				END IF;
+			END IF;
+			
+			RETURN TRUE;
+		ELSE
+			SET OutputRoot.DFDL.ContactPreferences.record = rEnv.Record;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+				
+		RETURN FALSE;
+	END;
+END MODULE;

@@ -1,0 +1,135 @@
+<project name="IIB-CI-MAIN" default="dev" basedir=".">
+        <description>IIB Continuous Integration(main script)</description>
+
+        <property name="app.name" value=""/>
+        <property name="env.wrksp" value=""/>
+        <property name="iib.node" value="" id="node"/>
+        <property name="int.svr" value=""/>
+        <property name="skip.baroverride" value=""/>
+        <property name="build.env" value=""/>
+
+        <target name="init">
+                <tstamp />
+                <property file="build.properties" />
+
+                <!-- Load ant contrib -->
+                <echo message="----- Loading ant contrib ..." />
+                <taskdef resource="net/sf/antcontrib/antlib.xml">
+                        <classpath>
+                                <pathelement location="${ant.install.dir}/lib/ant-contrib-1.0b3.jar" />
+                        </classpath>
+                </taskdef>
+        </target>
+
+        <target name="dev" depends="init">
+                <if>
+                        <equals arg1="${build.env}" arg2="DEV" />
+                        <then>
+                                <!-- Creating Bar File for the applications -->
+                                <echo message="----- Creating barfile for ${app.name} from workspace ${env.wrksp} ..." />
+                                <exec executable="mqsicreatebar">
+                                        <arg value="-data" />
+                                        <arg value="${env.wrksp}" />
+                                        <arg value="-b" />
+                                        <arg value="${barfile.path}/${app.name}.bar" />
+                                        <arg value="-a" />
+                                        <arg value="${app.name}"/>
+                                        <arg value="-deployAsSource" />
+                                </exec>
+                        </then>
+                        <else>
+                                <echo message="----- Skipping barfile creation for ${build.env} ..." />
+                        </else>
+                </if>
+
+                <!-- Applying Bar Override using Properties File -->
+                <if>
+                        <equals arg1="${skip.baroverride}" arg2="Y" />
+                        <then>
+                                <echo message="----- Skipping barfile override for ${app.name} ..." />
+                                <copy file="${barfile.path}/${app.name}.bar" overwrite="true" tofile="${barfile.path}/${app.name}_${build.env}.bar"/>
+                        </then>
+                        <else>
+                                <echo message="----- Applying barfile override for ${build.env} ..." />
+                                <exec executable="mqsiapplybaroverride">
+                                        <arg value="-b" />
+                                        <arg value="${barfile.path}/${app.name}.bar" />
+                                        <arg value="-p" />
+                                        <arg value="${env.wrksp}/BarfileOverrides/${build.env}/${app.name}_${build.env}.properties"/>
+                                        <arg value="-r" />
+                                        <arg value="-o" />
+                                        <arg value="${barfile.path}/${app.name}_${build.env}.bar"/>
+                                </exec>
+                        </else>
+                </if>
+
+                <!-- retrieve node list from properties file -->
+                <if>
+                        <equals arg1="${build.env}" arg2="DEV" />
+                        <then>
+                                <property name="iib.node.list" value="${dev.iibnode.list}" refid="node" />
+                        </then>
+                        <elseif>
+                                <equals arg1="${build.env}" arg2="UAT" />
+                                <then>
+                                        <property name="iib.node.list" value="${uat.iibnode.list}" refid="node" />
+                                </then>
+                        </elseif>
+                        <elseif>
+                                <equals arg1="${build.env}" arg2="PROD" />
+                                <then>
+                                        <property name="iib.node.list" value="${prod.iibnode.list}" refid="node" />
+                                </then>
+                        </elseif>
+                </if>
+
+                <!-- for each iib node-->
+                <for param="iibnode" list="${iib.node.list}" delimiter=":">
+                        <sequential>
+                                <!-- For each int server... -->
+                                <for param="intsvr" list="${int.svr}" delimiter=":">
+                                        <sequential>
+                                                <!-- Deploying Bar file to specific environment-->
+                                                <echo message="----- Deploying barfile to @{intsvr} in @{iibnode} ..." />
+                                                <exec executable="mqsideploy">
+                                                        <arg value="-n" />
+                                                        <arg value="${iib.brkfileloc}@{iibnode}.broker" />
+                                                        <arg value="-e" />
+                                                        <arg value="@{intsvr}" />
+                                                        <arg value="-a" />
+                                                        <arg value="${barfile.path}/${app.name}_${build.env}.bar" />
+                                                </exec>
+                                        </sequential>
+                                </for>
+                        </sequential>
+                </for>
+
+                <!-- backup of barfile with Date Time Stamp -->
+                <if>
+                        <equals arg1="${build.env}" arg2="DEV" />
+                        <then>
+                                <echo message="------ Archiving barfile ..." />
+                                <copy file="${barfile.path}/${app.name}.bar" overwrite="true" tofile="${barfile.path}/backup/${app.name}.bar_${DSTAMP}${TSTAMP}"/>
+                        </then>
+                </if>
+
+                <!-- backup of PROD overridden barfile with Date Time Stamp -->
+                <if>
+                        <equals arg1="${build.env}" arg2="PROD" />
+                        <then>
+                                <echo message="------ Archiving PROD overridden barfile ..." />
+                                <copy file="${barfile.path}/${app.name}_${build.env}.bar" overwrite="true" tofile="${barfile.path}/backup_prod/${app.name}_${build.env}.bar_${DSTAMP}${TSTAMP}"/>
+                        </then>
+                </if>
+
+                <!-- deleting overridden barfile -->
+                <echo message="----- Deleting overridden barfile ..." />
+                <delete file="${barfile.path}/${app.name}_${build.env}.bar"/>
+
+                <!-- deleting checked out files -->
+                <echo message="----- Deleting checked out files ..." />
+                <delete includeEmptyDirs="true">
+                        <fileset dir="${env.wrksp}" includes="**/*"/>
+                </delete>
+        </target>
+</project>

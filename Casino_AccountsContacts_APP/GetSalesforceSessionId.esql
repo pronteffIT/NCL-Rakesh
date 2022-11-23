@@ -1,0 +1,39 @@
+DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+DECLARE sf NAMESPACE 'urn:enterprise.soap.sforce.com';
+
+DECLARE SFUser EXTERNAL CHARACTER '';
+DECLARE SFPassword EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE GetSalesforceSessionId_LoginReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		
+		SET OutputRoot.XMLNSC.soap:Envelope.soap:Body.sf:login.sf:username = SFUser;
+		SET OutputRoot.XMLNSC.soap:Envelope.soap:Body.sf:login.sf:password = SFPassword;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE GetSalesforceSessionId_SaveSessionId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.soap:Envelope.soap:Body;
+		
+		IF EXISTS(rIn.*:Fault[]) THEN
+			THROW USER EXCEPTION VALUES(rIn.*:Fault.*:faultstring);
+		ELSE
+			SET Environment.Variables.Temp.SFSessionId = rIn.*:loginResponse.*:result.*:sessionId;
+			SET Environment.Variables.Temp.SFSessionValidity = rIn.*:loginResponse.*:result.*:userInfo.*:sessionSecondsValid;			
+			SET Environment.Variables.Temp.SFDomainName = SUBSTRING(SUBSTRING(rIn.*:loginResponse.*:result.*:serverUrl AFTER 'https://') BEFORE '/');
+			SET Environment.Variables.Temp.SFServerUrl = rIn.*:loginResponse.*:result.*:serverUrl;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

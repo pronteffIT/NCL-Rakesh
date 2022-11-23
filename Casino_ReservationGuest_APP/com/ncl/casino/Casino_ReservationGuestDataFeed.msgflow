@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFlowOrder.msgnode="ComIbmFlowOrder.msgnode" xmlns:ComIbmLabel.msgnode="ComIbmLabel.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:com_ibm_connector_salesforce_ComIbmRequest.msgnode="com/ibm/connector/salesforce/ComIbmRequest.msgnode" xmlns:com_ncl_ais_utils_SendMessageForReprocess.subflow="com/ncl/ais/utils/SendMessageForReprocess.subflow" xmlns:com_ncl_casino_DeleteReservationGuest.subflow="com/ncl/casino/DeleteReservationGuest.subflow"
+    xmlns:com_ncl_casino_RetrieveReservation.subflow="com/ncl/casino/RetrieveReservation.subflow" xmlns:com_ncl_iib_NCL_ErrorHandler.subflow="com/ncl/iib/NCL_ErrorHandler.subflow" xmlns:com_ncl_iib_NCL_Logging.subflow="com/ncl/iib/NCL_Logging.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="com/ncl/casino/Casino_ReservationGuestDataFeed.msgflow" nsPrefix="com_ncl_casino_Casino_ReservationGuestDataFeed.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LogPayload" name="LogPayload" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.GuestRecordTypeOCI" name="GuestRecordTypeOCI" lowerBound="1" defaultValueLiteral="0124400000099kA">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.GuestRecordTypeRSSC" name="GuestRecordTypeRSSC" lowerBound="1" defaultValueLiteral="0124400000099kB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CompanyCodeRSSC" name="CompanyCodeRSSC" lowerBound="1" defaultValueLiteral="110">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CompanyCodeOCI" name="CompanyCodeOCI" lowerBound="1" defaultValueLiteral="100">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="Casino_ReservationGuestDataFeed" bundleName="com/ncl/casino/Casino_ReservationGuestDataFeed" pluginId="Casino_ReservationGuest_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_ReservationGuest_APP/icons/full/obj16/Casino_ReservationGuestDataFeed.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_ReservationGuest_APP/icons/full/obj30/Casino_ReservationGuestDataFeed.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="500,249" computeExpression="esql://routine/com.ncl.casino#Casino_ReservationGuestDataFeed_UpsertResGuestReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="UpsertResGuestReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="628,250" connectorName="iib-salesforce-connector" url="https://cs8.salesforce.com" operation="create" object="Dummy" securityIdentity="NCLSF" timeoutMilliseconds="120000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="UpsertResGuest"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_7" location="121,200" computeExpression="esql://routine/com.ncl.casino#Casino_ReservationGuestDataFeed_SearchGuestReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="SearchResGuestReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_8" location="236,145" connectorName="iib-salesforce-connector" url="https://cs8.salesforce.com" operation="retrieve" object="Dummy" securityIdentity="NCLSF" timeoutMilliseconds="120000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="RetrieveGuestObj"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_9" location="129,322" labelName="GetReservationSFID">
+        <translation xmi:type="utility:ConstantString" string="GetReservationSFID"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_12" location="372,205" computeExpression="esql://routine/com.ncl.casino#Casino_ReservationGuestDataFeed_CheckSearchStatus.Main">
+        <translation xmi:type="utility:ConstantString" string="CheckSearchStatus"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_16" location="144,68" computeExpression="esql://routine/com.ncl.casino#Casino_ReservationGuestDataFeed_Exception.Main">
+        <translation xmi:type="utility:ConstantString" string="Exception"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_11" location="15,150" queueName="CASINO_RESGUEST_IN" messageDomainProperty="XMLNSC" logicalOrder="false" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="CASINO_RESGUEST_IN"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFlowOrder.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_17" location="238,69">
+        <translation xmi:type="utility:ConstantString" string="Flow Order"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_Logging.subflow:FCMComposite_1" xmi:id="FCMComposite_1_18" location="706,100">
+        <translation xmi:type="utility:ConstantString" string="NCL_Logging"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_ErrorHandler.subflow:FCMComposite_1" xmi:id="FCMComposite_1_19" location="355,100">
+        <translation xmi:type="utility:ConstantString" string="NCL_ErrorHandler"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_utils_SendMessageForReprocess.subflow:FCMComposite_1" xmi:id="FCMComposite_1_6" location="331,31">
+        <translation xmi:type="utility:ConstantString" string="SendMessageForReprocess"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_casino_DeleteReservationGuest.subflow:FCMComposite_1" xmi:id="FCMComposite_1_10" location="488,163">
+        <translation xmi:type="utility:ConstantString" string="DeleteReservationGuest"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_casino_RetrieveReservation.subflow:FCMComposite_1" xmi:id="FCMComposite_1_15" location="253,322">
+        <translation xmi:type="utility:ConstantString" string="RetrieveReservation"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_8" sourceNode="FCMComposite_1_7" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_13" targetNode="FCMComposite_1_12" sourceNode="FCMComposite_1_8" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_16" sourceNode="FCMComposite_1_11" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_16" sourceNode="FCMComposite_1_11" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_7" sourceNode="FCMComposite_1_11" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_19" sourceNode="FCMComposite_1_17" sourceTerminalName="OutTerminal.second" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_16" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_17" targetNode="FCMComposite_1_17" sourceNode="FCMComposite_1_16" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_17" sourceTerminalName="OutTerminal.first" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_10" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_15" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_9" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_18" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_10" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_19" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_4" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LogPayload">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.LogPayload" bundleName="com/ncl/casino/Casino_ReservationGuestDataFeed" pluginId="Casino_ReservationGuest_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.GuestRecordTypeOCI">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.GuestRecordTypeOCI" bundleName="com/ncl/casino/Casino_ReservationGuestDataFeed" pluginId="Casino_ReservationGuest_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.GuestRecordTypeRSSC">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.GuestRecordTypeRSSC" bundleName="com/ncl/casino/Casino_ReservationGuestDataFeed" pluginId="Casino_ReservationGuest_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CompanyCodeRSSC">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.CompanyCodeRSSC" bundleName="com/ncl/casino/Casino_ReservationGuestDataFeed" pluginId="Casino_ReservationGuest_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CompanyCodeOCI">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.CompanyCodeOCI" bundleName="com/ncl/casino/Casino_ReservationGuestDataFeed" pluginId="Casino_ReservationGuest_APP"/>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

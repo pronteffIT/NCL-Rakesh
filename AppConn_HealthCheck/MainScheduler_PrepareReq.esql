@@ -1,0 +1,41 @@
+DECLARE IPLIST EXTERNAL CHARACTER '';
+DECLARE PRIMARY EXTERNAL CHARACTER '';
+DECLARE APPCUserID EXTERNAL CHARACTER '';
+DECLARE APPCPassword EXTERNAL CHARACTER '';
+
+DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+DECLARE sec NAMESPACE 'http://www.approuter.com/schemas/2008/1/security';
+
+CREATE COMPUTE MODULE MainScheduler_PrepareReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE IPs CHARACTER '';
+		DECLARE IP CHARACTER '';	
+		
+		SET IPs = IPLIST;
+		
+		WHILE LENGTH(IPs) > 0 DO
+			
+			IF SUBSTRING(IPs AFTER '#') ='' THEN
+				SET IP = IPs;
+				SET IPs = '';
+			ELSE
+				SET IP = SUBSTRING( IPs BEFORE '#');
+				SET IPs = SUBSTRING(IPs AFTER '#');
+			END IF; 
+			
+			SET OutputRoot.MQRFH2.usr.Endpoint = IP;
+			SET OutputRoot.XMLNSC.soap:Envelope.soap:Body.sec:login.sec:username = APPCUserID;
+			SET OutputRoot.XMLNSC.soap:Envelope.soap:Body.sec:login.sec:password = APPCPassword;
+			
+			PROPAGATE; 
+		END WHILE;
+		
+		RETURN FALSE; 
+		
+		
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

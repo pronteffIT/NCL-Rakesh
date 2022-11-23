@@ -1,0 +1,22 @@
+
+
+CREATE COMPUTE MODULE Monitoring_Login
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE appCEndPoint CHARACTER '';
+				
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET rEnv.Temp.AppConIP = InputRoot.MQRFH2.usr.Endpoint;
+		SET rEnv.Temp.SecEndPoint = 'https://' ||  InputRoot.MQRFH2.usr.Endpoint || '/ws/security';
+		SET rEnv.Temp.SysEndPoint = 'https://' ||  InputRoot.MQRFH2.usr.Endpoint || '/ws/system';
+		SET rEnv.Temp.DepEndPoint = 'https://' ||  InputRoot.MQRFH2.usr.Endpoint || '/ws/deployment';		
+				
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL =  rEnv.Temp.SecEndPoint;
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;		
+		RETURN TRUE;	
+	END;
+	
+END MODULE;

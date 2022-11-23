@@ -1,0 +1,194 @@
+BROKER SCHEMA com.ncl.casino
+
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE GuestRecordTypeOCI EXTERNAL CHARACTER ''; 
+DECLARE GuestRecordTypeRSSC EXTERNAL CHARACTER '';
+DECLARE CompanyCodeOCI EXTERNAL CHARACTER '';
+DECLARE CompanyCodeRSSC EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE Casino_ReservationGuestDataFeed_SearchGuestReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	 	DECLARE rEnv REFERENCE TO Environment.Variables;
+	 	DECLARE rIn REFERENCE TO InputRoot.XMLNSC.NVSData;
+		
+		DECLARE bPayload BLOB;
+		DECLARE reservationID CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET rEnv.NVSData = rIn;
+		SET reservationID = rIn.Details.PAX.INVOICE || '-' || rIn.Details.PAX.CRUISE;
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rIn.Metadata.Table,
+											   rIn.Metadata.Channel,
+											   reservationID,
+											   rIn.Details.PAX.PAXID,
+											   '',
+											   rEnv);		
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NVS event message', 'xml', rEnv);
+		END IF;
+		
+		SET rEnv.ReservationId = reservationID;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Searching for existing reservation guest based on PAXID ...', rEnv);
+		
+		-- Prepare request to retrieve Reservation Guest to validate record exists or not. 
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation_Guest__c';
+		
+		IF rIn.Metadata.Action = 'DELETE' THEN
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Guest_ID_with_Brand__c';
+			
+			IF rIn.Metadata.Channel = 'Regent' THEN
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rIn.Details.PAX.PAXID || '-' || CompanyCodeRSSC;
+			ELSE
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rIn.Details.PAX.PAXID || '-' || CompanyCodeOCI;
+			END IF;
+		ELSE
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Reservation_Guest_Id__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rIn.Details.PAX.PAXID || '-' || rIn.Details.PAX.CRUISE;
+		END IF;
+				
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[2].Reservation_Guest_Id__c = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[3].Reservation__c = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[4].Sail_Date_From__c = true; 
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[5].Sail_Date_To__c = true;  
+		
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationGuestDataFeed_CheckSearchStatus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		IF EXISTS(InputRoot.JSON.Data.Item[]) THEN -- ReservationGuest present in Salesforce
+			SET rEnv.ReservationGuestSFID = COALESCE(InputRoot.JSON.Data.Item.Id,'');
+			SET rEnv.ReservationSFID = COALESCE(InputRoot.JSON.Data.Item.Reservation__c,'');
+			SET rEnv.SailDateFrom = COALESCE(InputRoot.JSON.Data.Item.Sail_Date_From__c,'');
+			SET rEnv.SailDateTo = COALESCE(InputRoot.JSON.Data.Item.Sail_Date_To__c,'');
+		END IF;
+
+		IF rEnv.NVSData.Metadata.Action = 'DELETE' THEN
+			IF COALESCE(rEnv.ReservationGuestSFID, '') = '' THEN
+				THROW USER EXCEPTION MESSAGE 2951 VALUES('Reservation guest not found in Salesforce to perform delete');
+			ELSE
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		ELSE
+			IF COALESCE(rEnv.ReservationSFID, '') = '' Or COALESCE(rEnv.SailDateFrom, '') = ''  THEN
+				PROPAGATE TO LABEL 'GetReservationSFID';
+			END IF;
+			
+			RETURN TRUE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationGuestDataFeed_UpsertResGuestReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.NVSData;
+		
+		DECLARE birthDate DATE;
+		DECLARE intvl INTERVAL;
+		
+		-- Condition to check update or insert operation has to perform
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation_Guest__c';
+
+		IF COALESCE(rEnv.ReservationGuestSFID, '') = '' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Creating Reservation Guest ...', rEnv);
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'create';
+		ELSE 
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Updating Reservation Guest ...', rEnv);
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.id = rEnv.ReservationGuestSFID;
+		END IF;
+		
+		-- Setting Brand label in SF to picklist values (Oceania,Regent)
+		SET OutputRoot.JSON.Data.Brand__c = rOrgMsg.Metadata.Channel;
+		
+		-- Age Calculation		
+		IF COALESCE(rOrgMsg.Details.PAX.BDATE, '') <> '' THEN
+			SET birthDate = CAST(rOrgMsg.Details.PAX.BDATE AS DATE FORMAT 'I');
+			SET intvl = (CURRENT_DATE - birthDate) DAY;
+			SET OutputRoot.JSON.Data.Age__c = CAST(FLOOR((CAST(intvl AS INTEGER) / 365.2425)) AS INTEGER);
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Reservation__c = COALESCE(rEnv.ReservationSFID, '');
+		SET OutputRoot.JSON.Data.Contact__c = COALESCE(rOrgMsg.Details.PAX.ContactSFId, '');		
+		SET OutputRoot.JSON.Data.Cruise_Days__c = COALESCE(rOrgMsg.Details.PAX.DAYS, '');
+		SET OutputRoot.JSON.Data.Currency__c = COALESCE(rOrgMsg.Details.PAX.CURR, '');
+		SET OutputRoot.JSON.Data.Guest_Sequence__c = COALESCE(rOrgMsg.Details.PAX.PAXNUM, '');
+		SET OutputRoot.JSON.Data.Ship__c = LEFT(rOrgMsg.Details.PAX.CRUISE, 3) ;
+		SET OutputRoot.JSON.Data.Reservation_Guest_Id__c =  rOrgMsg.Details.PAX.PAXID || '-' || rOrgMsg.Details.PAX.CRUISE;
+		SET OutputRoot.JSON.Data.Name =  rOrgMsg.Details.PAX.PAXID || '-' || rOrgMsg.Details.PAX.CRUISE;
+		SET OutputRoot.JSON.Data.Household__c = COALESCE(rOrgMsg.Details.PAX.HouseholdSFId, '');
+		SET OutputRoot.JSON.Data.Sail_Date_From__c =  COALESCE(rEnv.SailDateFrom, '');
+		SET OutputRoot.JSON.Data.Sail_Date_To__c =  COALESCE(rEnv.SailDateTo, '');
+		--SET OutputRoot.JSON.Data.Guest_ID_with_Brand__c = rOrgMsg.Details.PAX.PAXID || '-' || rOrgMsg.Metadata.Source;
+		
+		IF rOrgMsg.Metadata.Channel = 'Regent' THEN
+			SET OutputRoot.JSON.Data.RecordTypeId = GuestRecordTypeRSSC;
+			SET OutputRoot.JSON.Data.Guest_ID_with_Brand__c = rOrgMsg.Details.PAX.PAXID || '-' || CompanyCodeRSSC;
+		ELSE
+			SET OutputRoot.JSON.Data.RecordTypeId = GuestRecordTypeOCI;
+			SET OutputRoot.JSON.Data.Guest_ID_with_Brand__c = rOrgMsg.Details.PAX.PAXID || '-' || CompanyCodeOCI;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationGuestDataFeed_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+

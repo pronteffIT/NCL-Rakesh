@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFlowOrder.msgnode="ComIbmFlowOrder.msgnode" xmlns:ComIbmLabel.msgnode="ComIbmLabel.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:com_ibm_connector_salesforce_ComIbmRequest.msgnode="com/ibm/connector/salesforce/ComIbmRequest.msgnode" xmlns:com_ncl_ais_utils_SendMessageForReprocess.subflow="com/ncl/ais/utils/SendMessageForReprocess.subflow" xmlns:com_ncl_iib_NCL_ErrorHandler.subflow="com/ncl/iib/NCL_ErrorHandler.subflow"
+    xmlns:com_ncl_iib_NCL_Logging.subflow="com/ncl/iib/NCL_Logging.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="Casino_ReservationDataFeed.msgflow" nsPrefix="Casino_ReservationDataFeed.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RecordTypeOCI" name="RecordTypeOCI" lowerBound="1" defaultValueLiteral="01244000000kNPt">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RecordTypeRSSC" name="RecordTypeRSSC" lowerBound="1" defaultValueLiteral="01244000000kNPu">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LogPayload" name="LogPayload" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DirectAgencyOCI" name="DirectAgencyOCI" lowerBound="1" defaultValueLiteral="0014400001uuVCT">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DirectAgentOCI" name="DirectAgentOCI" lowerBound="1" defaultValueLiteral="0034400001xjn5a">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DirectAgencyRSSC" name="DirectAgencyRSSC" lowerBound="1" defaultValueLiteral="0014400001uuVDb">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DirectAgentRSSC" name="DirectAgentRSSC" lowerBound="1" defaultValueLiteral="0034400001xjn7H">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CompanyCodeOCI" name="CompanyCodeOCI" lowerBound="1" defaultValueLiteral="100">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CompanyCodeRSSC" name="CompanyCodeRSSC" lowerBound="1" defaultValueLiteral="110">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OCIDirectResType" name="OCIDirectResType" lowerBound="1" defaultValueLiteral="OCI Direct">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OCIAgencyResType" name="OCIAgencyResType" lowerBound="1" defaultValueLiteral="OCI Field Sales">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RSSCDirectResType" name="RSSCDirectResType" lowerBound="1" defaultValueLiteral="SSC Direct">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RSSCAgencyResType" name="RSSCAgencyResType" lowerBound="1" defaultValueLiteral="SSC Field Sales">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OCIDB" name="OCIDB" lowerBound="1" defaultValueLiteral="OCINVSDB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RSSCDB" name="RSSCDB" lowerBound="1" defaultValueLiteral="RSSCNVSDB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="Casino_ReservationDataFeed" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_Reservation_APP/icons/full/obj16/Casino_ReservationDataFeed.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_Reservation_APP/icons/full/obj30/Casino_ReservationDataFeed.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_12" location="302,172" dataSource="DWDB" computeExpression="esql://routine/#Casino_ReservationDataFeed_UpsertReservationReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="UpsertResReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_14" location="415,173" connectorName="iib-salesforce-connector" url="https://test.salesforce.com" operation="retrieve" object="Account1" securityIdentity="NCLSF" timeoutMilliseconds="120000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="UpsertRes"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_18" location="149,66" computeExpression="esql://routine/#Common_Exception.Main">
+        <translation xmi:type="utility:ConstantString" string="Exception"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_19" location="-7,165" queueName="CASINO_RESERVATION_IN" messageDomainProperty="XMLNSC" logicalOrder="false" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="CASINO_RESERVATION_IN"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_20" location="185,171" dataSource="OCINVSDB" computeExpression="esql://routine/#Casino_ReservationDataFeed_LookupObjects.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="LookupObjects"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_21" location="200,284" connectorName="iib-salesforce-connector" url="https://test.salesforce.com" operation="retrieve" object="Dummy" securityIdentity="NCLSF" timeoutMilliseconds="1200000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="LookupObject"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_23" location="116,284" labelName="LOOKUP">
+        <translation xmi:type="utility:ConstantString" string="LOOKUP"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_24" location="307,288" computeExpression="esql://routine/#Casino_ReservationDataFeed_SaveSFID.Main">
+        <translation xmi:type="utility:ConstantString" string="SaveSFID"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFlowOrder.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="234,67">
+        <translation xmi:type="utility:ConstantString" string="Flow Order"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_utils_SendMessageForReprocess.subflow:FCMComposite_1" xmi:id="FCMComposite_1_4" location="312,32">
+        <translation xmi:type="utility:ConstantString" string="SendMessageForReprocess"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_Logging.subflow:FCMComposite_1" xmi:id="FCMComposite_1_5" location="501,102">
+        <translation xmi:type="utility:ConstantString" string="NCL_Logging"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_ErrorHandler.subflow:FCMComposite_1" xmi:id="FCMComposite_1_6" location="335,102">
+        <translation xmi:type="utility:ConstantString" string="NCL_ErrorHandler"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_14" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_19" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_20" targetNode="FCMComposite_1_20" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_21" targetNode="FCMComposite_1_21" sourceNode="FCMComposite_1_23" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_22" targetNode="FCMComposite_1_24" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_23" targetNode="FCMComposite_1_12" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.first" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.second" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RecordTypeOCI">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.RecordTypeOCI" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RecordTypeRSSC">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.RecordTypeRSSC" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LogPayload">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.LogPayload" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.DirectAgencyOCI">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.DirectAgencyOCI" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.DirectAgentOCI">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.DirectAgentOCI" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.DirectAgencyRSSC">
+                  <propertyName xmi:type="utility:TranslatableString" key="Property.DirectAgencyRSSC" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                  <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.DirectAgentRSSC">
+                    <propertyName xmi:type="utility:TranslatableString" key="Property.DirectAgentRSSC" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                    <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CompanyCodeOCI">
+                      <propertyName xmi:type="utility:TranslatableString" key="Property.CompanyCodeOCI" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CompanyCodeRSSC">
+                        <propertyName xmi:type="utility:TranslatableString" key="Property.CompanyCodeRSSC" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OCIDirectResType">
+                          <propertyName xmi:type="utility:TranslatableString" key="Property.OCIDirectResType" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OCIAgencyResType">
+                            <propertyName xmi:type="utility:TranslatableString" key="Property.OCIAgencyResType" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RSSCDirectResType">
+                              <propertyName xmi:type="utility:TranslatableString" key="Property.RSSCDirectResType" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RSSCAgencyResType">
+                                <propertyName xmi:type="utility:TranslatableString" key="Property.RSSCAgencyResType" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                                <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OCIDB">
+                                  <propertyName xmi:type="utility:TranslatableString" key="Property.OCIDB" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                                  <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RSSCDB">
+                                    <propertyName xmi:type="utility:TranslatableString" key="Property.RSSCDB" bundleName="Casino_ReservationDataFeed" pluginId="Casino_Reservation_APP"/>
+                                  </propertyDescriptor>
+                                </propertyDescriptor>
+                              </propertyDescriptor>
+                            </propertyDescriptor>
+                          </propertyDescriptor>
+                        </propertyDescriptor>
+                      </propertyDescriptor>
+                    </propertyDescriptor>
+                  </propertyDescriptor>
+                </propertyDescriptor>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

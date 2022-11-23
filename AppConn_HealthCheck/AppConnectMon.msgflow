@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFileRead.msgnode="ComIbmFileRead.msgnode" xmlns:ComIbmLabel.msgnode="ComIbmLabel.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:ComIbmWSRequest.msgnode="ComIbmWSRequest.msgnode" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility"
+    nsURI="AppConnectMon.msgflow" nsPrefix="AppConnectMon.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.MemThreshold" name="MemThreshold" lowerBound="1" defaultValueLiteral="80">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.FromEmailID" name="FromEmailID" lowerBound="1" defaultValueLiteral="esbmon@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.ToEmailID" name="ToEmailID" lowerBound="1" defaultValueLiteral="nclfcsupport@ncl.com;rdasari@ncl.com;vthamilmani@nclcorp.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DiskThreshold" name="DiskThreshold" lowerBound="1" defaultValueLiteral="80">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DEVICE1" name="DEVICE1" defaultValueLiteral="10.102.21.12">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DEVICE2" name="DEVICE2" defaultValueLiteral="10.102.21.14">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="AppConnectMon" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/AppConn_HealthCheck/icons/full/obj16/AppConnectMon.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/AppConn_HealthCheck/icons/full/obj30/AppConnectMon.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_6" location="222,37" URLSpecifier="https://10.102.21.12/ws/security" httpVersion="1.1" protocol="TLSv1.2" messageDomainProperty="XMLNSC">
+        <translation xmi:type="utility:ConstantString" string="HTTP Request"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_7" location="110,36" computeExpression="esql://routine/#Monitoring_Login.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="LoginReq"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="345,37" computeExpression="esql://routine/#Monitoring_Compute.Main">
+        <translation xmi:type="utility:ConstantString" string="AppCWS"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_10" location="22,377" labelName="ProjectList">
+        <translation xmi:type="utility:ConstantString" string="ProjectList"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_11" location="15,230" labelName="ResourceInfo">
+        <translation xmi:type="utility:ConstantString" string="ResourceInfo"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_12" location="157,230" computeExpression="esql://routine/#Monitoring_ResUtilReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="ResUtilReq"/>
+      </nodes>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_13" location="285,231" URLSpecifier="https://167.118.104.130/ws/system" httpVersion="1.1" protocol="TLSv1.2" messageDomainProperty="XMLNSC">
+        <translation xmi:type="utility:ConstantString" string="getResourceInfo"/>
+      </nodes>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_14" location="277,378" URLSpecifier="https://167.118.104.130/ws/deployment" httpVersion="1.1" protocol="TLSv1.2" messageDomainProperty="XMLNSC">
+        <translation xmi:type="utility:ConstantString" string="getAllProjects"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_15" location="154,377" computeExpression="esql://routine/#Monitoring_getAllProjectReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="ProjectReq"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_16" location="431,231" computeExpression="esql://routine/#Monitoring_CheckResResponse.Main">
+        <translation xmi:type="utility:ConstantString" string="checkResource"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_17" location="436,377" computeExpression="esql://routine/#Monitoring_CheckgetPrjResponse.Main">
+        <translation xmi:type="utility:ConstantString" string="CheckProjects"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_18" location="5,297" labelName="ResourceHistoryInfo">
+        <translation xmi:type="utility:ConstantString" string="ResourceHistoryInfo"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_19" location="151,297" computeExpression="esql://routine/#Monitoring_ResUtilHistoryReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="ResUtilHisReq"/>
+      </nodes>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_20" location="290,298" URLSpecifier="https://167.118.104.130/ws/system" httpVersion="1.1" protocol="TLSv1.2" messageDomainProperty="XMLNSC">
+        <translation xmi:type="utility:ConstantString" string="getResourceHistoryInfo"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_21" location="455,297" computeExpression="esql://routine/#Monitoring_CheckResUtilResponse.Main">
+        <translation xmi:type="utility:ConstantString" string="checkResourceHistory"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="6,36" queueName="APPCONN_MON" messageDomainProperty="XMLNSC" logicalOrder="false">
+        <translation xmi:type="utility:ConstantString" string="MQ Input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="483,38" queueName="NCL_EMAILNOTIFICATION_IN" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="SENDEMAIL"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFileRead.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="160,147" inputDirectory="/var/mqsi/app_data/apps/" filenamePattern="app_connect.csv" messageDomainProperty="DFDL" messageTypeProperty="{}:AppConnectJobs">
+        <translation xmi:type="utility:ConstantString" string="AppConnectJobs"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_5" location="20,154" labelName="ReadConfig">
+        <translation xmi:type="utility:ConstantString" string="ReadConfig"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_8" location="296,142" computeExpression="esql://routine/#AppConnectMon_CacheJobConfig.Main">
+        <translation xmi:type="utility:ConstantString" string="CacheJobConfig"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_7" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_12" sourceNode="FCMComposite_1_11" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_13" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_10" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_14" sourceNode="FCMComposite_1_15" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_16" sourceNode="FCMComposite_1_13" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_17" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_19" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_12" targetNode="FCMComposite_1_20" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_13" targetNode="FCMComposite_1_21" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_7" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_14" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_15" targetNode="FCMComposite_1_8" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.MemThreshold">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.MemThreshold" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.FromEmailID">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.FromEmailID" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.ToEmailID">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.ToEmailID" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.DiskThreshold">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.DiskThreshold" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+              <propertyDescriptor groupName="Group.DEVICES" configurable="true" userDefined="true" describedAttribute="Property.DEVICE1">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.DEVICE1" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+                <propertyDescriptor groupName="Group.DEVICES" configurable="true" userDefined="true" describedAttribute="Property.DEVICE2">
+                  <propertyName xmi:type="utility:TranslatableString" key="Property.DEVICE2" bundleName="AppConnectMon" pluginId="AppConn_HealthCheck"/>
+                </propertyDescriptor>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

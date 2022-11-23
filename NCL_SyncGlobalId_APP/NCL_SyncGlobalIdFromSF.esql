@@ -1,0 +1,92 @@
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE CompanyCode EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_SyncGlobalIdFromSF_LookupContactReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+
+		DECLARE bPayload BLOB;
+		DECLARE resId, query, DSN CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET rEnv.ClientId = rIn.ClientId;
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', 'NCL', '', rIn.ClientId, '', rEnv);
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of contact in Salesforce ...', rEnv);
+		
+		-- Lookup contact
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';   
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Client_ID__c';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rIn.ClientId;
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].NCLHID__c = true;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_SyncGlobalIdFromSF_UpdateGlobalId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data.Item;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cQuery CHARACTER '';
+		
+		-- if global id present
+		IF COALESCE(InputRoot.JSON.Data.Item.NCLHID__c, '') <> '' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Updating Tribrand Id in seaware table ...', rEnv);
+
+			-- delete the entry from log table if present
+			DELETE FROM Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG AS L WHERE L.CLIENT_ID = rEnv.ClientId AND L.COMPANY_CD = CompanyCode;
+			
+			-- if global id is already present in table, update it else insert a new entry  
+			SET cQuery = 'UPDATE NCLSEA.NCL_ENTERPRISE_CLIENT_MAP SET effective_to_dat = sysdate ' ||
+							'WHERE global_client_cd = ? AND client_id != ?';
+			SET rEnv.db.result = PASSTHRU(cQuery VALUES(rIn.NCLHID__c, rEnv.ClientId));
+			
+			SET rEnv.db.result[] = SELECT C.client_id FROM Database.NCLSEA.NCL_ENTERPRISE_CLIENT_MAP AS C 
+										WHERE C.client_id = rEnv.ClientId;
+			
+			IF EXISTS(rEnv.db.result[]) THEN
+				SET cQuery = 'UPDATE NCLSEA.NCL_ENTERPRISE_CLIENT_MAP ' ||
+									'SET effective_to_dat = TO_DATE(''31-12-2999'',''dd-mm-yyyy''), ' ||
+										'EFFECTIVE_FROM_DAT = sysdate, ' ||
+										'global_client_cd = ? ' ||
+									'WHERE client_id = ? AND global_client_cd != ?';
+				SET rEnv.db.result = PASSTHRU(cQuery VALUES(rIn.NCLHID__c, rEnv.ClientId, rIn.NCLHID__c));
+			ELSE
+				INSERT INTO Database.NCLSEA.NCL_ENTERPRISE_CLIENT_MAP(client_id, global_client_cd)
+					VALUES(rEnv.ClientId, rIn.NCLHID__c);
+			END IF;
+		ELSE
+			SET rEnv.db.result[] = SELECT L.CLIENT_ID, L.CREATED_DAT FROM Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG AS L 
+										WHERE L.CLIENT_ID = rEnv.ClientId AND L.COMPANY_CD = CompanyCode;
+			
+			IF EXISTS(rEnv.db.result[]) THEN
+				SET cQuery = 'UPDATE NCLSEA.NCL_CLIENT_SF_SYNC_LOG ' ||
+									'SET MODIFIED_DAT = sysdate, ' ||
+										'CREATED_DAT = ? ' ||
+									'WHERE CLIENT_ID = ? AND COMPANY_CD=?';
+				SET rEnv.db.result = PASSTHRU(cQuery VALUES(rEnv.db.result.CREATED_DAT, rEnv.ClientId, CompanyCode));
+			ELSE
+				INSERT INTO Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG(CLIENT_ID, COMPANY_CD) VALUES(rEnv.ClientId, CompanyCode);
+			END IF;
+		END IF;
+	
+		RETURN TRUE;
+	END;
+END MODULE;

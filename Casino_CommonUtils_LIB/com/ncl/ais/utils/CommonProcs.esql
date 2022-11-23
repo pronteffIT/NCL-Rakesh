@@ -1,0 +1,103 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+/** function to cross ref gender from NVS format to Salesforce **/
+CREATE FUNCTION MapGenderFromNVS2SF(IN gender CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE genderSF CHARACTER 'Unknown';
+	
+	IF gender = 'M' THEN
+		SET genderSF = 'Male';
+	ELSEIF gender = 'F' THEN
+		SET genderSF = 'Female';
+	END IF;
+	
+	RETURN genderSF;
+END;
+
+/** function to cross ref title from NVS format to Salesforce **/
+CREATE FUNCTION MapTitleFromNVS2SF(IN title CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE titleSF CHARACTER '';
+	
+	IF title = 'MRS' THEN
+		SET titleSF = 'Mrs.';
+	ELSEIF title = 'MS.' THEN
+		SET titleSF = 'Ms.';
+	ELSEIF title = 'MR' THEN
+		SET titleSF = 'Mr.';
+	ELSEIF title = 'DR' THEN
+		SET titleSF = 'Dr.';
+	ELSEIF title = 'MISS' THEN
+		SET titleSF = 'Miss';
+	ELSEIF title = 'PROF' THEN
+		SET titleSF = 'Prof.';
+	END IF;
+	
+	RETURN titleSF;
+END;
+
+/** function to cross ref office code from NVS format to Salesforce **/
+CREATE FUNCTION MapOfficeFromNVS2SF(IN source CHARACTER, IN office CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE officeCode CHARACTER source || ' ';
+	
+	IF office = 'MIA' THEN
+		SET officeCode = officeCode || 'MIAMI';
+	ELSEIF office = 'AU' THEN
+		SET officeCode = officeCode || 'AUSTRALIA';
+	ELSEIF office = 'BR' THEN
+		SET officeCode = officeCode || 'BRAZIL';
+	ELSEIF office = 'DE' THEN
+		SET officeCode = officeCode || 'GERMANY';
+	ELSEIF office = 'FLL' THEN
+		SET officeCode = officeCode || 'MIAMI';
+	ELSEIF office = 'INT' THEN
+		SET officeCode = officeCode || 'INTL';
+	ELSEIF office = 'UK' THEN
+		SET officeCode = officeCode || 'UK';
+	ELSE
+		SET officeCode = '';
+	END IF;
+	
+	RETURN officeCode;
+END;
+
+/** function to cross ref stage name from NVS format to Salesforce **/
+CREATE FUNCTION MapStageNameFromNVS2SF(IN bkgStatus CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE stageName CHARACTER 'Offered';
+	
+	IF bkgStatus = 'CX' THEN
+		SET stageName = 'Closed Lost';
+	ELSEIF bkgStatus = 'WL' THEN
+		SET stageName = 'WL';
+	ELSEIF bkgStatus IN('BK', 'ALT') THEN
+		SET stageName = 'Deposited';
+	END IF;
+	
+	RETURN stageName;
+END;
+
+/** validate email **/
+CREATE FUNCTION isEmailValid(IN email CHARACTER) RETURNS BOOLEAN
+BEGIN
+	DECLARE beforeStr, afterStr CHARACTER '';
+	
+	SET beforeStr = SUBSTRING(email BEFORE '@');
+	SET afterStr = SUBSTRING(email AFTER '@');
+	
+	IF LENGTH(beforeStr) = 0 OR LENGTH(afterStr) = 0 THEN
+		RETURN FALSE;
+	ELSE
+		SET beforeStr = SUBSTRING(afterStr BEFORE '.');
+		SET afterStr = SUBSTRING(afterStr AFTER '.');
+		
+		IF LENGTH(beforeStr) = 0 OR LENGTH(afterStr) = 0 THEN
+			RETURN FALSE;
+		ELSE
+			RETURN TRUE;
+		END IF;
+	END IF;
+		
+	RETURN FALSE;
+END;

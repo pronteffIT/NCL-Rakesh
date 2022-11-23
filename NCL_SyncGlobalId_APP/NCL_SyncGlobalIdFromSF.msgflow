@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFlowOrder.msgnode="ComIbmFlowOrder.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:com_ibm_connector_salesforce_ComIbmRequest.msgnode="com/ibm/connector/salesforce/ComIbmRequest.msgnode" xmlns:com_ncl_iib_NCL_ErrorHandler.subflow="com/ncl/iib/NCL_ErrorHandler.subflow" xmlns:com_ncl_iib_NCL_Logging.subflow="com/ncl/iib/NCL_Logging.subflow"
+    xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="NCL_SyncGlobalIdFromSF.msgflow" nsPrefix="NCL_SyncGlobalIdFromSF.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LogPayload" name="LogPayload" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CompanyCode" name="CompanyCode" lowerBound="1" defaultValueLiteral="NCLWEBC">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="NCL_SyncGlobalIdFromSF" bundleName="NCL_SyncGlobalIdFromSF" pluginId="NCL_SyncGlobalId_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_SyncGlobalId_APP/icons/full/obj16/NCL_SyncGlobalIdFromSF.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_SyncGlobalId_APP/icons/full/obj30/NCL_SyncGlobalIdFromSF.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_12" location="620,218" dataSource="NCLSEAT" computeExpression="esql://routine/#NCL_SyncGlobalIdFromSF_UpdateGlobalId.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="UpdateGlobalId"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_18" location="248,108" computeExpression="esql://routine/#Common_Exception.Main">
+        <translation xmi:type="utility:ConstantString" string="Exception"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_19" location="45,213" queueName="NCL_SYNC_GLOBALID_IN" messageDomainProperty="JSON" logicalOrder="false" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="NCL_SYNC_GLOBALID_IN"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_20" location="281,213" computeExpression="esql://routine/#NCL_SyncGlobalIdFromSF_LookupContactReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="LookupContactReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_21" location="469,214" connectorName="iib-salesforce-connector" url="https://test.salesforce.com" operation="retrieve" object="Contact" securityIdentity="NCLSF" timeoutMilliseconds="1200000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="LookupContact"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_Logging.subflow:FCMComposite_1" xmi:id="FCMComposite_1_5" location="711,117">
+        <translation xmi:type="utility:ConstantString" string="NCL_Logging"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_ErrorHandler.subflow:FCMComposite_1" xmi:id="FCMComposite_1_6" location="503,117">
+        <translation xmi:type="utility:ConstantString" string="NCL_ErrorHandler"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="588,27" queueName="NCL_SYNC_GLOBALID_ERR" transactionMode="no" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="ERR"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFlowOrder.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="357,109">
+        <translation xmi:type="utility:ConstantString" string="Flow Order"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="462,26" computeExpression="esql://routine/#SetRFH2ErrorInfo.Main">
+        <translation xmi:type="utility:ConstantString" string="SetErrInfo"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_19" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_20" targetNode="FCMComposite_1_20" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_21" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_12" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.second" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.first" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_1" sourceNode="FCMComposite_1_4" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LogPayload">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.LogPayload" bundleName="NCL_SyncGlobalIdFromSF" pluginId="NCL_SyncGlobalId_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CompanyCode">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.CompanyCode" bundleName="NCL_SyncGlobalIdFromSF" pluginId="NCL_SyncGlobalId_APP"/>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

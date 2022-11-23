@@ -1,0 +1,538 @@
+DECLARE RecordTypeOCI EXTERNAL CHARACTER '';
+DECLARE RecordTypeRSSC EXTERNAL CHARACTER '';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE DirectAgencyOCI EXTERNAL CHARACTER '';
+DECLARE DirectAgentOCI EXTERNAL CHARACTER '';
+DECLARE DirectAgencyRSSC EXTERNAL CHARACTER '';
+DECLARE DirectAgentRSSC EXTERNAL CHARACTER '';
+DECLARE CompanyCodeOCI EXTERNAL CHARACTER '';
+DECLARE CompanyCodeRSSC EXTERNAL CHARACTER '';
+DECLARE OCIDirectResType EXTERNAL CHARACTER '';
+DECLARE OCIAgencyResType EXTERNAL CHARACTER '';
+DECLARE RSSCDirectResType EXTERNAL CHARACTER '';
+DECLARE RSSCAgencyResType EXTERNAL CHARACTER '';
+DECLARE OCIDB EXTERNAL CHARACTER 'OCINVSDB';
+DECLARE RSSCDB EXTERNAL CHARACTER 'RSSCNVSDB';
+
+CREATE COMPUTE MODULE Casino_ReservationDataFeed_LookupObjects
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.NVSData;
+		DECLARE rDet REFERENCE TO rIn.Details.SALES;
+
+		DECLARE bPayload BLOB;
+		DECLARE resId, query, DSN CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- ignoring deletion of reservations
+		IF rIn.Metadata.Action = 'DELETE' THEN
+			RETURN FALSE;
+		END IF;
+		
+		-- if reprocessed message
+		IF EXISTS(InputRoot.MQRFH2[]) THEN
+			IF rIn.Metadata.Source = 'oci' THEN
+				SET DSN = OCIDB;
+			ELSE
+				SET DSN = RSSCDB;
+			END IF;
+			
+			SET OutputRoot.XMLNSC.NVSData.Metadata = rIn.Metadata;
+			
+			SET query = 'SELECT S.AGENT, SP.AGTCODE, S.INVOICE, S.CRUISE, S.HOME1, S.GATE1, S.DEP1, S.RTN1, S.CLASS1, S.HOME2, S.GATE2, S.DEP2, S.RTN2, S.CLASS2, S.HOME3, ' || 
+					'S.GATE3, S.DEP3, S.RTN3, S.CLASS3, S.HOME4, S.GATE4, S.DEP4, S.RTN4, S.CLASS4, S.HOME5, S.GATE5, S.DEP5, S.RTN5, S.CLASS5, S.HOME6, ' ||
+					'S.GATE6, S.DEP6, S.RTN6, S.CLASS6, S.REPCODE, S.ATTN, S.[STATUS], S.CABIN, S.CONFIRM, S.COMMENTS1, S.COMMENTS2, S.COMMENTS3, C.[DAYS], S.CURR, ' ||
+					'YEAR(C.FMDATE) AS DEPARTYEAR, S.DEP_AMT, S.BAL_DATE, S.PAX, S.PRCODE, R.FULLNAME, C.TODATE, S.SPRICE, S.DIRFLAG, SM.REFCODE, ' ||
+					'S.AIRINCL, S.BAL_AMT, S.TACOMM, S.GCONTRACT, S.FNAME1, S.FNAME2, S.LNAME1, S.LNAME2, S.OFFICE, CL.ABBREV, SO.SOURCE, A.EMAIL, ' ||
+					'CONVERT(VARCHAR, S.SALEDATE, 120) AS SALEDATE, CONVERT(VARCHAR, S.CNLDATE, 120) AS CNLDATE, CONVERT(VARCHAR, S.DEP_DATE, 120) AS DEP_DATE, ' || 
+					'S.GDS_SYS,D.COUNTRY,D.PHONE1,D.EMAIL AS DIRECT_EMAIL,S.OFFICE,P.PROMO,CL.ABBREV  ' ||
+				'FROM SALES AS S ' ||
+					'LEFT JOIN dbo.SALEPAX AS SP ON ' ||
+						'CASE ' ||
+							'WHEN S.COMBOLEG > 1 THEN ' ||
+								'S.CINVOICE1 ' ||
+							'ELSE ' ||
+								'S.INVOICE ' ||
+						'END = SP.invoice ' ||
+					'LEFT JOIN dbo.CRUISE AS C ON C.CRUISE = S.CRUISE ' ||
+					'LEFT JOIN dbo.REPS AS R ON R.REPCODE = S.REPCODE ' ||
+					'LEFT JOIN dbo.salemisc AS SM ON SM.invoice = S.INVOICE ' ||
+					'LEFT JOIN dbo.CLASS AS CL ON CL.SHIP = LEFT(S.CRUISE, 3) AND  (CL.CLASS = S.CLASS OR CL.CLASS = S.PAIDCLASS) ' ||
+					'LEFT JOIN dbo.sources AS SO ON SO.SCODE = S.SOURCE ' ||
+					'LEFT JOIN dbo.AGENT AS A ON A.AGTCODE = SP.AGTCODE ' ||
+					'LEFT JOIN dbo.DIRECT AS D ON D.DCODE = S.AGENT ' ||
+					'LEFT JOIN dbo.PROMOS AS P ON P.PRCODE = S.PRCODE '||
+				'WHERE S.INVOICE = ?';
+			
+			SET OutputRoot.XMLNSC.NVSData.Details.SALES[] = PASSTHRU(query TO Database.{DSN} VALUES(rDet.INVOICE));
+			
+			SET OutputRoot.XMLNSC.NVSData.Details.SALES.BOOKING = THE(SELECT COUNT(1) FROM Database.{DSN}.dbo.PAYMENT AS P WHERE P.INVOICE = rDet.INVOICE);
+			
+			-- for KA Amenities
+			SET OutputRoot.XMLNSC.NVSData.Details.SALES.AMENITIES[] = SELECT K.PRAMENCODE FROM Database.{DSN}.dbo.INVPRAMEN AS K 
+																			WHERE K.INVOICE = rDet.INVOICE AND K.PRAMENCODE LIKE 'K%';
+
+			SET rEnv.ReservationRequest = OutputRoot.XMLNSC.NVSData;
+			
+			-- clear outputroot
+			SET OutputRoot.XMLNSC = NULL;
+		ELSE
+			SET rEnv.ReservationRequest = InputRoot.XMLNSC.NVSData;
+		END IF;
+
+		-- adjust the references accordingly
+		MOVE rIn TO rEnv.ReservationRequest;
+		MOVE rDet TO rIn.Details.SALES;
+		
+		SET resId = rDet.INVOICE || '-' || rDet.CRUISE;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rIn.Metadata.Table,
+											   rIn.Metadata.Channel,
+											   resId,
+											   rDet.AGENT || '-' || rDet.AGTCODE,
+											   '',
+											   rEnv);
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of existing objects in Salesforce ...', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NVS event message', 'xml', rEnv);
+		END IF;
+		
+		-- lookup agency
+		IF rDet.DIRFLAG = 'Y' THEN
+			IF rIn.Metadata.Channel = 'Oceania' THEN
+				SET rEnv.SFID.AccountSFID = DirectAgencyOCI;
+				SET rEnv.SFID.ContactSFID = DirectAgentOCI;
+			ELSE
+				SET rEnv.SFID.AccountSFID = DirectAgencyRSSC;
+				SET rEnv.SFID.ContactSFID = DirectAgentRSSC;
+			END IF;			
+		ELSE
+			IF TRIM(rDet.AGENT) <> '' THEN
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Account';
+				
+				IF UPPER(rIn.Metadata.Channel) = 'OCEANIA' THEN
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'OCI_ACode__c';
+				ELSE
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'RSSC_ACode__c';
+				END IF;
+				
+				IF rIn.Metadata.Channel = 'Oceania' THEN
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.AGENT || '-' || CompanyCodeOCI;
+				ELSE
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.AGENT || '-' || CompanyCodeRSSC;
+				END IF;
+					
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+				
+				PROPAGATE TO LABEL 'LOOKUP';				
+			END IF;
+			
+			IF NOT EXISTS(rEnv.SFID.AccountSFID[]) THEN
+				THROW USER EXCEPTION VALUES('Agency information not available in salesforce');
+			END IF;
+			
+			-- lookup agent
+			IF COALESCE(TRIM(rDet.AGTCODE), '') <> '' THEN
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+	
+				IF UPPER(rIn.Metadata.Channel) = 'OCEANIA' THEN
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'OCI_Agent_Code__c';
+				ELSE
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'RSSC_Agent_Code__c';
+				END IF;
+
+				IF rIn.Metadata.Channel = 'Oceania' THEN
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.AGTCODE || '-' || rDet.AGENT || '-' || CompanyCodeOCI;
+				ELSE
+					SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.AGTCODE || '-' || rDet.AGENT || '-' || CompanyCodeRSSC;
+				END IF;
+	
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+				
+				PROPAGATE TO LABEL 'LOOKUP';	
+			END IF;
+
+			IF COALESCE(TRIM(rDet.AGTCODE), '') <> '' AND NOT EXISTS(rEnv.SFID.ContactSFID[]) THEN
+				THROW USER EXCEPTION VALUES('Agent information not available in salesforce');
+			END IF;
+		END IF;
+
+		-- Lookup reservation
+		IF resId <> '' THEN
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+			--SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Reservation_Id__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Invoice__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = resId;
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			
+			PROPAGATE TO LABEL 'LOOKUP';
+		END IF;
+
+		-- lookup sailing
+		IF TRIM(rDet.CRUISE) <> '' THEN
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Sailing__c';
+			--SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'VOYAGE__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Sailing_Code__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.CRUISE;	
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			
+			-- new mappings
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[2].Cruise_Nights__c = true;
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[3].Cruise_Start_Date__c = true;
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[4].Cruise_End_Date__c = true;
+			
+			PROPAGATE TO LABEL 'LOOKUP';
+		END IF;
+
+		-- lookup group
+		IF TRIM(rDet.GCONTRACT) <> '' THEN
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Group__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Group_Contract__c';
+
+			IF rIn.Metadata.Channel = 'Oceania' THEN
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.GCONTRACT || '-' || CompanyCodeOCI;
+			ELSE
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.GCONTRACT || '-' || CompanyCodeRSSC;
+			END IF;
+				
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			
+			PROPAGATE TO LABEL 'LOOKUP';
+		END IF;
+
+		-- lookup user
+		/*IF TRIM(rDet.FULLNAME) <> '' THEN
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'User';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Name'; 
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rDet.FULLNAME;	
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			
+			PROPAGATE TO LABEL 'LOOKUP';
+		END IF;*/
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationDataFeed_SaveSFID
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLev REFERENCE TO InputLocalEnvironment.Destination.Salesforce.Request;
+		
+		IF EXISTS(InputRoot.JSON.Data.Item[]) THEN
+			IF STARTSWITH(rLev.object, 'Reservation') THEN 
+				SET rEnv.SFID.ReservationSFID = InputRoot.JSON.Data.Item.Id;
+			ELSEIF rLev.object = 'Account' THEN
+				SET rEnv.SFID.AccountSFID = InputRoot.JSON.Data.Item.Id;
+			ELSEIF rLev.object = 'Contact' THEN
+				SET rEnv.SFID.ContactSFID = InputRoot.JSON.Data.Item.Id;
+			ELSEIF rLev.object = 'User' THEN 
+				SET rEnv.SFID.UserSFID = InputRoot.JSON.Data.Item.Id;
+			ELSEIF STARTSWITH(rLev.object, 'Group') THEN 
+				SET rEnv.SFID.GroupSFID = InputRoot.JSON.Data.Item.Id;
+			ELSEIF STARTSWITH(rLev.object, 'Sailing') THEN 
+				SET rEnv.SFID.SailingSFID = InputRoot.JSON.Data.Item.Id;
+				
+				SET rEnv.Temp.CruiseNights = InputRoot.JSON.Data.Item.Cruise_Nights__c;
+				SET rEnv.Temp.CruiseStartDate = InputRoot.JSON.Data.Item.Cruise_Start_Date__c;
+				SET rEnv.Temp.CruiseEndDate = InputRoot.JSON.Data.Item.Cruise_End_Date__c;
+			END IF;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationDataFeed_UpsertReservationReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.ReservationRequest;
+		DECLARE rDet REFERENCE TO rOrgMsg.Details.SALES;
+		DECLARE rSFID REFERENCE TO rEnv.SFID;
+		
+		DECLARE airIncluded BOOLEAN FALSE;
+		DECLARE bookingStatus CHARACTER 'OF';
+		DECLARE isBookingDone BOOLEAN;
+		DECLARE iPriceCalc INTEGER 0;
+		DECLARE cQuery, cKaAmenity CHARACTER '';
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+
+		IF EXISTS(rSFID.ReservationSFID[]) THEN
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.Id =  rSFID.ReservationSFID;
+		ELSE
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'create';
+			SET OutputRoot.JSON.Data.Name = rDet.INVOICE || '-' || rDet.CRUISE;
+		END IF;
+				
+		SET OutputRoot.JSON.Data.Agency__c = rSFID.AccountSFID;		
+		SET OutputRoot.JSON.Data.Agent__c = rSFID.ContactSFID;
+		SET OutputRoot.JSON.Data.Reservation_Id__c = rDet.INVOICE || '-' || rDet.CRUISE;
+		SET OutputRoot.JSON.Data.GDS_SYS__c = rDet.GDS_SYS;
+		
+		IF TRIM(rDet.HOME1) <> '' OR TRIM(rDet.GATE1) <>'' OR TRIM(rDet.DEP1) <>'' OR TRIM(rDet.RTN1) <>'' OR TRIM(rDet.CLASS1) <>'' OR
+		   TRIM(rDet.HOME2) <> '' OR TRIM(rDet.GATE2) <>'' OR TRIM(rDet.DEP2) <>'' OR TRIM(rDet.RTN2) <>'' OR TRIM(rDet.CLASS2) <>'' OR
+		   TRIM(rDet.HOME3) <> '' OR TRIM(rDet.GATE3) <>'' OR TRIM(rDet.DEP3) <>'' OR TRIM(rDet.RTN3) <>'' OR TRIM(rDet.CLASS3) <>'' OR
+		   TRIM(rDet.HOME4) <> '' OR TRIM(rDet.GATE4) <>'' OR TRIM(rDet.DEP4) <>'' OR TRIM(rDet.RTN4) <>'' OR TRIM(rDet.CLASS4) <>'' OR
+		   TRIM(rDet.HOME5) <> '' OR TRIM(rDet.GATE5) <>'' OR TRIM(rDet.DEP5) <>'' OR TRIM(rDet.RTN5) <>'' OR TRIM(rDet.CLASS5) <>'' OR
+		   TRIM(rDet.HOME6) <> '' OR TRIM(rDet.GATE6) <>'' OR TRIM(rDet.DEP6) <>'' OR TRIM(rDet.RTN6) <>'' OR TRIM(rDet.CLASS6) <>''
+		THEN	
+			SET airIncluded = true;
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Air_Included__c = airIncluded;
+		
+		SET OutputRoot.JSON.Data.Assigned_BDM__c = rSFID.UserSFID;
+		SET OutputRoot.JSON.Data.Attention__c = rDet.ATTN;
+		
+		IF CAST(rDet.BOOKING AS INTEGER) > 0  THEN
+			SET isBookingDone = true;
+		ELSE
+			SET isBookingDone = false;
+		END IF;
+		
+		SET iPriceCalc = CAST(CAST(rDet.SPRICE AS FLOAT) / (CAST(rDet.PAX AS INTEGER) * CAST(rDet.DAYS AS INTEGER)) AS INTEGER);
+						
+		IF rDet.STATUS = 'K' THEN
+			SET bookingStatus = 'CX';
+		ELSEIF CAST(rDet.TODATE AS DATE FORMAT 'I') < CURRENT_DATE  THEN 
+			SET bookingStatus = 'CL';
+		ELSEIF rDet.CABIN = 'WL' THEN
+			SET bookingStatus = 'WL';	
+		ELSEIF isBookingDone OR UPPER(rDet.CONFIRM) = 'Y' THEN
+			SET bookingStatus = 'BK';
+		ELSEIF isBookingDone = false AND UPPER(rDet.CONFIRM) <> 'Y' THEN
+			SET bookingStatus = 'OF';	
+		ELSEIF UPPER(rOrgMsg.Metadata.Source) = 'OCI' AND iPriceCalc < 125 THEN
+			SET bookingStatus = 'ALT';
+		ELSEIF UPPER(rOrgMsg.Metadata.Source) = 'SSC' AND iPriceCalc < 150 THEN
+			SET bookingStatus = 'ALT';	
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Booking_Status__c = bookingStatus;
+		SET OutputRoot.JSON.Data.Reservation_Status__c = bookingStatus;
+		
+		SET OutputRoot.JSON.Data.Cabin__c = rDet.CABIN;
+		SET OutputRoot.JSON.Data.Comments_W2L__c = TRIM(TRIM(rDet.COMMENTS1) || ' '||  TRIM(rDet.COMMENTS2) || ' ' || TRIM(rDet.COMMENTS3));
+				
+		IF rDet.BAL_DATE IS NOT NULL THEN
+			SET OutputRoot.JSON.Data.Final_Payment_Due_Date__c = CAST(CAST(rDet.BAL_DATE AS DATE FORMAT 'I') AS CHARACTER FORMAT 'yyyy-MM-dd');
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Cruise_Code__c = rDet.CRUISE;
+		SET OutputRoot.JSON.Data.Cruise_Days__c = CAST(rDet.DAYS AS CHARACTER);
+		SET OutputRoot.JSON.Data.Currency__c = rDet.CURR;
+		SET OutputRoot.JSON.Data.Departure_Year__c = rDet.DEPARTYEAR;		
+		SET OutputRoot.JSON.Data.Deposit_Amount_Due__c = CAST(rDet.DEP_AMT AS CHARACTER);
+		SET OutputRoot.JSON.Data.Invoice__c = TRIM(rDet.INVOICE) || '-' || TRIM(rDet.CRUISE);
+		SET OutputRoot.JSON.Data.Number_of_Passengers__c = CAST(rDet.PAX AS CHARACTER);						
+		SET OutputRoot.JSON.Data.Sailing__c = rSFID.SailingSFID;
+		SET OutputRoot.JSON.Data.Promotion__c = rDet.PRCODE;
+
+		IF UPPER(rOrgMsg.Metadata.Source) = 'OCI'  THEN
+			SET OutputRoot.JSON.Data.Company_Code__c = CompanyCodeOCI;
+			SET OutputRoot.JSON.Data.RecordTypeId = RecordTypeOCI;
+			
+			IF TRIM(rDet.REFCODE) <> '' THEN
+				SET OutputRoot.JSON.Data.OCI_Ref_Source_Code__c = rDet.REFCODE;
+			END IF;
+			
+			IF rDet.DIRFLAG = 'Y' THEN
+				SET OutputRoot.JSON.Data.Reservation_Type__c = OCIDirectResType;
+			ELSE
+				SET OutputRoot.JSON.Data.Reservation_Type__c = OCIAgencyResType;
+			END IF;
+			
+			-- new field mappings
+			IF TRIM(rDet.GCONTRACT) <> '' THEN
+				SET OutputRoot.JSON.Data.Group_ID__c = rDet.GCONTRACT || '-' || CompanyCodeOCI;
+			END IF;
+		ELSE
+			SET OutputRoot.JSON.Data.Company_Code__c = CompanyCodeRSSC;
+			SET OutputRoot.JSON.Data.RecordTypeId = RecordTypeRSSC;
+
+			IF TRIM(rDet.REFCODE) <> '' THEN
+				SET OutputRoot.JSON.Data.RSSC_Ref_Source_Code__c = rDet.REFCODE;
+			END IF;
+
+			IF rDet.DIRFLAG = 'Y' THEN
+				SET OutputRoot.JSON.Data.Reservation_Type__c = RSSCDirectResType;
+			ELSE
+				SET OutputRoot.JSON.Data.Reservation_Type__c = RSSCAgencyResType;
+			END IF;
+			
+			-- new field mappings
+			IF TRIM(rDet.GCONTRACT) <> '' THEN
+				SET OutputRoot.JSON.Data.Group_ID__c = rDet.GCONTRACT || '-' || CompanyCodeRSSC;
+			END IF;
+		END IF;
+
+		-- new field mappings		
+		IF rDet.AIRINCL = 'Y' THEN
+			SET OutputRoot.JSON.Data.Air_Package__c = true;
+		ELSE
+			SET OutputRoot.JSON.Data.Air_Package__c = false;
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Amount_Due__c = CAST(rDet.BAL_AMT AS CHARACTER);
+		SET OutputRoot.JSON.Data.Booking_Date__c = LEFT(rDet.SALEDATE, 10);
+		SET OutputRoot.JSON.Data.Close_Date__c = OutputRoot.JSON.Data.Booking_Date__c;
+		SET OutputRoot.JSON.Data.NVS_Office__c = rDet.OFFICE;
+		--SET OutputRoot.JSON.Data.Promotion_Description__c = rDet.PROMO;
+		--SET OutputRoot.JSON.Data.Net_Balance_Due_Date__c = rDet.NET_BALANCE_DUE;
+		--SET OutputRoot.JSON.Data.Cabin_Category_Description__c = rDet.ABBREV;
+		
+		IF rDet.CNLDATE IS NOT NULL THEN
+			SET OutputRoot.JSON.Data.Cancel_Date__c = LEFT(rDet.CNLDATE, 10);
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Class__c = rDet.ABBREV;
+		SET OutputRoot.JSON.Data.Cruise_Commission__c = CAST(rDet.TACOMM AS CHARACTER);
+		
+		IF rDet.DEP_DATE IS NOT NULL THEN
+			SET OutputRoot.JSON.Data.Deposit_Due_Date__c = LEFT(rDet.DEP_DATE, 10);
+		END IF;
+		
+		SET OutputRoot.JSON.Data.Group__c = rSFID.GroupSFID;
+		SET OutputRoot.JSON.Data.Guest_Name__c = rDet.FNAME1 || ' ' || rDet.LNAME1;
+		SET OutputRoot.JSON.Data.Guest_Name_2__c = rDet.FNAME2 || ' ' || rDet.LNAME2;
+		SET OutputRoot.JSON.Data.Guest_Count__c = CAST(rDet.PAX AS CHARACTER);
+		SET OutputRoot.JSON.Data.Source_Code__c = rDet.SOURCE;
+		SET OutputRoot.JSON.Data.Legacy_Source__c = 'NVS';
+		SET OutputRoot.JSON.Data.Mapped_from_NVS__c = true;
+		SET OutputRoot.JSON.Data.Office_Code__c = com.ncl.ais.utils.MapOfficeFromNVS2SF(UPPER(rOrgMsg.Metadata.Source), rDet.OFFICE);
+		
+		IF CAST(rDet.BAL_AMT AS DECIMAL) <= 0 THEN
+			SET OutputRoot.JSON.Data.Paid_in_Full__c = true;
+		END IF;
+		 
+		SET OutputRoot.JSON.Data.Ship__c = LEFT(rDet.CRUISE, 3);
+		SET OutputRoot.JSON.Data.Stage_Name__c = com.ncl.ais.utils.MapStageNameFromNVS2SF(bookingStatus);
+		SET OutputRoot.JSON.Data.CurrencyISOCode = rDet.CURR;
+		SET OutputRoot.JSON.Data.Cruise_Nights__c = CAST(rEnv.Temp.CruiseNights AS CHARACTER);
+		SET OutputRoot.JSON.Data.Sail_Date_From__c = rEnv.Temp.CruiseStartDate;
+		SET OutputRoot.JSON.Data.Sail_Date_To__c = rEnv.Temp.CruiseEndDate;
+		IF rDet.GDS_SYS = 'CS' THEN
+			SET OutputRoot.JSON.Data.Guest_Country__c = rDet.COUNTRY;
+			IF rDet.DIRECT_EMAIL IS NOT NULL THEN
+				SET OutputRoot.JSON.Data.Guest_Email__c = rDet.DIRECT_EMAIL;
+			END IF;
+			SET OutputRoot.JSON.Data.Guest_Phone__c = rDet.PHONE1;
+		END IF;
+			
+		
+		--IF rDet.DIRFLAG = 'Y' THEN
+			SET OutputRoot.JSON.Data.Reservation_Owner__c = rDet.USERID;
+			--SEAOPS-1206 Set the initial value of Reservation_Creator__c On CREATE
+			IF OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'create' THEN
+				SET OutputRoot.JSON.Data.Reservation_Creator__c = rDet.USERID;
+			END IF;
+		--END IF;
+		
+		IF LENGTH(TRIM(rDet.EMAIL)) > 0 THEN
+			SET OutputRoot.JSON.Data.Travel_Agent_Email__c = rDet.EMAIL;
+		END IF;
+		
+		-- KA Amenities
+		FOR rAmenity AS rDet.AMENITIES[] DO
+			IF STARTSWITH(rAmenity.PRAMENCODE, 'K') THEN
+				SET cKaAmenity = cKaAmenity || ';' || rAmenity.PRAMENCODE;
+			END IF;
+		END FOR;
+		
+		SET OutputRoot.JSON.Data.KA_Amenities__c = SUBSTRING(cKaAmenity FROM 2);
+		
+		-- mapping from DW view
+		SET cQuery = 'SELECT CAST(Local_Currency_Cruise_Commission__c AS CHAR) AS Local_Currency_Cruise_Commission, ' ||
+							'CAST(Local_Currency_CCF__c AS CHAR) AS Local_Currency_CCF, ' ||
+							'CAST(Net_Sales_Revenue__c AS CHAR) AS Net_Sales_Revenue, ' ||
+							'CAST(Cruise_Commission__c AS CHAR) AS Cruise_Commission, ' ||
+							'Invoice_Suffix__c AS Invoice_Suffix, ' ||
+							'Hotel_Package__c AS Hotel_Package ' ||
+						'FROM etl.vw_sfdc_getReservationDetails_IIB AS V ' ||
+							'WHERE V.Invoice__c = ?';
+
+		SET rEnv.Temp.DWDB.Result[] = PASSTHRU(cQuery VALUES(rDet.INVOICE || '-' || rDet.CRUISE));
+		
+		IF EXISTS(rEnv.Temp.DWDB.Result[]) THEN
+			SET OutputRoot.JSON.Data.Invoice_Suffix__c = rEnv.Temp.DWDB.Result.Invoice_Suffix;
+			SET OutputRoot.JSON.Data.Local_Currency_CCF__c = TRIM(rEnv.Temp.DWDB.Result.Local_Currency_CCF);
+			SET OutputRoot.JSON.Data.Local_Currency_Cruise_Commision__c = TRIM(rEnv.Temp.DWDB.Result.Local_Currency_Cruise_Commission);
+			SET OutputRoot.JSON.Data.Net_Sales_Revenue__c = TRIM(rEnv.Temp.DWDB.Result.Net_Sales_Revenue);
+			
+			IF rEnv.Temp.DWDB.Result.Hotel_Package = '1' THEN
+				SET OutputRoot.JSON.Data.Hotel_Package__c = true;
+			END IF;
+			
+			-- Cruise commission is already mapped from TACOMM above
+			--SET OutputRoot.JSON.Data.Cruise_Commission__c = TRIM(rEnv.Temp.DWDB.Result.Cruise_Commission);
+		END IF;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Insert/Update of reservation ...', rEnv);
+	
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationDataFeed_SetErrorInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEv REFERENCE TO Environment.Variables;
+		DECLARE rEvErr REFERENCE TO rEv.ErrorSummary;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		IF NOT EXISTS(rEv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEv, rExcp);
+			
+			MOVE rEvErr TO rEv.ErrorSummary;
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+		
+		IF NOT EXISTS(InputRoot.MQRFH2[]) THEN
+			CREATE NEXTSIBLING OF OutputRoot.MQMD DOMAIN('MQRFH2') NAME 'MQRFH2';
+		END IF;
+					
+		SET OutputRoot.MQRFH2.(MQRFH2.Field)Version = 2;
+		SET OutputRoot.MQRFH2.usr.SourceQueue = InputRoot.MQMD.SourceQueue;
+		SET OutputRoot.MQRFH2.usr.SourceQmgr = TRIM(InputRoot.MQMD.ReplyToQMgr);
+		SET OutputRoot.MQRFH2.usr.ExceptionType = rEvErr.ExceptionType;
+		SET OutputRoot.MQRFH2.usr.ErrorText = rEvErr.ErrorText;
+		
+		DELETE FIELD OutputRoot.MQRFH2.mcd;
+		
+		PROPAGATE FINALIZE NONE;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

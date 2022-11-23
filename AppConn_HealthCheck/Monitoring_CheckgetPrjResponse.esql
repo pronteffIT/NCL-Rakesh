@@ -1,0 +1,39 @@
+
+
+CREATE COMPUTE MODULE Monitoring_CheckgetPrjResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+		DECLARE ns2 NAMESPACE 'http://www.approuter.com/schemas/2008/1/deployment';
+		DECLARE rOutRef,rOutOrchs,rOutProjectResp REFERENCE TO OutputRoot;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.soap:Envelope.soap:Body.ns2:getAllProjectsResponse;
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') IDENTITY getProjectList;
+		
+		CREATE LASTCHILD  OF rOutRef DOMAIN('XMLNSC') NAME 'XMLNSC';
+		MOVE rOutRef TO OutputRoot.XMLNSC; 
+		
+		IF EXISTS(rIn.*:projects[]) THEN
+			FOR inRefPrj AS rIn.*:projects[] DO
+			 	CREATE LASTCHILD OF rOutRef AS rOutProjectResp NAME 'Projects';
+				SET rOutProjectResp.ProjectName = inRefPrj.configurations.configuration.projectName;
+				SET rOutProjectResp.ProjectVer = inRefPrj.configurations.configuration.projectVersion;
+				SET rOutProjectResp.ProjectState = inRefPrj.configurations.configuration.state;	
+				
+				IF inRefPrj.configurations.configuration.state = 'running' THEN
+					FOR inRefOrc AS inRefPrj.*:configurations.*:configuration.*:orchestrationValues.*:orchestrationValue[] DO
+						CREATE LASTCHILD OF rOutProjectResp.Orchestrations AS rOutOrchs NAME 'Orchestration';
+						SET rOutOrchs.OrchestrationName = inRefOrc.orchestrationRelativeurl;
+						SET rOutOrchs.State = inRefOrc.state;
+						SET rOutOrchs.maxJobs = inRefOrc.maxJobs;					
+					END FOR;
+				END IF; 
+							
+			END FOR;
+		END IF;
+		
+		SET rEnv.getProjectList = rOutRef; 
+		RETURN TRUE;
+	END;
+END MODULE;

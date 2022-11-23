@@ -1,0 +1,18 @@
+
+
+CREATE COMPUTE MODULE Monitoring_getAllProjectReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+		DECLARE sys NAMESPACE 'http://www.approuter.com/schemas/2008/1/deployment';
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL =  rEnv.Temp.DepEndPoint;
+		SET OutputRoot.XMLNSC.soap:Envelope.soap:Header.sys:sessionId= rEnv.Temp.SessionId; 
+		SET OutputRoot.XMLNSC.soap:Envelope.soap:Body.sys:getAllProjects= '';
+
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:ComIbmPassthru.msgnode="ComIbmPassthru.msgnode" xmlns:ComIbmTimeoutNotification.msgnode="ComIbmTimeoutNotification.msgnode" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="Casino_HealthCheck.msgflow" nsPrefix="Casino_HealthCheck.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OCIDB" name="OCIDB" lowerBound="1" defaultValueLiteral="OCINVSDB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RSSCDB" name="RSSCDB" lowerBound="1" defaultValueLiteral="RSSCNVSDB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.FromEmailId" name="FromEmailId" lowerBound="1" defaultValueLiteral="casino_iib_mon_test@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.ToEmailId" name="ToEmailId" lowerBound="1" defaultValueLiteral="raveendra.nanjundappa@prolifics.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EventThresholdCount" name="EventThresholdCount" lowerBound="1" defaultValueLiteral="100">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="Casino_HealthCheck" bundleName="Casino_HealthCheck" pluginId="Casino_HealthCheck_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_HealthCheck_APP/icons/full/obj16/Casino_HealthCheck.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_HealthCheck_APP/icons/full/obj30/Casino_HealthCheck.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmTimeoutNotification.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="77,152" uniqueIdentifier="HealthCheck" timeoutInterval="1800">
+        <translation xmi:type="utility:ConstantString" string="AutoTrigger"/>
+      </nodes>
+      <nodes xmi:type="ComIbmPassthru.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="170,61">
+        <translation xmi:type="utility:ConstantString" string="Pass through"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="179,152" dataSource="OCINVSDB" computeExpression="esql://routine/#Casino_HealthCheck_CheckDBEvents.Main">
+        <translation xmi:type="utility:ConstantString" string="CheckDBEvents"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="298,153" queueName="NCL_EMAILNOTIFICATION_IN" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="Email_Q"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OCIDB">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.OCIDB" bundleName="Casino_HealthCheck" pluginId="Casino_HealthCheck_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RSSCDB">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.RSSCDB" bundleName="Casino_HealthCheck" pluginId="Casino_HealthCheck_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.FromEmailId">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.FromEmailId" bundleName="Casino_HealthCheck" pluginId="Casino_HealthCheck_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.ToEmailId">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.ToEmailId" bundleName="Casino_HealthCheck" pluginId="Casino_HealthCheck_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EventThresholdCount">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.EventThresholdCount" bundleName="Casino_HealthCheck" pluginId="Casino_HealthCheck_APP"/>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

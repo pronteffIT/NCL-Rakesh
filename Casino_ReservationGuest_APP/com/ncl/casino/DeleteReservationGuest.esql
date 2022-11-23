@@ -1,0 +1,32 @@
+BROKER SCHEMA com.ncl.casino
+
+CREATE COMPUTE MODULE DeleteReservationGuest_DeleteResGuestReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel,'Deleting the existing reservation guest based on PAXID ...',rEnv);
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'delete';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation_Guest__c';
+		--SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Id';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.Id = rEnv.ReservationGuestSFID;
+	
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE DeleteReservationGuest_CheckDeleteStatus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		IF EXISTS(InputRoot.JSON.Data[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Deletion of Reservation guest successful ...',rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

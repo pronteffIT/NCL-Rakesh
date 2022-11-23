@@ -1,0 +1,84 @@
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+
+CREATE COMPUTE MODULE Casino_UpdateReservationInSalesforce_LookupObjects
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+
+		DECLARE bPayload BLOB;
+		DECLARE resId, query, DSN CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET resId = rIn.INVOICE || '-' || rIn.CRUISE;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', rIn.SOURCE, resId, '', '', rEnv);
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of existing reservation in Salesforce ...', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.JSON CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Input reservation message', 'xml', rEnv);
+		END IF;
+		
+		-- Lookup reservation
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+		--SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Reservation_Id__c';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Invoice__c';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = resId;
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[2].Reservation_Status__c = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[3].Booking_Status__c = true;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_UpdateReservationInSalesforce_UpsertReservationReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		-- check if the reservation exists
+		IF EXISTS(InputRoot.JSON.Data.Item[]) THEN
+			-- update the reservation only if it is not already closed or cancelled
+			IF InputRoot.JSON.Data.Item.Reservation_Status__c IN('CL', 'CX') THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Reservation is already closed/cancelled in Salesforce ...', rEnv);
+				
+				RETURN TRUE;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Updating reservation status ...', rEnv);
+				
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.Id = InputRoot.JSON.Data.Item.Id;
+
+				SET OutputRoot.JSON.Data.Booking_Status__c = 'CL';
+				SET OutputRoot.JSON.Data.Reservation_Status__c = 'CL';
+				
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Reservation does not exists in Salesforce ...', rEnv);
+			
+			RETURN TRUE;
+		END IF;
+	
+		RETURN FALSE;
+	END;
+END MODULE;

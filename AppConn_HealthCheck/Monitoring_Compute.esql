@@ -1,0 +1,99 @@
+DECLARE MemThreshold EXTERNAL CHARACTER '';
+DECLARE DiskThreshold EXTERNAL CHARACTER '';
+DECLARE FromEmailID EXTERNAL CHARACTER '';
+DECLARE ToEmailID EXTERNAL CHARACTER '';
+DECLARE DEVICE1 EXTERNAL CHARACTER '';
+DECLARE DEVICE2 EXTERNAL CHARACTER '';
+
+
+CREATE COMPUTE MODULE Monitoring_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+		DECLARE sec NAMESPACE 'http://www.approuter.com/schemas/2008/1/security';
+		
+		DECLARE rLoginResp REFERENCE TO InputRoot.XMLNSC.soap:Envelope.soap:Body;
+		DECLARE usedMemory DECIMAL; 
+		DECLARE maxMemory DECIMAL;
+		DECLARE dskUsed CHARACTER '';
+		DECLARE strEmailSuccess CHARACTER '';
+		DECLARE strProjectAlert CHARACTER '';
+		DECLARE strEmailBody CHARACTER '';
+		DECLARE strOrcs CHARACTER '';
+		DECLARE crlf CHARACTER CAST(x'0D0A' AS CHARACTER CCSID 1208);
+		
+		SET rEnv.Temp.SessionId = rLoginResp.*:loginResponse.*:sessionId;
+		
+		IF NOT EXISTS (appConnectShared.record[]) THEN
+			PROPAGATE TO LABEL 'ReadConfig';
+		END IF;
+				
+		PROPAGATE TO LABEL 'ResourceInfo';
+		--PROPAGATE TO LABEL 'ResourceHistoryInfo';
+		PROPAGATE TO LABEL 'ProjectList';
+		
+		-- Health Check condition
+		-- 1. Utilization Data
+		SET usedMemory = CAST(rEnv.*:resourceResp.*:applianceUtilization.*:usedMemory AS DECIMAL);
+		SET maxMemory = CAST(rEnv.*:resourceResp.*:applianceUtilization.*:maxMemory AS DECIMAL);
+		SET dskUsed = CAST(rEnv.*:resourceResp.*:applianceUtilization.*:diskPercentUsed AS DECIMAL);		
+		
+		IF (usedMemory/maxMemory) * 100 >= CAST(MemThreshold AS DECIMAL) THEN 
+		  	SET strEmailBody = 'Memory utilization has reached ' ||  CAST((usedMemory/maxMemory)*100  AS CHARACTER FORMAT '##0.00') || '%' ; 
+		END IF;
+		 
+		IF Cast(dskUsed AS DECIMAL) >= CAST(DiskThreshold AS DECIMAL) THEN
+			 SET strEmailBody = strEmailBody || crlf || 'Disk Percentage has reached ' || CAST(dskUsed AS CHARACTER) || '%'  ;
+		END IF;
+		
+		IF EXISTS(rEnv.getProjectList.*:Projects[]) AND EXISTS(appConnectShared.record[]) THEN
+			For inRefPrj AS rEnv.getProjectList.*:Projects[] DO
+				DECLARE bProjectFound BOOLEAN FALSE;
+				DECLARE cProjectState CHARACTER;
+				
+				SET rEnv.ProjectData[] = SELECT A.projectState,A.orchestrationName,A.orchState FROM appConnectShared.record[] AS A WHERE rEnv.Temp.AppConIP = TRIM(A.DeviceIP) 
+						AND inRefPrj.ProjectName=A.projectName 
+						AND inRefPrj.ProjectVer = A.projectVersion;
+						
+				IF EXISTS(rEnv.ProjectData[])
+				THEN
+						
+				SET cProjectState = rEnv.ProjectData[1].projectState;
+				IF 	inRefPrj.ProjectState <> cProjectState THEN
+					SET strEmailBody =  strEmailBody ||  crlf  || 'Project: ' || inRefPrj.ProjectName ||  inRefPrj.ProjectVer ||   ' is not running ' ;
+				ELSE
+					For inRefOrc AS inRefPrj.*:Orchestrations.*:Orchestration[] DO
+						IF EXISTS( SELECT A.orchState FROM rEnv.ProjectData[] AS A 
+								where A.orchestrationName = inRefOrc.OrchestrationName and A.orchState <>  inRefOrc.State
+								)THEN
+							SET strEmailBody =  strEmailBody || crlf   || 'Orchestrations: ' || inRefOrc.OrchestrationName ||   ' disabled for project ' || inRefPrj.ProjectName ;								
+						END IF;
+					END FOR;
+				END IF;
+				
+				END IF;																
+			END FOR;			
+		END IF;					
+		
+		IF LENGTH(strEmailBody) > 0 THEN
+			SET strEmailBody = 'Appliance '|| CAST(rEnv.Temp.AppConIP AS CHARACTER) ||' has following issues ' || crlf || strEmailBody;
+			DECLARE rEmail REFERENCE TO OutputRoot;
+
+			CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+						
+			SET rEmail.EmailSubject = 'Error(s) on Appliance: ' || rEnv.Temp.AppConIP ;
+			SET rEmail.EmailContent = 'Error: ' || strEmailBody;
+			SET rEmail.EmailAddress.FromAddress = FromEmailID;
+			SET rEmail.EmailAddress.ToAddress = ToEmailID;
+			RETURN TRUE; 	
+		END IF;										 
+			
+		RETURN FALSE;				
+	END;
+
+	
+END MODULE;
+
+
+

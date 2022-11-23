@@ -1,0 +1,121 @@
+DECLARE C_DAY_TO EXTERNAL CHARACTER '';
+DECLARE L_DAY_FROM EXTERNAL CHARACTER '';
+DECLARE L_DAY_TO EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_FetchGuestIds_ReadCloseSailGuests
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		DECLARE bPayload BLOB;
+		DECLARE query CHARACTER '';
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', '', '', '', '', rEnv);
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of client ids who are sailing within next 15 days...', rEnv);
+		
+		-- read client ids who have closer sail date 
+		/*SET query = 'SELECT DISTINCT c.client_id ' ||
+						'FROM res_header rh, res_guest rg, client c ' ||
+						'WHERE rh.RES_ID = rg.RES_ID ' ||
+							'AND c.CLIENT_ID = rg.CLIENT_ID ' ||
+							'AND rh.SAIL_DATE_FROM BETWEEN sysdate AND sysdate + 7';*/
+							
+		SET query = 'select sail_id from sail_header sh ' || 
+        				'where sh.sail_date_From between trunc(sysdate) and trunc(sysdate) + ? ' ||
+        					'and is_active = ''Y''';
+		
+		SET rEnv.Sails.Sail[] = PASSTHRU(query VALUES(C_DAY_TO));
+			
+		-- loop thru the client ids
+		FOR rSail AS rEnv.Sails.Sail[] DO
+			SET rEnv.Clients = NULL;
+			
+			SET query = 'SELECT DISTINCT rg.client_id ' ||
+							'FROM res_header rh, res_guest rg, sail_header sh ,res_package rp ,package_definition pd  ' ||
+							'WHERE rh.res_id = rg.res_id ' ||
+								'AND rg.client_id is not null ' ||
+								'AND rh.res_status = ''BK'' ' ||
+								'AND rp.res_id = rh.res_id  ' ||
+								'AND rp.guest_id = rg.guest_id  ' ||
+								'and pd.package_id=rp.package_id  ' ||
+								'AND pd.sail_id = sh.sail_id ' ||
+								'AND sh.sail_id = ?';
+								
+			
+			SET rEnv.Clients.Client[] = PASSTHRU(query VALUES(rSail.SAIL_ID));
+			
+			FOR rCli AS rEnv.Clients.Client[] DO
+				SET OutputRoot.JSON.Data.ClientId = CAST(rCli.CLIENT_ID AS CHARACTER);
+				
+				PROPAGATE TO TERMINAL 'out1';
+			END FOR;
+		END FOR;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_FetchGuestIds_ReadLaterSailGuests
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		DECLARE bPayload BLOB;
+		DECLARE query CHARACTER '';
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', '', '', '', '', rEnv);
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of client ids who are sailing within next 15 days...', rEnv);
+		
+		SET query = 'select sail_id from sail_header sh ' || 
+        				'where sh.sail_date_From between trunc(sysdate) + ? and trunc(sysdate) + ? ' ||
+        					'and is_active = ''Y''';
+		
+		SET rEnv.Sails.Sail[] = PASSTHRU(query VALUES(L_DAY_FROM, L_DAY_TO));
+			
+		-- loop thru the client ids
+		FOR rSail AS rEnv.Sails.Sail[] DO
+			SET rEnv.Clients = NULL;
+			
+			SET query = 'SELECT DISTINCT rg.client_id ' ||
+							'FROM res_header rh, res_guest rg, sail_header sh ' ||
+							'WHERE rh.res_id = rg.res_id ' ||
+								'AND rg.client_id is not null ' ||
+								'AND rh.res_status = ''BK'' ' ||
+								'AND rh.sail_date_From = sh.sail_date_from ' ||
+								'AND rh.sail_date_to = sh.sail_date_to ' ||
+								'AND rh.ship_code = sh.ship_code ' ||
+								'AND sh.is_active = ''Y'' ' ||
+								'AND sh.sail_id = ?';
+			
+			SET rEnv.Clients.Client[] = PASSTHRU(query VALUES(rSail.SAIL_ID));
+			
+			FOR rCli AS rEnv.Clients.Client[] DO
+				SET OutputRoot.JSON.Data.ClientId = CAST(rCli.CLIENT_ID AS CHARACTER);
+				
+				PROPAGATE TO TERMINAL 'out1';
+			END FOR;
+		END FOR;
+
+		RETURN TRUE;
+	END;
+END MODULE;

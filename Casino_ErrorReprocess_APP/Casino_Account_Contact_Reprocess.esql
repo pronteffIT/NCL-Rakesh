@@ -1,0 +1,93 @@
+DECLARE Batch_Size EXTERNAL INTEGER 0;
+DECLARE Email_Notification EXTERNAL BOOLEAN TRUE;
+
+CREATE COMPUTE MODULE Read_Reprocess_Messages  
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	DECLARE rEv REFERENCE TO Environment.Variables;
+		DECLARE index INTEGER 1;
+		
+		IF NOT LASTMOVE(rEv) THEN
+			CREATE FIELD Environment.Variables AS rEv;
+		END IF;
+		
+		SET rEv.AllMessagesRead = 'false';
+		
+		WHILE rEv.AllMessagesRead = 'false' AND index <= Batch_Size DO
+			PROPAGATE TO TERMINAL 'out';
+			
+			SET index = index + 1;
+		END WHILE;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+CREATE COMPUTE MODULE Set_Reprocess_Destination
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	DECLARE rRfhUsr REFERENCE TO InputRoot.MQRFH2.usr;
+		DECLARE iNRef REFERENCE TO InputRoot.XMLNSC.NCL;
+		SET OutputRoot = InputRoot;
+		SET OutputLocalEnvironment = InputLocalEnvironment;
+			SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = rRfhUsr.SourceQueue;
+		DELETE FIELD OutputRoot.MQRFH2.mcd;		
+		PROPAGATE FINALIZE NONE;
+		
+		
+		
+		
+		  IF rRfhUsr.accountContactRetryCount = '5'  AND Email_Notification =  TRUE THEN
+		  	DECLARE id CHARACTER InputRoot.XMLNSC.NVSData.Details.MPAUDIT.MPCARD;
+		  	DECLARE crlf CHARACTER CAST(x'0D0A' AS CHARACTER CCSID 1208);
+		  	DECLARE rEnv REFERENCE TO Environment.Variables;
+			DECLARE rEmail REFERENCE TO OutputRoot;
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'No Condition Matched .....', rEnv);
+			CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+		  	SET rEmail.EmailSubject = 'CASINO max retry count reached';         
+			SET rEmail.EmailContent = 'MPCARD : ' || COALESCE(id, '') ;
+			SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'NCL_EMAILNOTIFICATION_IN';
+			PROPAGATE TO TERMINAL 'out2';
+		  END IF;
+		 RETURN FALSE;  
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE Set_Flag
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET Environment.Variables.AllMessagesRead = 'true';
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE Process_Errors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

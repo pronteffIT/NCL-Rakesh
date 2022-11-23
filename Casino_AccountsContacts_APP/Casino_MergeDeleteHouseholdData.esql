@@ -1,0 +1,112 @@
+
+CREATE COMPUTE MODULE Casino_MergeDeleteHouseholdData_DeleteContactReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.NVSData;
+		DECLARE rDet REFERENCE TO rIn.Details.MPAUDIT;
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		DECLARE bPayload BLOB;
+		DECLARE contactId CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.InputMessage = rIn;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rIn.Metadata.Table,
+											   rIn.Metadata.Channel,
+											   '',
+											   rDet.MPCARD,
+											   '',
+											   rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Household account/contact request message', 'xml', rEnv);
+		END IF;
+
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'create';
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Merge_Clients__c';
+		
+		CREATE FIELD OutputRoot.JSON.Data AS rOut;
+		
+		IF rDet.RCDTYP = 'D' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Deleting household contact ...', rEnv);
+			
+			IF rIn.Metadata.Channel = 'Oceania' THEN
+				SET rOut.OCI_Old_MP_Card__c = rDet.MPCARD; 
+				SET rOut.OCI_Master_MP_Card__c = TRIM(rDet.MERGEMP);
+				SET rOut.Delete_OCI_MP_Card__c = true;
+			ELSE
+				SET rOut.RSSC_Old_MP_Card__c = rDet.MPCARD; 
+				SET rOut.RSSC_Master_MP_Card__c = TRIM(rDet.MERGEMP);
+				SET rOut.Delete_RSSC_MP_Card__c = true;
+			END IF;
+			
+			RETURN TRUE;
+		ELSEIF rDet.RCDTYP = 'M' THEN
+			IF rDet.MPCARD = rDet.MERGEMP THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Same household conatcts cannot be merged ...', rEnv);
+			
+				PROPAGATE TO TERMINAL 'out1';
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Merging household contacts ...', rEnv);
+				
+				IF rIn.Metadata.Channel = 'Oceania' THEN
+					SET rOut.OCI_Old_MP_Card__c = rDet.MPCARD; 
+					SET rOut.OCI_Master_MP_Card__c = TRIM(rDet.MERGEMP);
+					SET rOut.Delete_OCI_MP_Card__c = false;
+				ELSE
+					SET rOut.RSSC_Old_MP_Card__c = rDet.MPCARD; 
+					SET rOut.RSSC_Master_MP_Card__c = TRIM(rDet.MERGEMP);
+					SET rOut.Delete_RSSC_MP_Card__c = false;
+				END IF;
+				
+				RETURN TRUE;
+			END IF;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_MergeDeleteHouseholdData_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+

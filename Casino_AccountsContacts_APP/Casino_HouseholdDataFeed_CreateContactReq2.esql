@@ -1,0 +1,226 @@
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_CreateContactReq2
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut,rOutSoap REFERENCE TO OutputRoot;
+		
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rDet REFERENCE TO rOrgMsg.Details.MPAUDIT;
+		DECLARE rSrchRes REFERENCE TO rEnv.Temp.Message.SearchResponse;
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+		CREATE FIELD OutputRoot.XMLNSC.soap:Envelope AS rOutSoap;
+		SET rOutSoap.soap:Header.urn:SessionHeader.urn:sessionId = SessionId;
+	
+		DECLARE contactId CHARACTER '';
+
+		IF rOrgMsg.Metadata.Table = 'MPAUDIT' THEN
+			MOVE rDet TO rOrgMsg.Details.MPAUDIT;
+		ELSEIF rOrgMsg.Metadata.Table = 'PAX' THEN
+			MOVE rDet TO rOrgMsg.Details.PAX;
+		END IF;
+		
+		IF LENGTH(TRIM(rDet.MPCARD)) > 0 THEN
+			SET contactId = rDet.MPCARD;
+		ELSEIF LENGTH(TRIM(rDet.INVOICE)) > 0 THEN
+			SET contactId = rDet.PAXID || '_' || rDet.INVOICE;
+		END IF;
+		
+		-- saving SFID of household
+		IF LASTMOVE(rIn) THEN
+			SET rEnv.Temp.HouseholdSFId = rIn.Id;
+		END IF;
+		
+		IF rEnv.Temp.ContactSFId = 'No Match Found' OR COALESCE(rEnv.Temp.NewHousehold, '') = 'true' THEN
+			-- insert new contact
+			--SET rOutSoap.soap:Body.urn:create.urn:sObjects	
+			CREATE LASTCHILD OF rOutSoap.soap:Body.urn:create AS rOut NAMESPACE urn NAME 'sObjects';		
+			CREATE LASTCHILD OF rOutSoap.soap:Body.urn:create.urn:sObjects TYPE XMLNSC.NamespaceDecl NAME 'xsi' VALUE 'http://www.w3.org/2001/XMLSchema-instance';
+			CREATE LASTCHILD OF rOutSoap.soap:Body.urn:create.urn:sObjects TYPE XMLNSC.Attribute NAMESPACE xsi_ns NAME 'type' VALUE 'Contact';
+		ELSE
+			-- update existing contact
+			CREATE LASTCHILD OF rOutSoap.soap:Body.urn:update AS rOut NAMESPACE urn NAME 'sObjects';		
+			CREATE LASTCHILD OF rOutSoap.soap:Body.urn:update.urn:sObjects TYPE XMLNSC.NamespaceDecl NAME 'xsi' VALUE 'http://www.w3.org/2001/XMLSchema-instance';
+			CREATE LASTCHILD OF rOutSoap.soap:Body.urn:update.urn:sObjects TYPE XMLNSC.Attribute NAMESPACE xsi_ns NAME 'type' VALUE 'Contact';
+			
+			SET rOut.Id = rEnv.Temp.ContactSFId;
+		END IF;
+		SET rOut.RecordTypeId = ContactRecordType;
+		SET rOut.AccountId = rEnv.Temp.HouseholdSFId;
+		
+		IF COALESCE(rDet.BDATE, '') <> '' THEN
+			SET rOut.Birthdate = CAST(CAST(rDet.BDATE AS DATE FORMAT 'I') AS CHARACTER FORMAT 'yyyy-MM-dd');
+		END IF;
+		
+		-- send the nation code as is from DB
+		IF LENGTH(TRIM(rDet.NATION)) > 0 THEN
+			SET rOut.Citizenship__c = rDet.NATION;
+		END IF;
+		
+		IF LENGTH(TRIM(rDet.FNAME)) > 0 THEN
+			SET rOut.FirstName = rDet.FNAME;
+		END IF;
+		
+		SET rOut.Gender__c = com.ncl.ais.utils.MapGenderFromNVS2SF(TRIM(rDet.SEX));
+		
+		IF LENGTH(TRIM(rDet.LNAME)) > 0 THEN
+			SET rOut.LastName = rDet.LNAME;
+		END IF;
+		
+		IF LENGTH(TRIM(rDet.PREFLANG)) > 0 THEN
+			SET rOut.Preferred_Language__c = rDet.PREFLANG;
+		END IF;
+		
+		IF LENGTH(TRIM(rDet.TITLE)) > 0 THEN
+			SET rOut.Title = rDet.TITLE;
+			SET rOut.Salutation = rDet.TITLE;
+		END IF;
+
+		IF rOrgMsg.Metadata.Source = 'oci' THEN
+			IF LENGTH(TRIM(rDet.EMAIL)) > 0 AND com.ncl.ais.utils.isEmailValid(TRIM(rDet.EMAIL)) THEN
+				SET rOut.OCI_Email__c = rDet.EMAIL;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.CITY)) > 0 THEN
+				SET rOut.OCI_Mailing_City__c = rDet.CITY;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.COUNTRY)) > 0 THEN
+				SET rOut.OCI_Mailing_Country__c = rDet.COUNTRY;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.ADDR1)) > 0 THEN
+				SET rOut.OCI_Mailing_Street__c = rDet.ADDR1 || ' ' || TRIM(rDet.ADDR2);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.STATE)) > 0 THEN
+				SET rOut.OCI_Mailing_State__c = rDet.STATE;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.ZIP)) > 0 THEN
+				SET rOut.OCI_Mailing_Zip_Pincode__c = rDet.ZIP;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.PHONE)) > 0 THEN
+				SET rOut.OCI_Phone__c = rDet.PHONE;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.CNAME)) > 0 AND TRIM(rDet.CNAME) <> 'NONE' THEN
+				SET rOut.OCI_Club_Level__c = rDet.CNAME;
+			END IF;
+			
+			SET rOut.OCI_MP_Card__c = contactId;
+			SET rOut.OCI__c = true;
+			
+			IF rDet.SENDMAIL = 'N' THEN
+				SET rOut.OCI_Mail_Opt_Out__c = true;
+			ELSE
+				SET rOut.OCI_Mail_Opt_Out__c = false;	
+			END IF ;
+			IF SendOptOut THEN
+				IF rDet.PROMOEMAIL = 'N' THEN
+					SET rOut.OCI_Email_Opt_Out__c = true;
+				ELSE
+					SET rOut.OCI_Email_Opt_Out__c = false;	
+				END IF ;
+				
+				IF rDet.PROMOPHONE = 'N' THEN
+					SET rOut.OCI_Do_Not_Call__c = true;
+				ELSE
+					SET rOut.OCI_Do_Not_Call__c = false;	
+				END IF ;
+			END IF;
+			IF rDet.MPSTATUS = 'A' THEN
+				SET rOut.OCI_Classification__c = 'ACTIVE';
+			END IF;
+			-- DECEASED
+			IF rDet.MPSTATUS = 'D' THEN
+				SET rOut.OCI_Classification__c = 'DECEASED';
+				SET rOut.OCI_Email_Opt_Out__c = true;
+				SET rOut.OCI_Do_Not_Call__c = true;
+				SET rOut.OCI_Mail_Opt_Out__c = true;
+			END IF;
+		ELSEIF rOrgMsg.Metadata.Source = 'ssc' THEN
+			IF LENGTH(TRIM(rDet.EMAIL)) > 0 AND com.ncl.ais.utils.isEmailValid(TRIM(rDet.EMAIL)) THEN
+				SET rOut.RSSC_Email__c = rDet.EMAIL;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.CITY)) > 0 THEN
+				SET rOut.RSSC_Mailing_City__c = rDet.CITY;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.COUNTRY)) > 0 THEN
+				SET rOut.RSSC_Mailing_Country__c = rDet.COUNTRY;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.ADDR1)) > 0 THEN
+				SET rOut.RSSC_Mailing_Street__c = rDet.ADDR1 || ' ' || TRIM(rDet.ADDR2);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.STATE)) > 0 THEN
+				SET rOut.RSSC_Mailing_State__c = rDet.STATE;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.ZIP)) > 0 THEN
+				SET rOut.RSSC_Mailing_Zip_Pincode__c = rDet.ZIP;
+			END IF;
+			
+			IF LENGTH(TRIM(rDet.PHONE)) > 0 THEN
+				SET rOut.RSSC_Phone__c = rDet.PHONE;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.CNAME)) > 0 AND TRIM(rDet.CNAME) <> 'NONE' THEN
+				SET rOut.RSSC_Club_Level__c = rDet.CNAME;
+			END IF;
+			
+			SET rOut.RSSC_MP_Card__c = contactId;
+			SET rOut.RSSC__c = true;
+			
+			IF rDet.SENDMAIL = 'N' THEN
+				SET rOut.RSSC_Mail_opt_out__c = true;
+			ELSE
+				SET rOut.RSSC_Mail_opt_out__c = false;	
+			END IF;
+			IF SendOptOut THEN
+				IF rDet.PROMOEMAIL = 'N' THEN
+					SET rOut.RSSC_Email_Opt_Out__c = true;
+				ELSE
+					SET rOut.RSSC_Email_Opt_Out__c = false;	
+				END IF;
+				
+				IF rDet.PROMOPHONE = 'N' THEN
+					SET rOut.RSSC_Do_Not_Call__c = true;
+				ELSE
+					SET rOut.RSSC_Do_Not_Call__c = false;	
+				END IF;
+			END IF;
+			IF rDet.MPSTATUS = 'A' THEN
+				SET rOut.RSSC_Classification__c = 'ACTIVE';
+			END IF;			
+			IF rDet.MPSTATUS = 'D' THEN
+				SET rOut.RSSC_Classification__c = 'DECEASED';
+				SET rOut.RSSC_Mail_opt_out__c = true;
+				SET rOut.RSSC_Email_Opt_Out__c = true;
+				SET rOut.RSSC_Do_Not_Call__c = true;
+			END IF;
+		END IF;
+		--Override the URL
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = SF_LoginUrl;
+		SET OutputLocalEnvironment.Destination.SOAP.Request.Transport.HTTP.WebServiceURL = SF_LoginUrl;				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_HandleFault
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rFault REFERENCE TO InputRoot.SOAP.Body.*:Fault;
+		DECLARE msg CHARACTER;
+		SET msg=InputRoot.SOAP.Body.*:Fault.*:faultstring;
+		THROW USER EXCEPTION MESSAGE 2951 VALUES(rFault.*:faultstring);
+				
+		RETURN TRUE;
+	END;
+	
+END MODULE;

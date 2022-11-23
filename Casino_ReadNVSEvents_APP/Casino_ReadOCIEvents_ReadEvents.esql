@@ -1,0 +1,291 @@
+DECLARE DeleteEvents EXTERNAL BOOLEAN False;
+
+/*
+ * This DatabaseEvent module implements the ESQL code invoked from a DatabaseInput node to handle
+ * events as they move through the states of New->Ready->Dispatched->Complete.
+ *
+ * NOTE: Events that result in unhandled exceptions in the message flow are moved to the Failed
+ * state. "Unhandled" means either that the catch terminal was not wired, or that the catch
+ * terminal threw an exception.  If an exception is unhandled, the transaction is rolled back.
+ * If the exception is handled, even if it is handled on the catch terminal, the transaction is
+ * committed.
+ *
+ * Events are moved to the Failed state after rollback (or after a number of retries, depending 
+ * on the settings on the Retry panel).  Events in the Failed state are propagated to the Failure
+ * terminal.  If they are not handled on the failure terminal, they are discarded.  They are
+ * still in the EventTable, and so are not lost.
+ *
+ * If you are using a database table as your event store, you can convert this template to deployable
+ * code by replacing the substitution strings. Substitution strings in this module are enclosed by
+ * < and > characters.
+ * The following substitution strings are used:
+ *   <MySchemaName>                 - the database schema name.
+ *   <MyEventTableName>             - the database table used as your event store.
+ *   <MyEventTablePrimaryKey>       - the primary key of the database table used as the event store.
+ *   <MyStatusColumnName>           - the name of a column, if you update a column in the event table
+ *                                    to indicate that the event has been processed.
+ *                                    If you delete events from the event table after processing, you
+ *                                    do not need <MyStatusColumnName>.
+ *   <MyNewEventStatusValue>        - the value written to the status column when the event is first
+ *                                    added. You need this only if you use <MyStatusColumnName>.
+ *   <MyProcessedEventStatusValue>  - the value written to the status column after the event has been
+ *                                    processed. You need this only if you use <MyStatusColumnName>.
+ *   <MyApplicationTableName>       - the name of the table that includes the changed data to be processed
+ *                                    by the DatabaseInput node.
+ *   <MyEventTableForeignKey>       - the column in the event table that references the row in the application
+ *                                    table containing the changed data to be processed by the DatabaseInput
+ *                                    node. This is typically the primary key of the application table.
+ *   <MyApplicationTablePrimaryKey> - the primary key of the database table used as the application table.
+ * When you have finished editing the ESQL, set the data source and ESQL module properties on the basic tab
+ * of this node.
+ */
+CREATE DATABASEEVENT MODULE ReadOCIEvents
+
+	/*
+	 * ReadEvents populates the NewEvents structure with event data read from the event table.
+	 * ReadEvents is called after all current events have been dispatched.
+	 * ReadEvents is called on a new transaction that is a separate transaction from the message
+	 * flow, and that runs before the message flow transaction.
+	 *
+	 * After ReadEvents completes:
+	 * - the current transaction is committed to ensure that any database locks obtained during
+	 *   ReadEvents are released.
+	 * - All events in NewEvents are moved to Ready state.  This means that they are ready to be
+	 *   dispatched.
+	 *
+	 * Parameters:
+	 * IN NewEvents REFERENCE.  This is a reference to a ROW. ReadEvents must create children of
+	 *                          this ROW for each event that is being processed.
+	 *                          Each child must include a Usr field and a Key field.
+	 */
+	 CREATE PROCEDURE ReadEvents( IN NewEvents REFERENCE )
+	 BEGIN
+		DECLARE EXIT HANDLER FOR SQLSTATE LIKE 'D%'
+		BEGIN
+			RESIGNAL; /* pass the error back to the node */
+
+			/* To choose to handle Database errors yourself, delete the RESIGNAL statement above
+			 * and uncomment the following procedure call */
+--			CALL HandleDatabaseError('ReadEvents');
+		END;
+
+		/*
+		 * Here you select all unprocessed events from the event store.
+		 * You only read the events here; you delete them in EndEvent.
+		 * In general, it is not good practice to delete or update the events here because this
+		 * transaction will be committed even before the BuildMessage procedure is called.
+		 * Under certain circumstances, for example, if you do not need assured delivery of the
+		 * events, it is acceptable to update or delete the events here. This means that
+		 * the deletion or update is committed before the message flow processes the in-memory
+		 * copies of these events. If the broker, execution group, or message flow is stopped
+		 * or redeployed in the meantime, the in-memory copy is lost, and the events are never
+		 * processed by the flow.
+		 *
+		 * NOTE: You do not need to filter out events that are currently dispatched here.
+		 *       The framework ensures that events are not duplicated by comparing the Key field
+		 *       to the Key field of dispatched events.
+		 */
+
+		/*
+		 * NOTE: Below code is auto generated based on inputs provided on DatabaseInput node ESQL user interface
+		 */
+
+		--@!{ ******************** "ReadEvents" autogenerated code (1) ********************
+		-- Please do not delete the start and end annotation comments if you want the tool to generate code
+		-- for you. Any code that you add or change inside the start and end annotation comments will be lost
+		-- in your next code generation.
+		SET NewEvents.Event[] = SELECT IIB_Events.EVENT_ID AS Key,
+		                        IIB_Events.OBJECT_NM AS Usr.OBJECT_NAME,
+		                        IIB_Events.EVENT_PRIORITY AS Usr.EVENT_PRIORITY,
+		                        IIB_Events.EVENT_STATUS AS Usr.EVENT_STATUS,
+		                        IIB_Events.OBJECT_KEY AS Usr.OBJECT_KEY,
+		                        IIB_Events.EVENT_ID AS Usr.EVENT_ID,
+		                        IIB_Events.OBJECT_VERB AS Usr.OBJECT_VERB,
+		                        IIB_Events.EVENT_TIME AS Usr.EVENT_TIME
+		                        FROM Database.dbo.IIB_Events
+		                        WHERE IIB_Events.EVENT_STATUS = 0;
+		--@!} ******************** "ReadEvents" autogenerated code (1) ********************
+	END;
+
+
+	/*
+	 * BuildMessage builds the message to be propagated to the flow.
+	 * Typically, you use the event data for the current dispatched event to look up data in
+	 * the application table, and copy that data into the message.
+	 * BuildMessage is called while some events are in the Ready state.
+	 * BuildMessage is called as part of the message flow transaction. This transaction also
+	 * involves EndEvent.
+	 *
+	 * After BuildMessage returns, the message is propagated to the message flow.
+	 *
+	 * Parameters:
+	 * IN DispatchedEvent REFERENCE.  A Reference to a ROW containing the event data for the
+	 *                                current dispatched event. This is a copy of one of the 
+	 *                                events added to NewEvents by ReadEvents procedure.
+	 */
+	CREATE PROCEDURE BuildMessage(IN DispatchedEvent REFERENCE)
+	BEGIN
+		DECLARE EXIT HANDLER FOR SQLSTATE LIKE 'D%'
+		BEGIN
+			RESIGNAL; /* pass the error back to the node */
+
+			/* To choose to handle Database errors yourself, delete the RESIGNAL statement above
+			 * and uncomment the following procedure call */
+--			CALL HandleDatabaseError('BuildMessage');
+		END;
+
+		/*
+		 * NOTE: write custom code if required in "BuildMessage" procedure. You can read the data from as many tables as you want
+		 */
+		
+		CREATE LASTCHILD OF Root DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE body REFERENCE TO Root.XMLNSC;
+		DECLARE query CHARACTER '';
+				
+		SET body.NVSData.Metadata.Source = 'oci';
+		SET body.NVSData.Metadata.Action = DispatchedEvent.Usr.OBJECT_VERB;
+		SET body.NVSData.Metadata.Table = UPPER(DispatchedEvent.Usr.OBJECT_NAME);
+		SET body.NVSData.Metadata.Channel = 'Oceania';
+		SET body.NVSData.Metadata.Key = DispatchedEvent.Usr.OBJECT_KEY;
+			
+		IF UPPER(DispatchedEvent.Usr.OBJECT_NAME) = 'MPAUDIT' THEN
+			IF DispatchedEvent.Usr.OBJECT_VERB = 'DELETE' THEN
+				SET body.NVSData.Details.MPAUDIT[] = SELECT MD.RCDTYP, MD.MPCARD, MD.MERGEMP FROM Database.dbo.MPDELETE AS MD WHERE MD.MPCARD = DispatchedEvent.Usr.OBJECT_KEY;
+			ELSE
+				SET query = 'SELECT C.MPCARD, C.SEX, C.LNAME, C.FNAME, C.TITLE, C.NATION, C.BDATE, C.ADDR1, C.ADDR2, C.ADDR3, C.CITY, C.STATE, C.ZIP, ' || 
+									'C.ZIP2, C.COUNTRY, C.PHONE, C.EMAIL, C.EDAYPHONE, C.ENITEPHONE, C.WRKPHONE, C.PHONE2, C.SALESFORCEID, ' ||
+									'UPPER(ISNULL(L.language, C.PREFLANG)) AS PREFLANG, C.HEADFLAG, C.INVOICE, CL.CNAME, C.NCLHID, C.NCLHHOUSEHOLDID, C.SENDMAIL, C.PROMOEMAIL, C.PROMOPHONE,C.MPSTATUS ' ||
+								'FROM dbo.mpaudit AS C ' ||
+									'LEFT JOIN dbo.LANGUAGE AS L ON C.PrefLang = L.ISO2 ' ||
+									'LEFT JOIN dbo.CLUBLEVELS AS CL ON CL.CLEVEL = C.clevel ' ||
+								'WHERE C.mpcard = ?';
+				
+				SET body.NVSData.Details.MPAUDIT[] = PASSTHRU(query VALUES(DispatchedEvent.Usr.OBJECT_KEY));
+			END IF;
+		ELSEIF UPPER(DispatchedEvent.Usr.OBJECT_NAME) = 'PAX' THEN
+			IF DispatchedEvent.Usr.OBJECT_VERB = 'DELETE' THEN
+				SET body.NVSData.Details.PAX.PAXID = DispatchedEvent.Usr.OBJECT_KEY;
+			ELSE				
+				SET query = 'SELECT P.PAXID, P.INVOICE, P.CRUISE, P.PAXNUM, LTRIM(P.MPCARD) AS MPCARD, P.LNAME, P.FNAME, P.BDATE, P.SEX, P.ADDR1, ' ||
+									'P.ADDR2, P.CITY, P.STATE, P.ZIP, P.ZIP2, P.COUNTRY, LTRIM(P.PHONE) AS PHONE, LTRIM(P.EMAIL) AS EMAIL, S.CURR, ' ||
+									'LTRIM(P.EDAYPHONE) AS EDAYPHONE, LTRIM(P.PHONE2) AS PHONE2, UPPER(ISNULL(L.language, P.PREFLANG)) AS PREFLANG, C.DAYS, ' ||
+									'P.TITLE, P.NATION, M.WRKPHONE, M.HEADFLAG, M.NCLHID, M.NCLHHOUSEHOLDID, M.SALESFORCEID ' ||
+								'FROM dbo.pax AS P ' ||
+									'LEFT JOIN dbo.LANGUAGE AS L ON P.PREFLANG = L.ISO2 ' ||
+									'LEFT JOIN dbo.CRUISE AS C ON P.CRUISE = C.CRUISE ' ||
+									'LEFT JOIN dbo.SALES AS S ON S.INVOICE = P.INVOICE ' ||
+									'LEFT JOIN dbo.mpaudit AS M ON M.mpcard = P.MPCARD ' ||
+								'WHERE P.PAXID = ?';
+				
+				SET body.NVSData.Details.PAX[] = PASSTHRU(query VALUES(DispatchedEvent.Usr.OBJECT_KEY));
+			END IF;
+		ELSEIF UPPER(DispatchedEvent.Usr.OBJECT_NAME) = 'SALES' THEN
+				
+			SET query = 'SELECT S.AGENT, SP.AGTCODE, S.INVOICE, S.CRUISE, S.HOME1, S.GATE1, S.DEP1, S.RTN1, S.CLASS1, S.HOME2, S.GATE2, S.DEP2, S.RTN2, S.CLASS2, S.HOME3, ' || 
+								'S.GATE3, S.DEP3, S.RTN3, S.CLASS3, S.HOME4, S.GATE4, S.DEP4, S.RTN4, S.CLASS4, S.HOME5, S.GATE5, S.DEP5, S.RTN5, S.CLASS5, S.HOME6, ' ||
+								'S.GATE6, S.DEP6, S.RTN6, S.CLASS6, S.REPCODE, S.ATTN, S.[STATUS], S.CABIN, S.CONFIRM, S.COMMENTS1, S.COMMENTS2, S.COMMENTS3, C.[DAYS], S.CURR, ' ||
+								'YEAR(C.FMDATE) AS DEPARTYEAR, S.DEP_AMT, S.BAL_DATE, S.PAX, S.PRCODE, R.FULLNAME, C.TODATE, S.SPRICE, S.DIRFLAG, SM.REFCODE, ' ||
+								'S.AIRINCL, S.BAL_AMT, S.SALEDATE, S.CNLDATE, S.TACOMM, S.DEP_DATE, S.GCONTRACT, S.FNAME1, S.FNAME2, S.LNAME1, S.LNAME2, S.OFFICE, ' ||
+								'CL.ABBREV, SO.SOURCE, A.EMAIL, S.USERID ,S.GDS_SYS,D.COUNTRY,D.PHONE1,D.EMAIL AS DIRECT_EMAIL,S.OFFICE,P.PROMO,CL.ABBREV ' ||
+							'FROM SALES AS S ' ||
+ 								'LEFT JOIN dbo.SALEPAX AS SP ON ' ||
+ 									'CASE ' ||
+ 										'WHEN S.COMBOLEG > 1 THEN ' ||
+ 											'S.CINVOICE1 ' ||
+ 										'ELSE ' ||
+ 											'S.INVOICE ' ||
+ 									'END = SP.invoice ' ||
+ 								'LEFT JOIN dbo.CRUISE AS C ON C.CRUISE = S.CRUISE ' ||
+ 								'LEFT JOIN dbo.REPS AS R ON R.REPCODE = S.REPCODE ' ||
+ 								'LEFT JOIN dbo.salemisc AS SM ON SM.invoice = S.INVOICE ' ||
+ 								'LEFT JOIN dbo.CLASS AS CL ON CL.SHIP = LEFT(S.CRUISE, 3) AND (CL.CLASS = S.CLASS OR CL.CLASS = S.PAIDCLASS) ' ||
+ 								'LEFT JOIN dbo.sources AS SO ON SO.SCODE = S.SOURCE ' ||
+ 								'LEFT JOIN dbo.AGENT AS A ON A.AGTCODE = SP.AGTCODE ' ||
+ 								'LEFT JOIN dbo.DIRECT AS D ON D.DCODE = S.AGENT ' ||
+ 								'LEFT JOIN dbo.PROMOS AS P ON P.PRCODE = S.PRCODE ' ||
+							'WHERE S.INVOICE = ?';
+			
+			SET body.NVSData.Details.SALES[] = PASSTHRU(query VALUES(DispatchedEvent.Usr.OBJECT_KEY));
+			
+			SET body.NVSData.Details.SALES.BOOKING = THE(SELECT COUNT(1) FROM Database.dbo.PAYMENT AS P WHERE P.INVOICE = DispatchedEvent.Usr.OBJECT_KEY);
+			
+			-- for KA Amenities
+			SET body.NVSData.Details.SALES.AMENITIES[] = SELECT K.PRAMENCODE FROM Database.dbo.INVPRAMEN AS K 
+																WHERE K.INVOICE = DispatchedEvent.Usr.OBJECT_KEY AND K.PRAMENCODE LIKE 'K%';
+
+		ELSEIF UPPER(DispatchedEvent.Usr.OBJECT_NAME) = 'PAYMENT' THEN
+			SET query = 'SELECT COUNT(P.INVOICE) AS DEPOSITED, MIN(P.PAYDATE) AS DEP_DATE, P.INVOICE, P.CRUISE ' ||
+							'FROM PAYMENT AS P ' ||
+							'WHERE P.INVOICE = (SELECT INVOICE FROM PAYMENT WHERE PAYMENTID = ?) ' ||
+								'GROUP BY P.INVOICE, P.CRUISE';
+			
+			SET body.NVSData.Details.PAYMENT[] = PASSTHRU(query VALUES(DispatchedEvent.Usr.OBJECT_KEY));
+		END IF;
+	
+		/* Here you use the event data in the local environment to retrieve the application data. */
+
+		--@!{ ******************** "BuildMessage" autogenerated code (1) ********************
+		-- Please do not delete the start and end annotation comments if you want the tool to generate code
+		-- for you. Any code that you add or change inside the start and end annotation comments will be lost
+		-- in your next code generation.
+
+		--@!} ******************** "BuildMessage" autogenerated code (1) ********************
+		RETURN;
+	END;
+
+
+	/*
+	 * EndEvent updates the event table to record the event as processed.
+	 * EndEvent is called after the message flow has processed the event.
+	 * EndEvent is called as part of the message flow transaction.  This transaction also involves
+	 * BuildMessage. The transaction will be committed when this procedure ends.
+	 *
+	 * Parameters:
+	 * IN DispatchedEvent REFERENCE.  A Reference to a ROW containing the event data for the current
+	 *                                dispatched event. This is a copy of one of the events added to
+	 *                                NewEvents by ReadEvents procedure.
+	 */
+	CREATE PROCEDURE EndEvent(IN DispatchedEvent REFERENCE)
+	BEGIN
+		DECLARE EXIT HANDLER FOR SQLSTATE LIKE 'D%'
+		BEGIN
+			RESIGNAL; /* pass the error back to the node */
+
+			/* To choose to handle Database errors yourself, delete the RESIGNAL statement above
+			 * and uncomment the following procedure call */
+--			CALL HandleDatabaseError('EndEvent');
+
+		END;
+
+		/*
+		 * Below code is auto generated based on inputs provided on DatabaseInput node ESQL user interface.
+		 * Here you update the event table to ensure that this event is not processed again.
+		 */
+
+		--@!{ ******************** "EndEvent" autogenerated code (1) ********************
+		-- Please do not delete the start and end annotation comments if you want the tool to generate code
+		-- for you. Any code that you add or change inside the start and end annotation comments will be lost
+		-- in your next code generation.
+
+		IF DeleteEvents THEN
+			DELETE FROM Database.dbo.IIB_Events
+					WHERE IIB_Events.EVENT_ID = DispatchedEvent.Usr.EVENT_ID;
+		ELSE
+			UPDATE Database.dbo.IIB_Events
+					SET EVENT_STATUS = 1
+					WHERE IIB_Events.EVENT_ID = DispatchedEvent.Usr.EVENT_ID;
+		END IF;
+				
+		--@!} ******************** "EndEvent" autogenerated code (1) ********************
+		RETURN;
+	END;
+
+
+	CREATE PROCEDURE HandleDatabaseError( IN FunctionName CHARACTER )
+	BEGIN
+		/* Throw a different exception; this could be changed. */
+		DECLARE message CHARACTER 'Exception occured calling Database Input Node function: ' || FunctionName;
+		THROW USER EXCEPTION VALUES( SQLCODE, SQLSTATE, SQLNATIVEERROR, SQLERRORTEXT, message );
+	END;
+
+END MODULE;

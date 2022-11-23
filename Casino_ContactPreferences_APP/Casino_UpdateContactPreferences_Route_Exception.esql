@@ -1,0 +1,21 @@
+
+
+CREATE COMPUTE MODULE Casino_UpdateContactPreferences_Route_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		
+		SET OutputRoot.MQRFH2.usr.ErrorText = rEnv.ErrorSummary.ErrorText;
+		
+		SET OutputRoot.DFDL = InputRoot.DFDL;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

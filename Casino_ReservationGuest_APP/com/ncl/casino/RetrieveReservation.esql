@@ -1,0 +1,44 @@
+BROKER SCHEMA com.ncl.casino
+
+CREATE COMPUTE MODULE RetrieveReservation_SearchReservationReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE sleepRet BOOLEAN; 
+		SET sleepRet = SLEEP(5000); -- waiting for 5 sec before searching for reservation
+		
+		IF sleepRet THEN 
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel,'Searching for existing reservation based on ReservationId (CRUISE-INVOICE) ...', rEnv);
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Reservation_Id__c';
+			--SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Invoice__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rEnv.ReservationId;
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[2].Name = true;
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[3].Sail_Date_From__c = true;
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[4].Sail_Date_To__c = true;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE RetrieveReservation_CheckSearchStaus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		IF EXISTS(InputRoot.JSON.Data.Item[]) THEN
+			SET Environment.Variables.ReservationSFID = COALESCE(InputRoot.JSON.Data.Item.Id, '');
+			SET Environment.Variables.SailDateFrom = COALESCE(InputRoot.JSON.Data.Item.Sail_Date_From__c, '');
+			SET Environment.Variables.SailDateTo = COALESCE(InputRoot.JSON.Data.Item.Sail_Date_To__c, '');
+		ELSE
+			THROW USER EXCEPTION MESSAGE 2951 VALUES('Reservation not found in Salesforce: ' || Environment.Variables.ReservationId);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

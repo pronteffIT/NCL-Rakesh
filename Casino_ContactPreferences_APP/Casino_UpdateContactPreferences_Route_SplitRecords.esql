@@ -1,0 +1,39 @@
+
+
+CREATE COMPUTE MODULE Casino_UpdateContactPreferences_Route_SplitRecords
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.DFDL.ContactPreferences;
+		DECLARE rEnv REFERENCE TO Environment;
+		DECLARE rOut REFERENCE TO OutputRoot.DFDL.ContactPreferences.record;
+		
+		FOR rRec AS rIn.record[] DO
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+			SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+			
+			CREATE FIELD OutputRoot.DFDL.ContactPreferences.record AS rOut;
+			
+			SET rOut = rRec;
+			
+			IF rOut.sfid = '' THEN
+				SET rOut.sfid = ' ';
+			END IF; 
+
+			IF rOut.email_pref = '' THEN
+				SET rOut.email_pref = ' ';
+			END IF; 
+
+			IF rOut.phone_pref = '' THEN
+				SET rOut.phone_pref = ' ';
+			END IF; 
+
+			IF rOut.sendmail_pref = '' THEN
+				SET rOut.sendmail_pref = ' ';
+			END IF; 
+						
+			PROPAGATE;
+		END FOR;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

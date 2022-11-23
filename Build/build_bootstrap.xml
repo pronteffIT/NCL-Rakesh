@@ -1,0 +1,58 @@
+<project name="IIB-CI-BOOTSTRAP" default="bootstrap" basedir=".">
+	<description>IIB Continuous Integration (bootstrap script)</description>
+
+	<property environment="env" />
+	<property name="APP_NAME" value=""/>
+	<property name="INT_SVR" value=""/>
+	<property name="SKIP_OVERRIDE" value=""/>
+	<property name="BUILD_ENV" value=""/>
+
+	<!-- initialize -->
+	<target name="bootstrap_init">
+		<tstamp />
+		<property environment="env" />
+		<!--property name="build.main" value="Build/build_main.xml" /-->
+		<property name="build.main" value="build_main.xml" />
+		<!--property file="Build/build.properties" /-->
+		<property file="build.properties" />
+		<exec executable="id" />
+	</target>
+	
+	<target name="bootstrap" depends="bootstrap_init">
+		<property name="wkspc.owner" value="${user.iib}:${group.iib}" />
+		<property name="wkspc.mode" value="go+rw" />
+		
+		<!-- update workspace permissions -->
+		<!-- https://wiki.jenkins-ci.org/display/JENKINS/Building+a+software+project#Buildingasoftwareproject-JenkinsSetEnvironmentVariables -->
+		<exec executable="sudo">
+			<arg value="-n" />
+			<arg value="sh" />
+			<arg value="-c" />
+			<arg value="chown -R ${wkspc.owner} ${env.WORKSPACE}; chmod -R ${wkspc.mode} ${env.WORKSPACE}" />
+		</exec>
+
+		<!-- call Ant with build_main.xml as another user in a new shell -->
+		<!-- https://ant.apache.org/manual/running.html -->
+		<fileset dir="${ant.library.dir}" id="ant.jar.files">
+			<include name="**/*.jar"/>
+		</fileset>
+
+		<pathconvert pathsep=":" property="jars.ant" refid="ant.jar.files"/>
+		<property name="ext.dirs" value="${iib.install.dir}/common/jdk/lib:${iib.install.dir}/common/jdk/jre/lib/ext" />
+		
+		<property name="args.jvm" value="-cp $CLASSPATH:$MQSI_JREPATH/${jars.ant} -Djava.ext.dirs=${ext.dirs} -Dant.home=${ant.home} ${ant.main.class} -Denv.wrksp=${env.WORKSPACE} -Dapp.name=${APP_NAME} -Dint.svr=${INT_SVR} -Dskip.baroverride=${SKIP_OVERRIDE} -Dbuild.env=${BUILD_ENV}" />
+		
+		<property name="args.ant" value="-f ${build.main}" />
+		<property name="init.env" value=". ${iib.mqsiprofile}" />
+
+		<exec executable="sudo">
+			<arg value="-n" />
+			<arg value="-u" />
+			<arg value="${user.iib}" />
+			<arg value="sh" />
+			<arg value="--login" />
+			<arg value="-c" />
+			<arg value="${init.env}; $MQSI_JREPATH/bin/java ${args.jvm} ${args.ant}" />
+		</exec>
+	</target>
+</project>

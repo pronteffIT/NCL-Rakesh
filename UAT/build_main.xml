@@ -1,0 +1,59 @@
+<project name="IIB-CI-MAIN" default="dev" basedir="..">
+  <description>IIB Continuous Integration(main script)</description>
+	
+	<property name = "app.name" value = ""/>
+	<property name = "env.wrksp" value = ""/>
+	<property name = "iib.svr" value = ""/>
+  <target name="init">
+    <tstamp />
+
+  	<property name = "path.parent" value = "${basedir}"/>
+  	
+  	<property name="path.build" value="UAT" />
+  	<property file="${path.build}/build.properties" />
+  </target>
+
+  <target name="dev" depends="init">
+
+ 	 <!-- Applying Bar Override using Properties File -->
+ 	
+   <exec executable="mqsiapplybaroverride">
+     <arg value="-b" />
+     <arg value="${var.path}UAT/${app.name}_DEV.bar" />
+     <arg value="-p" />
+   	<arg value="${env.wrksp}/BarfileOverrides/UAT/${app.name}_UAT.properties"/>
+	  <arg value="-r" /> 
+	  <arg value="-o" />
+   	<arg value="${var.path}${app.name}_UAT.bar"/>
+   </exec>
+ 	
+ 	 <!-- Deploying Bar files to specific environment-->
+ 	
+   <exec executable="mqsideploy">
+     <arg value="-n" />
+     <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+     <arg value="-e" />
+     <arg value="${iib.svr}" />
+     <arg value="-a" />
+     <arg value="${var.path}${app.name}_UAT.bar" />
+   </exec>
+ 	
+   <exec executable="mqsideploy">
+     <arg value="-n" />
+     <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+     <arg value="-e" />
+     <arg value="${iib.svr}" />
+     <arg value="-a" />
+     <arg value="${var.path}${app.name}_UAT.bar" />
+   </exec>
+ 	
+ 	<!-- Backing up deployed Bar files with Date Time Stamp-->
+ 	
+ 	<copy file="${var.path}${app.name}_UAT.bar" overwrite="true" tofile="${var.path}backup/UAT/${app.name}_UAT.bar_${DSTAMP}${TSTAMP}"/>
+  	
+  	<!--Moving UAT Bar file to PROD folder for deployment-->
+  	
+  	<move file="${var.path}${app.name}_UAT.bar" overwrite="true" tofile="${var.path}PROD/${app.name}_UAT.bar"/>
+
+  	 </target>
+</project>

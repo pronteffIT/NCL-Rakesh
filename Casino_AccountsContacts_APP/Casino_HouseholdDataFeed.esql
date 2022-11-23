@@ -1,0 +1,707 @@
+
+
+DECLARE AccountRecordType EXTERNAL CHARACTER '012E0000000Qjm3';
+DECLARE ContactRecordType EXTERNAL CHARACTER '012E0000000QjmmIAC';
+DECLARE TempAccountRecordType EXTERNAL CHARACTER '001L000000vyJN8';
+DECLARE TempContactRecordType EXTERNAL CHARACTER '003L000000ngEU2';
+DECLARE OCIDB EXTERNAL CHARACTER 'OCINVSDB';
+DECLARE RSSCDB EXTERNAL CHARACTER 'RSSCNVSDB';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE SearchServiceURI EXTERNAL CHARACTER '';
+DECLARE SendOptOut EXTERNAL BOOLEAN True;
+DECLARE hh NAMESPACE 'http://soap.sforce.com/schemas/class/DSHouseholdIdreturn';
+DECLARE urn1 NAMESPACE 'urn:sobject.enterprise.soap.sforce.com';
+DECLARE xsi_ns NAMESPACE 'http://www.w3.org/2001/XMLSchema-instance';
+DECLARE urn NAMESPACE 'urn:enterprise.soap.sforce.com';
+DECLARE REPROCESS_QUEUE EXTERNAL CHARACTER '';
+DECLARE MaxRetries EXTERNAL INTEGER''; 
+
+
+DECLARE SessionId SHARED CHARACTER '';
+DECLARE SessionStart SHARED TIMESTAMP;
+DECLARE SessionValidity SHARED INTEGER;
+DECLARE DomainName SHARED CHARACTER '';
+DECLARE SF_LoginUrl SHARED CHARACTER '';
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_SearchHousehold
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.NVSData;
+		DECLARE rDet REFERENCE TO rIn;
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		DECLARE bPayload BLOB;
+		DECLARE contactId CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.InputMessage = rIn;
+		-- Changes for Retry Process adding input queue details========================
+		SET rEnv.Temp.SourceQueueDetails.SourceQueue = InputRoot.MQMD.SourceQueue;
+		SET rEnv.Temp.SourceQueueDetails.SourceQmgr = TRIM(InputRoot.MQMD.ReplyToQMgr);
+		SET rEnv.Temp.SourceQueueDetails.accountContactRetryCount = InputRoot.MQRFH2.usr.accountContactRetryCount;
+		IF rIn.Metadata.Table = 'MPAUDIT' THEN
+			MOVE rDet TO rIn.Details.MPAUDIT;
+
+			SET contactId = rDet.MPCARD;
+		ELSEIF rIn.Metadata.Table = 'PAX' THEN
+			MOVE rDet TO rIn.Details.PAX;
+
+			SET contactId = rDet.PAXID || rDet.INVOICE;
+		END IF;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rIn.Metadata.Table,
+		rIn.Metadata.Channel,
+		'',
+		contactId,
+		'',
+		rEnv);
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Household account/contact request message', 'xml', rEnv);
+		END IF;
+		--IF TRIM(COALESCE(rDet.NCLHHOUSEHOLDID, '')) <> '' THEN
+		IF CONTAINS(COALESCE(rDet.NCLHHOUSEHOLDID, ''), '#;#') THEN
+			SET rEnv.Temp.HouseholdSFId = rDet.NCLHHOUSEHOLDID;
+			SET rEnv.Temp.ContactSFId = rDet.SALESFORCEID;
+
+			SET rEnv.Temp.SearchWithMpcard = 'true';
+		ELSE
+			IF LENGTH(TRIM(rDet.MPCARD)) > 0 THEN
+				-- get session if expired
+				IF (COALESCE(SessionId, '') = '') OR (CAST((CURRENT_TIMESTAMP - SessionStart) SECOND AS INTEGER) >= SessionValidity) THEN
+					-- add audit trail
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Service call to get session from Salesforce ...', rEnv);
+					-- call login
+					PROPAGATE TO LABEL 'GET_SESSION';
+
+					SET SessionId = rEnv.Temp.SFSessionId;
+					SET SessionStart = CURRENT_TIMESTAMP;
+					SET SessionValidity = rEnv.Temp.SFSessionValidity;
+					SET DomainName = rEnv.Temp.SFDomainName;
+					SET SF_LoginUrl = rEnv.Temp.SFServerUrl;
+				END IF;
+				/*
+				*****=======================*****
+				*/
+				-- added changes for new criteria
+			ELSE 
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invalid MPCARD ...', rEnv);
+				RETURN FALSE;
+				-- added changes for new criteria
+				/*
+				*****=======================*****
+				*/
+			END IF;
+
+			CREATE FIELD OutputRoot.XMLNSC.soap:Envelope AS rOut;
+			SET rOut.soap:Header.hh:SessionHeader.hh:sessionId = SessionId;
+
+			SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:Firstname = rDet.FNAME;
+			SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:Lastname = rDet.LNAME;
+
+			IF LENGTH(TRIM(rDet.EMAIL)) > 0 THEN
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:Email = TRIM(rDet.EMAIL);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.PHONE)) > 0 THEN
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:Phone = TRIM(rDet.PHONE);
+			END IF;
+
+			IF COALESCE(TRIM(rDet.BDATE), '') <> '' THEN
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:DOB = CAST(CAST(rDet.BDATE AS DATE FORMAT 'I') AS CHARACTER FORMAT 'yyyy-MM-dd');
+			END IF;
+
+			IF LENGTH(TRIM(rDet.EDAYPHONE)) > 0 THEN
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:HPhone = TRIM(rDet.EDAYPHONE);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.PHONE2)) > 0 THEN
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:Mobile = TRIM(rDet.PHONE2);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.WRKPHONE)) > 0 THEN
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:WPhone = TRIM(rDet.WRKPHONE);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.MPCARD)) > 0 THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Searching for existing household and contact based on MPCARD ...', rEnv);
+
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:household = rIn.Metadata.Source || LEFT(rDet.MPCARD, 9);
+				SET rOut.soap:Body.hh:searchClientId.hh:clients.hh:clientId = rIn.Metadata.Source || rDet.MPCARD;
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Household account/contact search request', 'xml', rEnv);
+				END IF;
+
+				SET OutputLocalEnvironment.Destination.HTTP.RequestURL = 'https://' || DomainName || SearchServiceURI;
+
+				PROPAGATE TO LABEL 'Search';
+
+				IF COALESCE(rEnv.Temp.HouseholdSFId, 'No Match Found') <> 'No Match Found' AND
+					COALESCE(rEnv.Temp.ContactSFId, 'No Match Found') <> 'No Match Found'
+					THEN
+					SET rEnv.Temp.SearchWithMpcard = 'true';
+				END IF;
+			END IF;
+		END IF;
+
+		IF rIn.Metadata.Table = 'PAX' THEN
+			IF LENGTH(TRIM(rDet.MPCARD)) > 0 THEN
+				/*IF COALESCE(rEnv.Temp.SearchWithMpcard, '') = 'true' THEN
+				PROPAGATE TO TERMINAL 'out1';
+				ELSE
+				RETURN TRUE;
+				END IF;*/
+
+				RETURN TRUE;
+			ELSE
+				SET rEnv.Temp.HouseholdSFId = TempAccountRecordType;
+				SET rEnv.Temp.ContactSFId = TempContactRecordType;
+
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		ELSE
+			RETURN TRUE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_SaveSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:Envelope.*:Body;
+
+		DECLARE cFault CHARACTER '';
+		DECLARE bPayload BLOB;
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Household account/contact search response', 'xml', rEnv);
+		END IF;
+
+		IF EXISTS(rIn.*:Fault[]) THEN
+			THROW USER EXCEPTION VALUES(rIn.*:Fault.*:faultstring);
+		END IF;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+			SET cFault = CAST(InputRoot.BLOB.BLOB AS CHARACTER CCSID 1208);
+			SET cFault = SUBSTRING(SUBSTRING(cFault AFTER '<faultstring>') BEFORE '</faultstring>');
+
+			THROW USER EXCEPTION VALUES(cFault);
+		END IF;
+
+		IF EXISTS(rIn.*:searchClientIdResponse[]) THEN
+			SET rEnv.Temp.HouseholdSFId = rIn.*:searchClientIdResponse.*:result.*:householdId;
+			SET rEnv.Temp.ContactSFId = rIn.*:searchClientIdResponse.*:result.*:clientId;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_ProcessSearchResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		IF rEnv.Temp.HouseholdSFId = 'No Match Found' AND rEnv.Temp.ContactSFId <> 'No Match Found' THEN
+			SET rEnv.Temp.UpdateContact = FALSE;
+		ELSE
+			SET rEnv.Temp.UpdateContact = TRUE;
+		END IF;
+
+		IF rEnv.Temp.HouseholdSFId = 'No Match Found' AND rEnv.Temp.ContactSFId <> 'No Match Found' THEN
+			-- retrieve contact
+			PROPAGATE TO LABEL 'GET_CONTACT';
+			-- insert/update contact
+			PROPAGATE TO TERMINAL 'out1';
+		 ELSEIF rEnv.Temp.HouseholdSFId = 'No Match Found' AND rEnv.Temp.ContactSFId = 'No Match Found' THEN
+		--ELSEIF rEnv.Temp.HouseholdSFId IS NOT NULL AND rEnv.Temp.ContactSFId IS NOT NULL THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Service call to retry service from AccountsContacts ...', rEnv);
+			SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+			SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+
+			IF NOT EXISTS(InputRoot.MQRFH2[]) THEN
+				CREATE NEXTSIBLING OF OutputRoot.MQMD DOMAIN('MQRFH2') NAME 'MQRFH2';
+			END IF;
+
+			SET OutputRoot.MQRFH2.(MQRFH2.Field)Version = 2;
+			SET OutputRoot.MQRFH2.usr.SourceQueue = rEnv.Temp.SourceQueueDetails.SourceQueue;
+			SET OutputRoot.MQRFH2.usr.SourceQmgr = TRIM(rEnv.Temp.SourceQueueDetails.SourceQmgr);
+			-- SET OutputRoot.MQRFH2.usr.ExceptionType = rEvErr.ExceptionType;
+			-- SET OutputRoot.MQRFH2.usr.ErrorText = rEvErr.ErrorText;
+			SET OutputRoot.MQRFH2.usr.accountContactRetryCount = CAST(COALESCE(rEnv.Temp.SourceQueueDetails.accountContactRetryCount, 0) AS INTEGER) + 1;
+			SET OutputRoot.XMLNSC.NVSData = rEnv.Temp.Message.InputMessage;
+
+			IF OutputRoot.MQRFH2.usr.accountContactRetryCount <=  MaxRetries THEN
+				SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = REPROCESS_QUEUE;
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+				
+			ELSE
+				PROPAGATE TO TERMINAL 'out';
+				
+			END IF;
+			
+		ELSE
+			RETURN TRUE;
+		END IF;
+		/*IF rEnv.Temp.UpdateContact THEN
+		RETURN TRUE;
+		ELSE
+		-- retrieve contact
+		PROPAGATE TO LABEL 'GET_CONTACT';
+		-- insert/update contact
+		PROPAGATE TO TERMINAL 'out1';
+		END IF;*/
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_CreateAccountReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rDet REFERENCE TO rOrgMsg;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:Envelope.*:Body;
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		DECLARE cFault, accountId CHARACTER '';
+
+		IF rOrgMsg.Metadata.Table = 'MPAUDIT' THEN
+			MOVE rDet TO rOrgMsg.Details.MPAUDIT;
+		ELSEIF rOrgMsg.Metadata.Table = 'PAX' THEN
+			MOVE rDet TO rOrgMsg.Details.PAX;
+		END IF;
+
+		IF LENGTH(TRIM(rDet.MPCARD)) > 0 THEN
+			SET accountId = LEFT(rDet.MPCARD, 9);
+		ELSEIF LENGTH(TRIM(rDet.INVOICE)) > 0 THEN
+			SET accountId = rDet.INVOICE;
+		END IF;
+
+		CREATE FIELD OutputRoot.JSON.Data AS rOut;
+		--SET OutputLocalEnvironment = InputLocalEnvironment;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Account';
+
+		IF rEnv.Temp.HouseholdSFId = 'No Match Found' THEN
+			-- insert new household
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'create';
+			SET rEnv.Temp.NewHousehold = 'true';
+		ELSE
+			-- update existing household
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';
+			SET rOut.Id = rEnv.Temp.HouseholdSFId;
+		END IF;
+
+		SET rOut.Name = rDet.LNAME;
+		SET rOut.RecordTypeId = AccountRecordType;
+
+		IF rOrgMsg.Metadata.Source = 'oci' THEN
+			IF COALESCE(rDet.HEADFLAG, '') = 'Y' THEN
+				IF LENGTH(TRIM(rDet.CITY)) > 0 THEN
+					SET rOut.OCI_Billing_City__c = rDet.CITY;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.COUNTRY)) > 0 THEN
+					SET rOut.OCI_Billing_Country__c = rDet.COUNTRY;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.ZIP)) > 0 THEN
+					SET rOut.OCI_Billing_Postal_Code__c = rDet.ZIP;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.STATE)) > 0 THEN
+					SET rOut.OCI_Billing_State__c = rDet.STATE;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.ADDR1)) > 0 THEN
+					SET rOut.OCI_Billing_Street__c = rDet.ADDR1 || ' ' || TRIM(rDet.ADDR2);
+				END IF;
+
+				IF LENGTH(rDet.PHONE) > 0 THEN
+					SET rOut.OCI_Phone__c = rDet.PHONE;
+				END IF;
+			END IF;
+
+			SET rOut.OCI_Household_ID__c = accountId;
+			SET rOut.OCI__c = true;
+		ELSEIF rOrgMsg.Metadata.Source = 'ssc' THEN
+			IF COALESCE(rDet.HEADFLAG, '') = 'Y' THEN
+				IF LENGTH(TRIM(rDet.CITY)) > 0 THEN
+					SET rOut.RSSC_Billing_City__c = rDet.CITY;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.COUNTRY)) > 0 THEN
+					SET rOut.RSSC_Billing_Country__c = rDet.COUNTRY;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.ZIP)) > 0 THEN
+					SET rOut.RSSC_Billing_Postal_Code__c = rDet.ZIP;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.STATE)) > 0 THEN
+					SET rOut.RSSC_Billing_State__c = rDet.STATE;
+				END IF;
+
+				IF LENGTH(TRIM(rDet.ADDR1)) > 0 THEN
+					SET rOut.RSSC_Billing_Street__c = rDet.ADDR1 || ' ' || TRIM(rDet.ADDR2);
+				END IF;
+
+				IF LENGTH(rDet.PHONE) > 0 THEN
+					SET rOut.RSSC_Phone__c = rDet.PHONE;
+				END IF;
+			END IF;
+
+			SET rOut.RSSC_Household_ID__c = accountId;
+			SET rOut.RSSC__c = true;
+		END IF;
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Insert/Update of household account ...', rEnv);
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_CreateContactReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rDet REFERENCE TO rOrgMsg.Details.MPAUDIT;
+		DECLARE rSrchRes REFERENCE TO rEnv.Temp.Message.SearchResponse;
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE contactId CHARACTER '';
+
+		IF rOrgMsg.Metadata.Table = 'MPAUDIT' THEN
+			MOVE rDet TO rOrgMsg.Details.MPAUDIT;
+		ELSEIF rOrgMsg.Metadata.Table = 'PAX' THEN
+			MOVE rDet TO rOrgMsg.Details.PAX;
+		END IF;
+
+		IF LENGTH(TRIM(rDet.MPCARD)) > 0 THEN
+			SET contactId = rDet.MPCARD;
+		ELSEIF LENGTH(TRIM(rDet.INVOICE)) > 0 THEN
+			SET contactId = rDet.PAXID || '_' || rDet.INVOICE;
+		END IF;
+		-- saving SFID of household
+		IF LASTMOVE(rIn) THEN
+			SET rEnv.Temp.HouseholdSFId = rIn.Id;
+		END IF;
+		--SET OutputLocalEnvironment = InputLocalEnvironment;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+
+		CREATE FIELD OutputRoot.JSON.Data AS rOut;
+
+		IF rEnv.Temp.ContactSFId = 'No Match Found' OR COALESCE(rEnv.Temp.NewHousehold, '') = 'true' THEN
+			-- insert new contact
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'create';
+		ELSE
+			-- update existing contact
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';
+			SET rOut.Id = rEnv.Temp.ContactSFId;
+		END IF;
+
+		SET rOut.RecordTypeId = ContactRecordType;
+		SET rOut.AccountId = rEnv.Temp.HouseholdSFId;
+
+		IF COALESCE(rDet.BDATE, '') <> '' THEN
+			SET rOut.Birthdate = CAST(CAST(rDet.BDATE AS DATE FORMAT 'I') AS CHARACTER FORMAT 'yyyy-MM-dd');
+		END IF;
+		-- send the nation code as is from DB
+		IF LENGTH(TRIM(rDet.NATION)) > 0 THEN
+			SET rOut.Citizenship__c = rDet.NATION;
+		END IF;
+
+		IF LENGTH(TRIM(rDet.FNAME)) > 0 THEN
+			SET rOut.FirstName = rDet.FNAME;
+		END IF;
+
+		SET rOut.Gender__c = com.ncl.ais.utils.MapGenderFromNVS2SF(TRIM(rDet.SEX));
+
+		IF LENGTH(TRIM(rDet.LNAME)) > 0 THEN
+			SET rOut.LastName = rDet.LNAME;
+		END IF;
+
+		IF LENGTH(TRIM(rDet.PREFLANG)) > 0 THEN
+			SET rOut.Preferred_Language__c = rDet.PREFLANG;
+		END IF;
+
+		IF LENGTH(TRIM(rDet.TITLE)) > 0 THEN
+			SET rOut.Title = rDet.TITLE;
+			SET rOut.Salutation = rDet.TITLE;
+		END IF;
+
+		IF rOrgMsg.Metadata.Source = 'oci' THEN
+			IF LENGTH(TRIM(rDet.EMAIL)) > 0 AND com.ncl.ais.utils.isEmailValid(TRIM(rDet.EMAIL)) THEN
+				SET rOut.OCI_Email__c = rDet.EMAIL;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.CITY)) > 0 THEN
+				SET rOut.OCI_Mailing_City__c = rDet.CITY;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.COUNTRY)) > 0 THEN
+				SET rOut.OCI_Mailing_Country__c = rDet.COUNTRY;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.ADDR1)) > 0 THEN
+				SET rOut.OCI_Mailing_Street__c = rDet.ADDR1 || ' ' || TRIM(rDet.ADDR2);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.STATE)) > 0 THEN
+				SET rOut.OCI_Mailing_State__c = rDet.STATE;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.ZIP)) > 0 THEN
+				SET rOut.OCI_Mailing_Zip_Pincode__c = rDet.ZIP;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.PHONE)) > 0 THEN
+				SET rOut.OCI_Phone__c = rDet.PHONE;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.CNAME)) > 0 AND TRIM(rDet.CNAME) <> 'NONE' THEN
+				SET rOut.OCI_Club_Level__c = rDet.CNAME;
+			END IF;
+
+			SET rOut.OCI_MP_Card__c = contactId;
+			SET rOut.OCI__c = true;
+
+			IF rDet.SENDMAIL = 'N' THEN
+				SET rOut.OCI_Mail_Opt_Out__c = true;
+			ELSE
+				SET rOut.OCI_Mail_Opt_Out__c = false;
+			END IF ;
+			IF SendOptOut THEN
+				IF rDet.PROMOEMAIL = 'N' THEN
+					SET rOut.OCI_Email_Opt_Out__c = true;
+				ELSE
+					SET rOut.OCI_Email_Opt_Out__c = false;
+				END IF ;
+
+				IF rDet.PROMOPHONE = 'N' THEN
+					SET rOut.OCI_Do_Not_Call__c = true;
+				ELSE
+					SET rOut.OCI_Do_Not_Call__c = false;
+				END IF ;
+			END IF;
+			-- DECEASED
+			IF rDet.MPSTATUS = 'D' THEN
+				SET rOut.OCI_Classification__c = 'DECEASED';
+				SET rOut.OCI_Email_Opt_Out__c = true;
+				SET rOut.OCI_Do_Not_Call__c = true;
+				SET rOut.OCI_Mail_Opt_Out__c = true;
+			END IF;
+		ELSEIF rOrgMsg.Metadata.Source = 'ssc' THEN
+			IF LENGTH(TRIM(rDet.EMAIL)) > 0 AND com.ncl.ais.utils.isEmailValid(TRIM(rDet.EMAIL)) THEN
+				SET rOut.RSSC_Email__c = rDet.EMAIL;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.CITY)) > 0 THEN
+				SET rOut.RSSC_Mailing_City__c = rDet.CITY;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.COUNTRY)) > 0 THEN
+				SET rOut.RSSC_Mailing_Country__c = rDet.COUNTRY;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.ADDR1)) > 0 THEN
+				SET rOut.RSSC_Mailing_Street__c = rDet.ADDR1 || ' ' || TRIM(rDet.ADDR2);
+			END IF;
+
+			IF LENGTH(TRIM(rDet.STATE)) > 0 THEN
+				SET rOut.RSSC_Mailing_State__c = rDet.STATE;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.ZIP)) > 0 THEN
+				SET rOut.RSSC_Mailing_Zip_Pincode__c = rDet.ZIP;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.PHONE)) > 0 THEN
+				SET rOut.RSSC_Phone__c = rDet.PHONE;
+			END IF;
+
+			IF LENGTH(TRIM(rDet.CNAME)) > 0 AND TRIM(rDet.CNAME) <> 'NONE' THEN
+				SET rOut.RSSC_Club_Level__c = rDet.CNAME;
+			END IF;
+
+			SET rOut.RSSC_MP_Card__c = contactId;
+			SET rOut.RSSC__c = true;
+
+			IF rDet.SENDMAIL = 'N' THEN
+				SET rOut.RSSC_Mail_opt_out__c = true;
+			ELSE
+				SET rOut.RSSC_Mail_opt_out__c = false;
+			END IF;
+			IF SendOptOut THEN
+				IF rDet.PROMOEMAIL = 'N' THEN
+					SET rOut.RSSC_Email_Opt_Out__c = true;
+				ELSE
+					SET rOut.RSSC_Email_Opt_Out__c = false;
+				END IF;
+
+				IF rDet.PROMOPHONE = 'N' THEN
+					SET rOut.RSSC_Do_Not_Call__c = true;
+				ELSE
+					SET rOut.RSSC_Do_Not_Call__c = false;
+				END IF;
+			END IF;
+			IF rDet.MPSTATUS = 'D' THEN
+				SET rOut.RSSC_Classification__c = 'DECEASED';
+				SET rOut.RSSC_Mail_opt_out__c = true;
+				SET rOut.RSSC_Email_Opt_Out__c = true;
+				SET rOut.RSSC_Do_Not_Call__c = true;
+			END IF;
+		END IF;
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Insert/Update of household contact ...', rEnv);
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_UpdateTribandId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rDet REFERENCE TO rOrgMsg.Details.MPAUDIT;
+		DECLARE rIn REFERENCE TO InputRoot.SOAP.Body.*:updateResponse;
+
+		DECLARE DSN CHARACTER '';
+
+		IF EXISTS(rIn.*:result[]) THEN
+			SET rEnv.Temp.ContactSFId = rIn.*:result.*:id;
+			IF rOrgMsg.Metadata.Table = 'MPAUDIT' THEN
+				-- update SFID's of account and contact in NVS
+				--IF TRIM(COALESCE(rDet.NCLHHOUSEHOLDID, '')) = '' THEN
+				IF rOrgMsg.Metadata.Source = 'oci' THEN
+					SET DSN = OCIDB;
+				ELSE
+					SET DSN = RSSCDB;
+				END IF;
+
+				UPDATE Database.{DSN}.dbo.mpaudit AS M
+				SET NCLHHOUSEHOLDID = rEnv.Temp.HouseholdSFId, SALESFORCEID = rEnv.Temp.ContactSFId
+				WHERE M.MPCARD = rDet.MPCARD;
+				--END IF;
+				--IF TRIM(COALESCE(rDet.NCLHID, '')) = '' THEN
+				PROPAGATE TO LABEL 'TRIBRAND';
+				--END IF;
+			ELSEIF rOrgMsg.Metadata.Table = 'PAX' THEN
+				-- create output message for reservation guest
+				SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+
+				SET OutputRoot.XMLNSC.NVSData = rOrgMsg;
+				SET OutputRoot.XMLNSC.NVSData.Details.PAX.HouseholdSFId = rEnv.Temp.HouseholdSFId;
+				SET OutputRoot.XMLNSC.NVSData.Details.PAX.ContactSFId = rEnv.Temp.ContactSFId;
+
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_Temp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET OutputRoot.XMLNSC.Exception = InputExceptionList;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE Casino_HouseholdDataFeed_LogTribandId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rDet REFERENCE TO rOrgMsg.Details.MPAUDIT;
+		DeCLARE cQuery CHARACTER '';
+
+		IF (NOT EXISTS(InputRoot.JSON.Data[])) OR COALESCE(InputRoot.JSON.Data.Id,'') = '' THEN
+			SET rEnv.Temp.ContactSFId = InputRoot.JSON.Data.Id;
+
+			IF rOrgMsg.Metadata.Table = 'MPAUDIT' THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Updating Tribrand Id in seaware table for NVS ...', rEnv);
+				-- delete the entry from log table if present
+				SET rEnv.db.result[] = SELECT L.CLIENT_ID, L.CREATED_DAT FROM Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG AS L
+				WHERE L.CLIENT_ID = rEnv.ClientId AND L.COMPANY_CD = rOrgMsg.Metadata.Source;
+
+				IF EXISTS(rEnv.db.result[]) THEN
+					SET cQuery = 'UPDATE NCLSEA.NCL_CLIENT_SF_SYNC_LOG ' ||
+					'SET MODIFIED_DAT = sysdate, ' ||
+					'CREATED_DAT = ? ' ||
+					'WHERE CLIENT_ID = ? AND COMPANY_CD = ?';
+					SET rEnv.db.result = PASSTHRU(cQuery VALUES(rEnv.db.result.CREATED_DAT, rEnv.ClientId, rOrgMsg.Metadata.Source));
+				ELSE
+					INSERT INTO Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG(CLIENT_ID, COMPANY_CD) VALUES(rEnv.ClientId, rOrgMsg.Metadata.Source);
+				END IF;
+
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		ELSE
+			IF rOrgMsg.Metadata.Table = 'MPAUDIT' THEN
+				DELETE FROM Database.NCLSEA.NCL_CLIENT_SF_SYNC_LOG AS L WHERE L.CLIENT_ID = rEnv.ClientId AND L.COMPANY_CD = rOrgMsg.Metadata.Source ;
+			END IF;
+		END IF;
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:csv="http://www.ibm.com/dfdl/CommaSeparatedFormat" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+
+
+    <xsd:import namespace="http://www.ibm.com/dfdl/CommaSeparatedFormat" schemaLocation="../../../../IBMdefined/CommaSeparatedFormat.xsd"/>
+    <xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format documentFinalTerminatorCanBeMissing="yes" encoding="{$dfdl:encoding}" escapeSchemeRef="csv:CSVEscapeScheme" ref="csv:CommaSeparatedFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+
+	<xsd:element ibmSchExtn:docRoot="true" name="AppConnectJobs">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="">
+				<xsd:element dfdl:terminator="%NL;%WSP*;" name="header">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element ibmDfdlExtn:sampleValue="DeviceIP" name="DeviceIP" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="projectName" name="projectName" type="xsd:string"/>							
+							<xsd:element ibmDfdlExtn:sampleValue="projectVersion" name="projectVersion" type="xsd:string"/>							
+                            <xsd:element ibmDfdlExtn:sampleValue="projectState" name="projectState" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="orchestrationName" name="orchestrationName" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="orchState" name="orchState" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="maxJobs" name="maxJobs" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>			
+				<xsd:element dfdl:occursCountKind="implicit" dfdl:terminator="%NL;%WSP*;" maxOccurs="unbounded" name="record">
+					<xsd:complexType>
+						<xsd:sequence> 
+							<xsd:element default="" ibmDfdlExtn:sampleValue="value1" name="DeviceIP" type="xsd:string"/>
+							<xsd:element default="" ibmDfdlExtn:sampleValue="value2" name="projectName" type="xsd:string"/>
+							<xsd:element default="" ibmDfdlExtn:sampleValue="value3" name="projectVersion" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="value4" name="projectState" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="value5" name="orchestrationName" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="value6" name="orchState" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="value7" name="maxJobs" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>				
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+
+
+
+</xsd:schema>

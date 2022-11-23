@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFlowOrder.msgnode="ComIbmFlowOrder.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:com_ibm_connector_salesforce_ComIbmRequest.msgnode="com/ibm/connector/salesforce/ComIbmRequest.msgnode" xmlns:com_ncl_ais_utils_SendMessageForReprocess.subflow="com/ncl/ais/utils/SendMessageForReprocess.subflow" xmlns:com_ncl_iib_NCL_ErrorHandler.subflow="com/ncl/iib/NCL_ErrorHandler.subflow"
+    xmlns:com_ncl_iib_NCL_Logging.subflow="com/ncl/iib/NCL_Logging.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="Casino_UpdateReservationInSalesforce.msgflow" nsPrefix="Casino_UpdateReservationInSalesforce.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LogPayload" name="LogPayload" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="Casino_UpdateReservationInSalesforce" bundleName="Casino_UpdateReservationInSalesforce" pluginId="Casino_UpdateReservation_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_UpdateReservation_APP/icons/full/obj16/Casino_UpdateReservationInSalesforce.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_UpdateReservation_APP/icons/full/obj30/Casino_UpdateReservationInSalesforce.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_12" location="474,181" computeExpression="esql://routine/#Casino_UpdateReservationInSalesforce_UpsertReservationReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="UpdateResReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_14" location="577,182" connectorName="iib-salesforce-connector" url="https://cs3.salesforce.com" operation="retrieve" object="Account1" securityIdentity="NCLSF" timeoutMilliseconds="120000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="UpdateReservation"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_18" location="214,71" computeExpression="esql://routine/#Common_Exception.Main">
+        <translation xmi:type="utility:ConstantString" string="Exception"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_19" location="45,176" queueName="CASINO_UPDATE_RESERVATION_IN" messageDomainProperty="JSON" logicalOrder="false" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="CASINO_UPDATE_RESERVATION_IN"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_20" location="250,176" computeExpression="esql://routine/#Casino_UpdateReservationInSalesforce_LookupObjects.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="LookupResReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_21" location="350,177" connectorName="iib-salesforce-connector" url="https://cs3.salesforce.com" operation="retrieve" object="Reservation__c" securityIdentity="NCLSF" timeoutMilliseconds="1200000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="LookupReservation"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFlowOrder.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="299,72">
+        <translation xmi:type="utility:ConstantString" string="Flow Order"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_utils_SendMessageForReprocess.subflow:FCMComposite_1" xmi:id="FCMComposite_1_4" location="377,37">
+        <translation xmi:type="utility:ConstantString" string="SendMessageForReprocess"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_Logging.subflow:FCMComposite_1" xmi:id="FCMComposite_1_5" location="666,107">
+        <translation xmi:type="utility:ConstantString" string="NCL_Logging"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_ErrorHandler.subflow:FCMComposite_1" xmi:id="FCMComposite_1_6" location="400,107">
+        <translation xmi:type="utility:ConstantString" string="NCL_ErrorHandler"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_19" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_20" targetNode="FCMComposite_1_20" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.second" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_21" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_12" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_14" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_12" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_12" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.first" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.Input"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LogPayload">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.LogPayload" bundleName="Casino_UpdateReservationInSalesforce" pluginId="Casino_UpdateReservation_APP"/>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

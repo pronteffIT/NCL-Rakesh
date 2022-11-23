@@ -1,0 +1,2110 @@
+<?xml version="1.0" encoding="UTF-8"?><!--Salesforce.com Enterprise Web Services API Version 53.0
+Generated on 2021-11-22 18:22:26 +0000.
+
+Package Versions:
+Profile2PermSet (Version: 2.28, Namespace: profile2permset)
+Fonteva Services (Version: 122.1, Namespace: fdservice)
+DomoReporting (Version: 1.0, Namespace: domo_inc)
+B2B Marketing Analytics (Version: 1.9, Namespace: b2bmanalytics)
+Fonteva Version Services (Version: 90.1, Namespace: fds19r1)
+Fonteva Lighting Bolt Template (Version: 90.0, Namespace: fontevacom)
+SalesforceIQ Inbox (Version: 2.0, Namespace: relateiq)
+Salesforce Connected Apps (Version: 1.7, Namespace: sf_com_apps)
+Salesforce and Chatter Apps (Version: 1.20, Namespace: sf_chttr_apps)
+AES SFDC Connector (Version: 1.82, Namespace: aes_cntr)
+Fonteva Reports (Version: 90.0, Namespace: fontevareports)
+SalesforceIQ Cloud (Version: 1.0, Namespace: siqcloud)
+Rapid Order Entry (Version: 121.0, Namespace: roeapi)
+Fonteva Version Services (Version: 127.2, Namespace: fds19r2)
+Salesforce for Google AdWords (Version: 166.1, Namespace: sfga)
+Pardot (Version: 4.81, Namespace: pi)
+SalesforceA Connected Apps (Version: 1.1, Namespace: sfadminapps)
+Lightning Lens (Version: 128.5, Namespace: lte)
+Avaya Connector (Version: 2.7, Namespace: avayaconnector)
+Fonteva1 (Version: 120.0, Namespace: fonteva1)
+Fonteva Version Services (Version: 3.6, Namespace: fds19r1a)
+Marketing Calendar Free (Version: 1.15, Namespace: marketing_cal)
+Price Rules Manager (Version: 90.0, Namespace: priceapi)
+Field Footprint (Version: 2.8, Namespace: footprint)
+Sortable Datagrid (Version: 3.36, Namespace: sortablegrid)
+Sales Insights (Version: 1.0, Namespace: oiq)
+Tableau Viz Lightning Web Component (Version: 1.2, Namespace: tab)
+SCS Connected App (Version: 1.0, Namespace: scsconnectedapp)
+One Click Event (Version: 2.8, Namespace: oneclick)
+Magic Mover for Notes and Attachments (Version: 4.15, Namespace: lexmagicmover)
+Fonteva Version Services (Version: 7.3, Namespace: fdsspr20)
+AES_SFConnector (Version: 2.27, Namespace: aes_sfconnector)
+DocuSign eSignature for Salesforce (Version: 7.4, Namespace: dsfs)
+Field Trip (Version: 2.10, Namespace: field_trip)
+Spark (Version: 124.6, Namespace: framework)
+DonorNation (Version: 90.0, Namespace: donorapi)
+Charge (Version: 124.4, Namespace: orderapi)
+Assemble (Version: 122.1, Namespace: eventapi)
+b2bmaIntegration (Version: 1.6, Namespace: b2bma)
+KeyStore (Version: 120.3, Namespace: keystore)
+DialogTech (Version: 1.8, Namespace: ibp)
+SocialCustomerService (Version: 2.1, Namespace: socialservice)
+Engage - Member Community (Version: 120.2, Namespace: cpbase)
+Engage (Version: 121.0, Namespace: pagesapi)
+CTU: Clone This User (Version: 1.1, Namespace: ctu)
+
+Copyright 1999-2021 salesforce.com, inc.
+All Rights Reserved--><definitions xmlns="http://schemas.xmlsoap.org/wsdl/" targetNamespace="urn:enterprise.soap.sforce.com" xmlns:ens="urn:sobject.enterprise.soap.sforce.com" xmlns:fns="urn:fault.enterprise.soap.sforce.com" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="urn:enterprise.soap.sforce.com" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <documentation>
+    <appinfo source="WMQI_APPINFO">
+      <MRWSDLAppInfo imported="true">
+        <generatedXSD location="Enterprisewsdl_InlineSchema2.xsd"/>
+        <generatedXSD location="Enterprisewsdl_InlineSchema1.xsd"/>
+        <generatedXSD location="Enterprisewsdl_InlineSchema3.xsd"/>
+        <binding hasEncoding="false" imported="true" name="SoapBinding" originalBindingStyle="document"/>
+      </MRWSDLAppInfo>
+    </appinfo>
+  </documentation>
+  <types>
+    
+    
+    
+          <schema xmlns="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="urn:enterprise.soap.sforce.com" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+<import namespace="urn:sobject.enterprise.soap.sforce.com" schemaLocation="Enterprisewsdl_InlineSchema1.xsd"/>
+<!--Our simple ID Type--><!--Compound datatype: Address--><!--Compound datatype: Location--><!--Shared Result Types--><!--Search Result--><!--Common name-value pair--><!--GetUpdated Result--><!--GetDeleted Result--><!--InvalidateSessions Result--><!--These are the extension code to provide additional error information--><!--this is a subset of properties for each SObject that is returned by the describeGlobal call--><!--Login Message Types--><!--Describe Message Types--><!--DescibeSObjects Message Types--><!--Describe Global Message Types--><!--Describe Global Theme Types--><!--Describe Theme Types--><!--Describe Data Category Groups Message Types--><!--Describe Knowledge Settings--><!--Create Message Types--><!--Send Email Types--><!--Template Merge--><!--RenderStoredEmailTemplate--><!--Send Email Message Types--><!--Update Message Types--><!--Upsert Message Types--><!--Merge Message Types--><!--Delete Message Types--><!--DeleteByExample Message Types--><!--Undelete Message Types--><!--UpdateSettings Message Types--><!--EmptyRecycleBin Message Types--><!--Process Message Types--><!--Perform Action Message Types--><!--Retrieve (ID List) Message Types--><!--Convert Lead Message Types--><!--Get Updated Message Types--><!--Get Deleted Message Types--><!--Logout current session--><!--Invalidate a list of session ids--><!--Create Query--><!--Create Query All--><!--Next Batch of sObjects from a query--><!--Create Search--><!--Header Elements--><!--ideally this could of just been elem name="..." type="xsd:boolean"
+                 but is required to be nested within a complexType for .NET 1.1 compatibility--><xsd:include schemaLocation="Enterprisewsdl_InlineSchema2.xsd"/>
+    </schema>
+        <schema xmlns="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="urn:sobject.enterprise.soap.sforce.com">
+<import namespace="urn:enterprise.soap.sforce.com" schemaLocation="Enterprisewsdl_InlineSchema2.xsd"/>
+<!--Base sObject (abstract)--><xsd:include schemaLocation="Enterprisewsdl_InlineSchema1.xsd"/>
+    </schema>
+        <schema xmlns="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="urn:fault.enterprise.soap.sforce.com" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+<import namespace="urn:enterprise.soap.sforce.com" schemaLocation="Enterprisewsdl_InlineSchema2.xsd"/>
+<!--For convenience these QNames are returned in the standard soap faultcode element--><!--Fault--><xsd:include schemaLocation="Enterprisewsdl_InlineSchema3.xsd"/>
+    </schema>
+    </types>
+  <!--Header Message-->
+  <message name="Header">
+    <part element="tns:LoginScopeHeader" name="LoginScopeHeader"/>
+    <part element="tns:SessionHeader" name="SessionHeader"/>
+    <part element="tns:QueryOptions" name="QueryOptions"/>
+    <part element="tns:AssignmentRuleHeader" name="AssignmentRuleHeader"/>
+    <part element="tns:AllowFieldTruncationHeader" name="AllowFieldTruncationHeader"/>
+    <part element="tns:AllOrNoneHeader" name="AllOrNoneHeader"/>
+    <part element="tns:CurrencyConversionHeader" name="CurrencyConversionHeader"/>
+    <part element="tns:DuplicateRuleHeader" name="DuplicateRuleHeader"/>
+    <part element="tns:DisableFeedTrackingHeader" name="DisableFeedTrackingHeader"/>
+    <part element="tns:StreamingEnabledHeader" name="StreamingEnabledHeader"/>
+    <part element="tns:MruHeader" name="MruHeader"/>
+    <part element="tns:EmailHeader" name="EmailHeader"/>
+    <part element="tns:UserTerritoryDeleteHeader" name="UserTerritoryDeleteHeader"/>
+    <part element="tns:DebuggingHeader" name="DebuggingHeader"/>
+    <part element="tns:PackageVersionHeader" name="PackageVersionHeader"/>
+    <part element="tns:DebuggingInfo" name="DebuggingInfo"/>
+    <part element="tns:LimitInfoHeader" name="LimitInfoHeader"/>
+    <part element="tns:LocaleOptions" name="LocaleOptions"/>
+    <part element="tns:OwnerChangeOptions" name="OwnerChangeOptions"/>
+  </message>
+  <!--Fault Messages-->
+  <message name="ApiFault">
+    <part element="fns:fault" name="fault"/>
+  </message>
+  <message name="LoginFault">
+    <part element="fns:LoginFault" name="fault"/>
+  </message>
+  <message name="InvalidQueryLocatorFault">
+    <part element="fns:InvalidQueryLocatorFault" name="fault"/>
+  </message>
+  <message name="InvalidNewPasswordFault">
+    <part element="fns:InvalidNewPasswordFault" name="fault"/>
+  </message>
+  <message name="InvalidOldPasswordFault">
+    <part element="fns:InvalidOldPasswordFault" name="fault"/>
+  </message>
+  <message name="InvalidIdFault">
+    <part element="fns:InvalidIdFault" name="fault"/>
+  </message>
+  <message name="UnexpectedErrorFault">
+    <part element="fns:UnexpectedErrorFault" name="fault"/>
+  </message>
+  <message name="InvalidFieldFault">
+    <part element="fns:InvalidFieldFault" name="fault"/>
+  </message>
+  <message name="InvalidSObjectFault">
+    <part element="fns:InvalidSObjectFault" name="fault"/>
+  </message>
+  <message name="MalformedQueryFault">
+    <part element="fns:MalformedQueryFault" name="fault"/>
+  </message>
+  <message name="MalformedSearchFault">
+    <part element="fns:MalformedSearchFault" name="fault"/>
+  </message>
+  <!--Method Messages-->
+  <message name="loginRequest">
+    <part element="tns:login" name="parameters"/>
+  </message>
+  <message name="loginResponse">
+    <part element="tns:loginResponse" name="parameters"/>
+  </message>
+  <message name="describeSObjectRequest">
+    <part element="tns:describeSObject" name="parameters"/>
+  </message>
+  <message name="describeSObjectResponse">
+    <part element="tns:describeSObjectResponse" name="parameters"/>
+  </message>
+  <message name="describeSObjectsRequest">
+    <part element="tns:describeSObjects" name="parameters"/>
+  </message>
+  <message name="describeSObjectsResponse">
+    <part element="tns:describeSObjectsResponse" name="parameters"/>
+  </message>
+  <message name="describeGlobalRequest">
+    <part element="tns:describeGlobal" name="parameters"/>
+  </message>
+  <message name="describeGlobalResponse">
+    <part element="tns:describeGlobalResponse" name="parameters"/>
+  </message>
+  <message name="describeDataCategoryGroupsRequest">
+    <part element="tns:describeDataCategoryGroups" name="parameters"/>
+  </message>
+  <message name="describeDataCategoryGroupsResponse">
+    <part element="tns:describeDataCategoryGroupsResponse" name="parameters"/>
+  </message>
+  <message name="describeDataCategoryGroupStructuresRequest">
+    <part element="tns:describeDataCategoryGroupStructures" name="parameters"/>
+  </message>
+  <message name="describeDataCategoryGroupStructuresResponse">
+    <part element="tns:describeDataCategoryGroupStructuresResponse" name="parameters"/>
+  </message>
+  <message name="describeDataCategoryMappingsRequest">
+    <part element="tns:describeDataCategoryMappings" name="parameters"/>
+  </message>
+  <message name="describeDataCategoryMappingsResponse">
+    <part element="tns:describeDataCategoryMappingsResponse" name="parameters"/>
+  </message>
+  <message name="describeKnowledgeSettingsRequest">
+    <part element="tns:describeKnowledgeSettings" name="parameters"/>
+  </message>
+  <message name="describeKnowledgeSettingsResponse">
+    <part element="tns:describeKnowledgeSettingsResponse" name="parameters"/>
+  </message>
+  <message name="describeAppMenuRequest">
+    <part element="tns:describeAppMenu" name="parameters"/>
+  </message>
+  <message name="describeAppMenuResponse">
+    <part element="tns:describeAppMenuResponse" name="parameters"/>
+  </message>
+  <message name="describeGlobalThemeRequest">
+    <part element="tns:describeGlobalTheme" name="parameters"/>
+  </message>
+  <message name="describeGlobalThemeResponse">
+    <part element="tns:describeGlobalThemeResponse" name="parameters"/>
+  </message>
+  <message name="describeThemeRequest">
+    <part element="tns:describeTheme" name="parameters"/>
+  </message>
+  <message name="describeThemeResponse">
+    <part element="tns:describeThemeResponse" name="parameters"/>
+  </message>
+  <message name="describeLayoutRequest">
+    <part element="tns:describeLayout" name="parameters"/>
+  </message>
+  <message name="describeLayoutResponse">
+    <part element="tns:describeLayoutResponse" name="parameters"/>
+  </message>
+  <message name="describeSoftphoneLayoutRequest">
+    <part element="tns:describeSoftphoneLayout" name="parameters"/>
+  </message>
+  <message name="describeSoftphoneLayoutResponse">
+    <part element="tns:describeSoftphoneLayoutResponse" name="parameters"/>
+  </message>
+  <message name="describeSearchLayoutsRequest">
+    <part element="tns:describeSearchLayouts" name="parameters"/>
+  </message>
+  <message name="describeSearchLayoutsResponse">
+    <part element="tns:describeSearchLayoutsResponse" name="parameters"/>
+  </message>
+  <message name="describeSearchableEntitiesRequest">
+    <part element="tns:describeSearchableEntities" name="parameters"/>
+  </message>
+  <message name="describeSearchableEntitiesResponse">
+    <part element="tns:describeSearchableEntitiesResponse" name="parameters"/>
+  </message>
+  <message name="describeSearchScopeOrderRequest">
+    <part element="tns:describeSearchScopeOrder" name="parameters"/>
+  </message>
+  <message name="describeSearchScopeOrderResponse">
+    <part element="tns:describeSearchScopeOrderResponse" name="parameters"/>
+  </message>
+  <message name="describeCompactLayoutsRequest">
+    <part element="tns:describeCompactLayouts" name="parameters"/>
+  </message>
+  <message name="describeCompactLayoutsResponse">
+    <part element="tns:describeCompactLayoutsResponse" name="parameters"/>
+  </message>
+  <message name="describePathAssistantsRequest">
+    <part element="tns:describePathAssistants" name="parameters"/>
+  </message>
+  <message name="describePathAssistantsResponse">
+    <part element="tns:describePathAssistantsResponse" name="parameters"/>
+  </message>
+  <message name="describeApprovalLayoutRequest">
+    <part element="tns:describeApprovalLayout" name="parameters"/>
+  </message>
+  <message name="describeApprovalLayoutResponse">
+    <part element="tns:describeApprovalLayoutResponse" name="parameters"/>
+  </message>
+  <message name="describeSoqlListViewsRequest">
+    <part element="tns:describeSoqlListViews" name="parameters"/>
+  </message>
+  <message name="describeSoqlListViewsResponse">
+    <part element="tns:describeSoqlListViewsResponse" name="parameters"/>
+  </message>
+  <message name="executeListViewRequest">
+    <part element="tns:executeListView" name="parameters"/>
+  </message>
+  <message name="executeListViewResponse">
+    <part element="tns:executeListViewResponse" name="parameters"/>
+  </message>
+  <message name="describeSObjectListViewsRequest">
+    <part element="tns:describeSObjectListViews" name="parameters"/>
+  </message>
+  <message name="describeSObjectListViewsResponse">
+    <part element="tns:describeSObjectListViewsResponse" name="parameters"/>
+  </message>
+  <message name="describeTabsRequest">
+    <part element="tns:describeTabs" name="parameters"/>
+  </message>
+  <message name="describeTabsResponse">
+    <part element="tns:describeTabsResponse" name="parameters"/>
+  </message>
+  <message name="describeAllTabsRequest">
+    <part element="tns:describeAllTabs" name="parameters"/>
+  </message>
+  <message name="describeAllTabsResponse">
+    <part element="tns:describeAllTabsResponse" name="parameters"/>
+  </message>
+  <message name="describePrimaryCompactLayoutsRequest">
+    <part element="tns:describePrimaryCompactLayouts" name="parameters"/>
+  </message>
+  <message name="describePrimaryCompactLayoutsResponse">
+    <part element="tns:describePrimaryCompactLayoutsResponse" name="parameters"/>
+  </message>
+  <message name="createRequest">
+    <part element="tns:create" name="parameters"/>
+  </message>
+  <message name="createResponse">
+    <part element="tns:createResponse" name="parameters"/>
+  </message>
+  <message name="updateRequest">
+    <part element="tns:update" name="parameters"/>
+  </message>
+  <message name="updateResponse">
+    <part element="tns:updateResponse" name="parameters"/>
+  </message>
+  <message name="upsertRequest">
+    <part element="tns:upsert" name="parameters"/>
+  </message>
+  <message name="upsertResponse">
+    <part element="tns:upsertResponse" name="parameters"/>
+  </message>
+  <message name="mergeRequest">
+    <part element="tns:merge" name="parameters"/>
+  </message>
+  <message name="mergeResponse">
+    <part element="tns:mergeResponse" name="parameters"/>
+  </message>
+  <message name="deleteRequest">
+    <part element="tns:delete" name="parameters"/>
+  </message>
+  <message name="deleteResponse">
+    <part element="tns:deleteResponse" name="parameters"/>
+  </message>
+  <message name="undeleteRequest">
+    <part element="tns:undelete" name="parameters"/>
+  </message>
+  <message name="undeleteResponse">
+    <part element="tns:undeleteResponse" name="parameters"/>
+  </message>
+  <message name="emptyRecycleBinRequest">
+    <part element="tns:emptyRecycleBin" name="parameters"/>
+  </message>
+  <message name="emptyRecycleBinResponse">
+    <part element="tns:emptyRecycleBinResponse" name="parameters"/>
+  </message>
+  <message name="retrieveRequest">
+    <part element="tns:retrieve" name="parameters"/>
+  </message>
+  <message name="retrieveResponse">
+    <part element="tns:retrieveResponse" name="parameters"/>
+  </message>
+  <message name="processRequest">
+    <part element="tns:process" name="parameters"/>
+  </message>
+  <message name="processResponse">
+    <part element="tns:processResponse" name="parameters"/>
+  </message>
+  <message name="convertLeadRequest">
+    <part element="tns:convertLead" name="parameters"/>
+  </message>
+  <message name="convertLeadResponse">
+    <part element="tns:convertLeadResponse" name="parameters"/>
+  </message>
+  <message name="logoutRequest">
+    <part element="tns:logout" name="parameters"/>
+  </message>
+  <message name="logoutResponse">
+    <part element="tns:logoutResponse" name="parameters"/>
+  </message>
+  <message name="invalidateSessionsRequest">
+    <part element="tns:invalidateSessions" name="parameters"/>
+  </message>
+  <message name="invalidateSessionsResponse">
+    <part element="tns:invalidateSessionsResponse" name="parameters"/>
+  </message>
+  <message name="getDeletedRequest">
+    <part element="tns:getDeleted" name="parameters"/>
+  </message>
+  <message name="getDeletedResponse">
+    <part element="tns:getDeletedResponse" name="parameters"/>
+  </message>
+  <message name="getUpdatedRequest">
+    <part element="tns:getUpdated" name="parameters"/>
+  </message>
+  <message name="getUpdatedResponse">
+    <part element="tns:getUpdatedResponse" name="parameters"/>
+  </message>
+  <message name="queryRequest">
+    <part element="tns:query" name="parameters"/>
+  </message>
+  <message name="queryResponse">
+    <part element="tns:queryResponse" name="parameters"/>
+  </message>
+  <message name="queryAllRequest">
+    <part element="tns:queryAll" name="parameters"/>
+  </message>
+  <message name="queryAllResponse">
+    <part element="tns:queryAllResponse" name="parameters"/>
+  </message>
+  <message name="queryMoreRequest">
+    <part element="tns:queryMore" name="parameters"/>
+  </message>
+  <message name="queryMoreResponse">
+    <part element="tns:queryMoreResponse" name="parameters"/>
+  </message>
+  <message name="searchRequest">
+    <part element="tns:search" name="parameters"/>
+  </message>
+  <message name="searchResponse">
+    <part element="tns:searchResponse" name="parameters"/>
+  </message>
+  <message name="getServerTimestampRequest">
+    <part element="tns:getServerTimestamp" name="parameters"/>
+  </message>
+  <message name="getServerTimestampResponse">
+    <part element="tns:getServerTimestampResponse" name="parameters"/>
+  </message>
+  <message name="setPasswordRequest">
+    <part element="tns:setPassword" name="parameters"/>
+  </message>
+  <message name="setPasswordResponse">
+    <part element="tns:setPasswordResponse" name="parameters"/>
+  </message>
+  <message name="changeOwnPasswordRequest">
+    <part element="tns:changeOwnPassword" name="parameters"/>
+  </message>
+  <message name="changeOwnPasswordResponse">
+    <part element="tns:changeOwnPasswordResponse" name="parameters"/>
+  </message>
+  <message name="resetPasswordRequest">
+    <part element="tns:resetPassword" name="parameters"/>
+  </message>
+  <message name="resetPasswordResponse">
+    <part element="tns:resetPasswordResponse" name="parameters"/>
+  </message>
+  <message name="getUserInfoRequest">
+    <part element="tns:getUserInfo" name="parameters"/>
+  </message>
+  <message name="getUserInfoResponse">
+    <part element="tns:getUserInfoResponse" name="parameters"/>
+  </message>
+  <message name="deleteByExampleRequest">
+    <part element="tns:deleteByExample" name="parameters"/>
+  </message>
+  <message name="deleteByExampleResponse">
+    <part element="tns:deleteByExampleResponse" name="parameters"/>
+  </message>
+  <message name="sendEmailMessageRequest">
+    <part element="tns:sendEmailMessage" name="parameters"/>
+  </message>
+  <message name="sendEmailMessageResponse">
+    <part element="tns:sendEmailMessageResponse" name="parameters"/>
+  </message>
+  <message name="sendEmailRequest">
+    <part element="tns:sendEmail" name="parameters"/>
+  </message>
+  <message name="sendEmailResponse">
+    <part element="tns:sendEmailResponse" name="parameters"/>
+  </message>
+  <message name="renderEmailTemplateRequest">
+    <part element="tns:renderEmailTemplate" name="parameters"/>
+  </message>
+  <message name="renderEmailTemplateResponse">
+    <part element="tns:renderEmailTemplateResponse" name="parameters"/>
+  </message>
+  <message name="renderStoredEmailTemplateRequest">
+    <part element="tns:renderStoredEmailTemplate" name="parameters"/>
+  </message>
+  <message name="renderStoredEmailTemplateResponse">
+    <part element="tns:renderStoredEmailTemplateResponse" name="parameters"/>
+  </message>
+  <message name="performQuickActionsRequest">
+    <part element="tns:performQuickActions" name="parameters"/>
+  </message>
+  <message name="performQuickActionsResponse">
+    <part element="tns:performQuickActionsResponse" name="parameters"/>
+  </message>
+  <message name="describeQuickActionsRequest">
+    <part element="tns:describeQuickActions" name="parameters"/>
+  </message>
+  <message name="describeQuickActionsResponse">
+    <part element="tns:describeQuickActionsResponse" name="parameters"/>
+  </message>
+  <message name="describeQuickActionsForRecordTypeRequest">
+    <part element="tns:describeQuickActionsForRecordType" name="parameters"/>
+  </message>
+  <message name="describeQuickActionsForRecordTypeResponse">
+    <part element="tns:describeQuickActionsForRecordTypeResponse" name="parameters"/>
+  </message>
+  <message name="describeAvailableQuickActionsRequest">
+    <part element="tns:describeAvailableQuickActions" name="parameters"/>
+  </message>
+  <message name="describeAvailableQuickActionsResponse">
+    <part element="tns:describeAvailableQuickActionsResponse" name="parameters"/>
+  </message>
+  <message name="retrieveQuickActionTemplatesRequest">
+    <part element="tns:retrieveQuickActionTemplates" name="parameters"/>
+  </message>
+  <message name="retrieveQuickActionTemplatesResponse">
+    <part element="tns:retrieveQuickActionTemplatesResponse" name="parameters"/>
+  </message>
+  <message name="retrieveMassQuickActionTemplatesRequest">
+    <part element="tns:retrieveMassQuickActionTemplates" name="parameters"/>
+  </message>
+  <message name="retrieveMassQuickActionTemplatesResponse">
+    <part element="tns:retrieveMassQuickActionTemplatesResponse" name="parameters"/>
+  </message>
+  <message name="describeVisualForceRequest">
+    <part element="tns:describeVisualForce" name="parameters"/>
+  </message>
+  <message name="describeVisualForceResponse">
+    <part element="tns:describeVisualForceResponse" name="parameters"/>
+  </message>
+  <message name="findDuplicatesRequest">
+    <part element="tns:findDuplicates" name="parameters"/>
+  </message>
+  <message name="findDuplicatesResponse">
+    <part element="tns:findDuplicatesResponse" name="parameters"/>
+  </message>
+  <message name="findDuplicatesByIdsRequest">
+    <part element="tns:findDuplicatesByIds" name="parameters"/>
+  </message>
+  <message name="findDuplicatesByIdsResponse">
+    <part element="tns:findDuplicatesByIdsResponse" name="parameters"/>
+  </message>
+  <message name="describeNounsRequest">
+    <part element="tns:describeNouns" name="parameters"/>
+  </message>
+  <message name="describeNounsResponse">
+    <part element="tns:describeNounsResponse" name="parameters"/>
+  </message>
+  <!--Soap PortType-->
+  <portType name="Soap">
+    <operation name="login">
+      <documentation>Login to the Salesforce.com SOAP Api</documentation>
+      <input message="tns:loginRequest"/>
+      <output message="tns:loginResponse"/>
+      <fault message="tns:LoginFault" name="LoginFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+    </operation>
+    <operation name="describeSObject">
+      <documentation>Describe an sObject</documentation>
+      <input message="tns:describeSObjectRequest"/>
+      <output message="tns:describeSObjectResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeSObjects">
+      <documentation>Describe multiple sObjects (upto 100)</documentation>
+      <input message="tns:describeSObjectsRequest"/>
+      <output message="tns:describeSObjectsResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeGlobal">
+      <documentation>Describe the Global state</documentation>
+      <input message="tns:describeGlobalRequest"/>
+      <output message="tns:describeGlobalResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeDataCategoryGroups">
+      <documentation>Describe all the data category groups available for a given set of types</documentation>
+      <input message="tns:describeDataCategoryGroupsRequest"/>
+      <output message="tns:describeDataCategoryGroupsResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeDataCategoryGroupStructures">
+      <documentation>Describe the data category group structures for a given set of pair of types and data category group name</documentation>
+      <input message="tns:describeDataCategoryGroupStructuresRequest"/>
+      <output message="tns:describeDataCategoryGroupStructuresResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeDataCategoryMappings">
+      <documentation>Describe your Data Category Mappings.</documentation>
+      <input message="tns:describeDataCategoryMappingsRequest"/>
+      <output message="tns:describeDataCategoryMappingsResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeKnowledgeSettings">
+      <documentation>Describes your Knowledge settings, such as if knowledgeEnabled is on or off, its default language and supported languages</documentation>
+      <input message="tns:describeKnowledgeSettingsRequest"/>
+      <output message="tns:describeKnowledgeSettingsResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeAppMenu">
+      <documentation>Describe the items in an AppMenu</documentation>
+      <input message="tns:describeAppMenuRequest"/>
+      <output message="tns:describeAppMenuResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeGlobalTheme">
+      <documentation>Describe Gloal and Themes</documentation>
+      <input message="tns:describeGlobalThemeRequest"/>
+      <output message="tns:describeGlobalThemeResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeTheme">
+      <documentation>Describe Themes</documentation>
+      <input message="tns:describeThemeRequest"/>
+      <output message="tns:describeThemeResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeLayout">
+      <documentation>Describe the layout of the given sObject or the given actionable global page.</documentation>
+      <input message="tns:describeLayoutRequest"/>
+      <output message="tns:describeLayoutResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+    </operation>
+    <operation name="describeSoftphoneLayout">
+      <documentation>Describe the layout of the SoftPhone</documentation>
+      <input message="tns:describeSoftphoneLayoutRequest"/>
+      <output message="tns:describeSoftphoneLayoutResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeSearchLayouts">
+      <documentation>Describe the search view of an sObject</documentation>
+      <input message="tns:describeSearchLayoutsRequest"/>
+      <output message="tns:describeSearchLayoutsResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeSearchableEntities">
+      <documentation>Describe a list of entity names that reflects the current user's searchable entities</documentation>
+      <input message="tns:describeSearchableEntitiesRequest"/>
+      <output message="tns:describeSearchableEntitiesResponse"/>
+    </operation>
+    <operation name="describeSearchScopeOrder">
+      <documentation>Describe a list of objects representing the order and scope of objects on a users search result page</documentation>
+      <input message="tns:describeSearchScopeOrderRequest"/>
+      <output message="tns:describeSearchScopeOrderResponse"/>
+    </operation>
+    <operation name="describeCompactLayouts">
+      <documentation>Describe the compact layouts of the given sObject</documentation>
+      <input message="tns:describeCompactLayoutsRequest"/>
+      <output message="tns:describeCompactLayoutsResponse"/>
+    </operation>
+    <operation name="describePathAssistants">
+      <documentation>Describe the Path Assistants for the given sObject and optionally RecordTypes</documentation>
+      <input message="tns:describePathAssistantsRequest"/>
+      <output message="tns:describePathAssistantsResponse"/>
+    </operation>
+    <operation name="describeApprovalLayout">
+      <documentation>Describe the approval layouts of the given sObject</documentation>
+      <input message="tns:describeApprovalLayoutRequest"/>
+      <output message="tns:describeApprovalLayoutResponse"/>
+    </operation>
+    <operation name="describeSoqlListViews">
+      <documentation>Describe the ListViews as SOQL metadata for the generation of SOQL.</documentation>
+      <input message="tns:describeSoqlListViewsRequest"/>
+      <output message="tns:describeSoqlListViewsResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="executeListView">
+      <documentation>Execute the specified list view and return the presentation-ready results.</documentation>
+      <input message="tns:executeListViewRequest"/>
+      <output message="tns:executeListViewResponse"/>
+    </operation>
+    <operation name="describeSObjectListViews">
+      <documentation>Describe the ListViews of a SObject as SOQL metadata for the generation of SOQL.</documentation>
+      <input message="tns:describeSObjectListViewsRequest"/>
+      <output message="tns:describeSObjectListViewsResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeTabs">
+      <documentation>Describe the tabs that appear on a users page</documentation>
+      <input message="tns:describeTabsRequest"/>
+      <output message="tns:describeTabsResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeAllTabs">
+      <documentation>Describe all tabs available to a user</documentation>
+      <input message="tns:describeAllTabsRequest"/>
+      <output message="tns:describeAllTabsResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describePrimaryCompactLayouts">
+      <documentation>Describe the primary compact layouts for the sObjects requested</documentation>
+      <input message="tns:describePrimaryCompactLayoutsRequest"/>
+      <output message="tns:describePrimaryCompactLayoutsResponse"/>
+    </operation>
+    <operation name="create">
+      <documentation>Create a set of new sObjects</documentation>
+      <input message="tns:createRequest"/>
+      <output message="tns:createResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+    </operation>
+    <operation name="update">
+      <documentation>Update a set of sObjects</documentation>
+      <input message="tns:updateRequest"/>
+      <output message="tns:updateResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+    </operation>
+    <operation name="upsert">
+      <documentation>Update or insert a set of sObjects based on object id</documentation>
+      <input message="tns:upsertRequest"/>
+      <output message="tns:upsertResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+    </operation>
+    <operation name="merge">
+      <documentation>Merge and update a set of sObjects based on object id</documentation>
+      <input message="tns:mergeRequest"/>
+      <output message="tns:mergeResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+    </operation>
+    <operation name="delete">
+      <documentation>Delete a set of sObjects</documentation>
+      <input message="tns:deleteRequest"/>
+      <output message="tns:deleteResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="undelete">
+      <documentation>Undelete a set of sObjects</documentation>
+      <input message="tns:undeleteRequest"/>
+      <output message="tns:undeleteResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="emptyRecycleBin">
+      <documentation>Empty a set of sObjects from the recycle bin</documentation>
+      <input message="tns:emptyRecycleBinRequest"/>
+      <output message="tns:emptyRecycleBinResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="retrieve">
+      <documentation>Get a set of sObjects</documentation>
+      <input message="tns:retrieveRequest"/>
+      <output message="tns:retrieveResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+      <fault message="tns:MalformedQueryFault" name="MalformedQueryFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+    </operation>
+    <operation name="process">
+      <documentation>Submit an entity to a workflow process or process a workitem</documentation>
+      <input message="tns:processRequest"/>
+      <output message="tns:processResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+    </operation>
+    <operation name="convertLead">
+      <documentation>convert a set of leads</documentation>
+      <input message="tns:convertLeadRequest"/>
+      <output message="tns:convertLeadResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="logout">
+      <documentation>Logout the current user, invalidating the current session.</documentation>
+      <input message="tns:logoutRequest"/>
+      <output message="tns:logoutResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="invalidateSessions">
+      <documentation>Logs out and invalidates session ids</documentation>
+      <input message="tns:invalidateSessionsRequest"/>
+      <output message="tns:invalidateSessionsResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="getDeleted">
+      <documentation>Get the IDs for deleted sObjects</documentation>
+      <input message="tns:getDeletedRequest"/>
+      <output message="tns:getDeletedResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="getUpdated">
+      <documentation>Get the IDs for updated sObjects</documentation>
+      <input message="tns:getUpdatedRequest"/>
+      <output message="tns:getUpdatedResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="query">
+      <documentation>Create a Query Cursor</documentation>
+      <input message="tns:queryRequest"/>
+      <output message="tns:queryResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+      <fault message="tns:MalformedQueryFault" name="MalformedQueryFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidQueryLocatorFault" name="InvalidQueryLocatorFault"/>
+    </operation>
+    <operation name="queryAll">
+      <documentation>Create a Query Cursor, including deleted sObjects</documentation>
+      <input message="tns:queryAllRequest"/>
+      <output message="tns:queryAllResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+      <fault message="tns:MalformedQueryFault" name="MalformedQueryFault"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidQueryLocatorFault" name="InvalidQueryLocatorFault"/>
+    </operation>
+    <operation name="queryMore">
+      <documentation>Gets the next batch of sObjects from a query</documentation>
+      <input message="tns:queryMoreRequest"/>
+      <output message="tns:queryMoreResponse"/>
+      <fault message="tns:InvalidQueryLocatorFault" name="InvalidQueryLocatorFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+      <fault message="tns:MalformedQueryFault" name="MalformedQueryFault"/>
+    </operation>
+    <operation name="search">
+      <documentation>Search for sObjects</documentation>
+      <input message="tns:searchRequest"/>
+      <output message="tns:searchResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+      <fault message="tns:MalformedSearchFault" name="MalformedSearchFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="getServerTimestamp">
+      <documentation>Gets server timestamp</documentation>
+      <input message="tns:getServerTimestampRequest"/>
+      <output message="tns:getServerTimestampResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="setPassword">
+      <documentation>Set a user's password</documentation>
+      <input message="tns:setPasswordRequest"/>
+      <output message="tns:setPasswordResponse"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:InvalidNewPasswordFault" name="InvalidNewPasswordFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="changeOwnPassword">
+      <documentation>Change the current user's password</documentation>
+      <input message="tns:changeOwnPasswordRequest"/>
+      <output message="tns:changeOwnPasswordResponse"/>
+      <fault message="tns:InvalidNewPasswordFault" name="InvalidNewPasswordFault"/>
+      <fault message="tns:InvalidOldPasswordFault" name="InvalidOldPasswordFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="resetPassword">
+      <documentation>Reset a user's password</documentation>
+      <input message="tns:resetPasswordRequest"/>
+      <output message="tns:resetPasswordResponse"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="getUserInfo">
+      <documentation>Returns standard information relevant to the current user</documentation>
+      <input message="tns:getUserInfoRequest"/>
+      <output message="tns:getUserInfoResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="deleteByExample">
+      <documentation>Delete a set of SObjects by example. The passed SObject is a template for the object to delete</documentation>
+      <input message="tns:deleteByExampleRequest"/>
+      <output message="tns:deleteByExampleResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="sendEmailMessage">
+      <documentation>Send existing draft EmailMessage</documentation>
+      <input message="tns:sendEmailMessageRequest"/>
+      <output message="tns:sendEmailMessageResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="sendEmail">
+      <documentation>Send outbound email</documentation>
+      <input message="tns:sendEmailRequest"/>
+      <output message="tns:sendEmailResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="renderEmailTemplate">
+      <documentation>Perform a template merge on one or more blocks of text.</documentation>
+      <input message="tns:renderEmailTemplateRequest"/>
+      <output message="tns:renderEmailTemplateResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="renderStoredEmailTemplate">
+      <documentation>Perform a template merge using an email template stored in the database.</documentation>
+      <input message="tns:renderStoredEmailTemplateRequest"/>
+      <output message="tns:renderStoredEmailTemplateResponse"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="performQuickActions">
+      <documentation>Perform a series of predefined actions such as quick create or log a task</documentation>
+      <input message="tns:performQuickActionsRequest"/>
+      <output message="tns:performQuickActionsResponse"/>
+    </operation>
+    <operation name="describeQuickActions">
+      <documentation>Describe the details of a series of quick actions</documentation>
+      <input message="tns:describeQuickActionsRequest"/>
+      <output message="tns:describeQuickActionsResponse"/>
+    </operation>
+    <operation name="describeQuickActionsForRecordType">
+      <documentation>Describe the details of a series of quick actions in context of requested recordType id for Update actions</documentation>
+      <input message="tns:describeQuickActionsForRecordTypeRequest"/>
+      <output message="tns:describeQuickActionsForRecordTypeResponse"/>
+    </operation>
+    <operation name="describeAvailableQuickActions">
+      <documentation>Describe the details of a series of quick actions available for the given contextType</documentation>
+      <input message="tns:describeAvailableQuickActionsRequest"/>
+      <output message="tns:describeAvailableQuickActionsResponse"/>
+    </operation>
+    <operation name="retrieveQuickActionTemplates">
+      <documentation>Retrieve the template sobjects, if appropriate, for the given quick action names in a given context</documentation>
+      <input message="tns:retrieveQuickActionTemplatesRequest"/>
+      <output message="tns:retrieveQuickActionTemplatesResponse"/>
+    </operation>
+    <operation name="retrieveMassQuickActionTemplates">
+      <documentation>Retrieve the template sobjects, if appropriate, for the given quick action names in a given contexts when used a mass quick action</documentation>
+      <input message="tns:retrieveMassQuickActionTemplatesRequest"/>
+      <output message="tns:retrieveMassQuickActionTemplatesResponse"/>
+    </operation>
+    <operation name="describeVisualForce">
+      <documentation>Describe visualforce for an org</documentation>
+      <input message="tns:describeVisualForceRequest"/>
+      <output message="tns:describeVisualForceResponse"/>
+    </operation>
+    <operation name="findDuplicates">
+      <documentation>Find duplicates for a set of sObjects</documentation>
+      <input message="tns:findDuplicatesRequest"/>
+      <output message="tns:findDuplicatesResponse"/>
+      <fault message="tns:InvalidSObjectFault" name="InvalidSObjectFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+      <fault message="tns:InvalidFieldFault" name="InvalidFieldFault"/>
+    </operation>
+    <operation name="findDuplicatesByIds">
+      <documentation>Find duplicates for a set of ids</documentation>
+      <input message="tns:findDuplicatesByIdsRequest"/>
+      <output message="tns:findDuplicatesByIdsResponse"/>
+      <fault message="tns:InvalidIdFault" name="InvalidIdFault"/>
+      <fault message="tns:UnexpectedErrorFault" name="UnexpectedErrorFault"/>
+    </operation>
+    <operation name="describeNouns">
+      <documentation>Return the renameable nouns from the server for use in presentation using the salesforce grammar engine</documentation>
+      <input message="tns:describeNounsRequest"/>
+      <output message="tns:describeNounsResponse"/>
+    </operation>
+  </portType>
+  <!--Soap Binding-->
+  <binding name="SoapBinding" type="tns:Soap">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="login">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="LoginScopeHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="LoginFault">
+        <soap:fault name="LoginFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeSObject">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeSObjects">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeGlobal">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeDataCategoryGroups">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeDataCategoryGroupStructures">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeDataCategoryMappings">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeKnowledgeSettings">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeAppMenu">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeGlobalTheme">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeTheme">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeLayout">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeSoftphoneLayout">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeSearchLayouts">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeSearchableEntities">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeSearchScopeOrder">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeCompactLayouts">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describePathAssistants">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeApprovalLayout">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeSoqlListViews">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="executeListView">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeSObjectListViews">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeTabs">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeAllTabs">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describePrimaryCompactLayouts">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="create">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AssignmentRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="update">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AssignmentRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:header message="tns:Header" part="OwnerChangeOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="upsert">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AssignmentRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:header message="tns:Header" part="OwnerChangeOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="merge">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AssignmentRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="delete">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="UserTerritoryDeleteHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="undelete">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="emptyRecycleBin">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="retrieve">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="QueryOptions" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+      <fault name="MalformedQueryFault">
+        <soap:fault name="MalformedQueryFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="process">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="convertLead">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="logout">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="invalidateSessions">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="getDeleted">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="getUpdated">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="query">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="QueryOptions" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+      <fault name="MalformedQueryFault">
+        <soap:fault name="MalformedQueryFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidQueryLocatorFault">
+        <soap:fault name="InvalidQueryLocatorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="queryAll">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="QueryOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+      <fault name="MalformedQueryFault">
+        <soap:fault name="MalformedQueryFault" use="literal"/>
+      </fault>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidQueryLocatorFault">
+        <soap:fault name="InvalidQueryLocatorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="queryMore">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="QueryOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidQueryLocatorFault">
+        <soap:fault name="InvalidQueryLocatorFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+      <fault name="MalformedQueryFault">
+        <soap:fault name="MalformedQueryFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="search">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+      <fault name="MalformedSearchFault">
+        <soap:fault name="MalformedSearchFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="getServerTimestamp">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="setPassword">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="InvalidNewPasswordFault">
+        <soap:fault name="InvalidNewPasswordFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="changeOwnPassword">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidNewPasswordFault">
+        <soap:fault name="InvalidNewPasswordFault" use="literal"/>
+      </fault>
+      <fault name="InvalidOldPasswordFault">
+        <soap:fault name="InvalidOldPasswordFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="resetPassword">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="getUserInfo">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="deleteByExample">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="UserTerritoryDeleteHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="DebuggingInfo" use="literal"/>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="sendEmailMessage">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="sendEmail">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="renderEmailTemplate">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="renderStoredEmailTemplate">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="performQuickActions">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AssignmentRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="MruHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllowFieldTruncationHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DisableFeedTrackingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="StreamingEnabledHeader" use="literal"/>
+        <soap:header message="tns:Header" part="AllOrNoneHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:header message="tns:Header" part="DebuggingHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="EmailHeader" use="literal"/>
+        <soap:header message="tns:Header" part="OwnerChangeOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeQuickActions">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeQuickActionsForRecordType">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeAvailableQuickActions">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="retrieveQuickActionTemplates">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="retrieveMassQuickActionTemplates">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="describeVisualForce">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+    <operation name="findDuplicates">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidSObjectFault">
+        <soap:fault name="InvalidSObjectFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+      <fault name="InvalidFieldFault">
+        <soap:fault name="InvalidFieldFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="findDuplicatesByIds">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="DuplicateRuleHeader" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+      <fault name="InvalidIdFault">
+        <soap:fault name="InvalidIdFault" use="literal"/>
+      </fault>
+      <fault name="UnexpectedErrorFault">
+        <soap:fault name="UnexpectedErrorFault" use="literal"/>
+      </fault>
+    </operation>
+    <operation name="describeNouns">
+      <soap:operation soapAction=""/>
+      <input>
+        <soap:header message="tns:Header" part="SessionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="PackageVersionHeader" use="literal"/>
+        <soap:header message="tns:Header" part="LocaleOptions" use="literal"/>
+        <soap:body parts="parameters" use="literal"/>
+      </input>
+      <output>
+        <soap:header message="tns:Header" part="LimitInfoHeader" use="literal"/>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+  <!--Soap Service Endpoint-->
+  <service name="SforceService">
+    <documentation>Sforce SOAP API</documentation>
+    <port binding="tns:SoapBinding" name="Soap">
+      <soap:address location="https://login.salesforce.com/services/Soap/c/53.0/0DF2S0000002MTn"/>
+    </port>
+  </service>
+</definitions>

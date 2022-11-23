@@ -1,0 +1,87 @@
+
+CREATE COMPUTE MODULE Casino_ReservationPayDataFeed_SearchResReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.NVSData;
+
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET rEnv.InputMessage = InputRoot.XMLNSC.NVSData;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rIn.Metadata.Table,
+											   rIn.Metadata.Channel,
+											   rIn.Details.PAYMENT.INVOICE || '-' || rIn.Details.PAYMENT.CRUISE,
+											   '',
+											   '',
+											   rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Booking payment request message', 'xml', rEnv);
+		END IF;
+
+		IF SUBSTRING(rIn.Details.PAYMENT.INVOICE FROM 1 FOR 1) IN('A', 'C', 'G') THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Ignoring payment for this reservation as invoice starts with {A/C/G} ...', rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieving reservation to apply payment ...', rEnv);
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'Reservation_Id__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rIn.Details.PAYMENT.INVOICE || '-' || rIn.Details.PAYMENT.CRUISE;
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			
+			RETURN TRUE;
+		END IF;
+				
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReservationPayDataFeed_UpdateResPayment
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.InputMessage;
+		
+		-- if reservation exists
+		IF EXISTS(InputRoot.JSON.Data.Item[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Applying payment to reservation ...', rEnv);
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'update';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Reservation__c';
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.Id = InputRoot.JSON.Data.Item.Id;		
+			
+			IF CAST(COALESCE(rOrgMsg.Details.PAYMENT.DEPOSITED, 0) AS INTEGER) > 0 THEN
+				SET OutputRoot.JSON.Data.Deposited__c = true;
+			ELSE
+				SET OutputRoot.JSON.Data.Deposited__c = false;
+			END IF;
+			
+			SET OutputRoot.JSON.Data.Deposited_Date__c = rOrgMsg.Details.PAYMENT.DEP_DATE;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			THROW USER EXCEPTION VALUES('Payment cannot be applied for non-existing reservation');
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;

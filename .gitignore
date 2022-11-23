@@ -1,0 +1,12 @@
+# eclipse specific git ignore
+.metadata
+*.tmp
+*.bak
+*.swp
+*~.nib
+#.classpath
+.settings/
+GeneratedBarFiles/
+.loadpath
+*.bar
+TestModeBarFiles/

@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFlowOrder.msgnode="ComIbmFlowOrder.msgnode" xmlns:ComIbmLabel.msgnode="ComIbmLabel.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:ComIbmSOAPRequest.msgnode="ComIbmSOAPRequest.msgnode" xmlns:ComIbmWSRequest.msgnode="ComIbmWSRequest.msgnode" xmlns:GetSalesforceSessionId.subflow="GetSalesforceSessionId.subflow"
+    xmlns:RetrieveContact.subflow="RetrieveContact.subflow" xmlns:UpdateTribrandId.subflow="UpdateTribrandId.subflow" xmlns:com_ibm_connector_salesforce_ComIbmRequest.msgnode="com/ibm/connector/salesforce/ComIbmRequest.msgnode" xmlns:com_ncl_ais_utils_SendMessageForReprocess.subflow="com/ncl/ais/utils/SendMessageForReprocess.subflow" xmlns:com_ncl_iib_NCL_ErrorHandler.subflow="com/ncl/iib/NCL_ErrorHandler.subflow" xmlns:com_ncl_iib_NCL_Logging.subflow="com/ncl/iib/NCL_Logging.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore"
+    xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="Casino_HouseholdDataFeed.msgflow" nsPrefix="Casino_HouseholdDataFeed.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.AccountRecordType" name="AccountRecordType" lowerBound="1" defaultValueLiteral="012E0000000Qjm3">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.ContactRecordType" name="ContactRecordType" lowerBound="1" defaultValueLiteral="012E0000000Qjmm">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OCIDB" name="OCIDB" lowerBound="1" defaultValueLiteral="OCINVSDB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.RSSCDB" name="RSSCDB" lowerBound="1" defaultValueLiteral="RSSCNVSDB">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.TempAccountRecordType" name="TempAccountRecordType" lowerBound="1" defaultValueLiteral="0014400001uua7G">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.TempContactRecordType" name="TempContactRecordType" lowerBound="1" defaultValueLiteral="0034400001xjvJK">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LogPayload" name="LogPayload" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.SearchServiceURI" name="SearchServiceURI" lowerBound="1" defaultValueLiteral="/services/Soap/class/DSHouseholdIdreturn">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.SendOptOut" name="SendOptOut" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.REPROCESS_QUEUE" name="REPROCESS_QUEUE" lowerBound="1" defaultValueLiteral="CASINO_ACCNT_ERROR_IN">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.MaxRetries" name="MaxRetries" lowerBound="1" defaultValueLiteral="5">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="Casino_HouseholdDataFeed" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_AccountsContacts_APP/icons/full/obj16/Casino_HouseholdDataFeed.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/Casino_AccountsContacts_APP/icons/full/obj30/Casino_HouseholdDataFeed.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="133,192" computeExpression="esql://routine/#Casino_HouseholdDataFeed_SearchHousehold.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="SearchHousehold"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_5" location="358,194" computeExpression="esql://routine/#Casino_HouseholdDataFeed_CreateAccountReq.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="CreateAccountReq"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_6" location="454,195" connectorName="iib-salesforce-connector" url="https://test.salesforce.com" operation="create" object="Account" securityIdentity="NCLSF" timeoutMilliseconds="120000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="UpsertAccount"/>
+      </nodes>
+      <nodes xmi:type="com_ibm_connector_salesforce_ComIbmRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_8" location="690,200" connectorName="iib-salesforce-connector" url="https://test.salesforce.com" operation="create" object="Contact" securityIdentity="NCLSF" timeoutMilliseconds="120000" dataLocation="$Body" outputDataLocation="$OutputRoot" copyToLocalEnv="true" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="UpsertContact"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_9" location="148,59" computeExpression="esql://routine/#Casino_HouseholdDataFeed_Exception.Main">
+        <translation xmi:type="utility:ConstantString" string="Exception"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_10" location="123,325" labelName="GET_SESSION">
+        <translation xmi:type="utility:ConstantString" string="GetSession"/>
+      </nodes>
+      <nodes xmi:type="GetSalesforceSessionId.subflow:FCMComposite_1" xmi:id="FCMComposite_1_11" location="198,325">
+        <translation xmi:type="utility:ConstantString" string="GetSalesforceSessionId"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_ErrorHandler.subflow:FCMComposite_1" xmi:id="FCMComposite_1_13" location="366,94">
+        <translation xmi:type="utility:ConstantString" string="NCL_ErrorHandler"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_Logging.subflow:FCMComposite_1" xmi:id="FCMComposite_1_14" location="960,73">
+        <translation xmi:type="utility:ConstantString" string="NCL_Logging"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_15" location="951,305" dataSource="OCINVSDB" computeExpression="esql://routine/#Casino_HouseholdDataFeed_UpdateTribandId.Main">
+        <translation xmi:type="utility:ConstantString" string="UdpateTriband"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_16" location="130,406" labelName="Search">
+        <translation xmi:type="utility:ConstantString" string="Search"/>
+      </nodes>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_17" location="214,406" URLSpecifier="https://test.salesforce.com/services/Soap/class/DSHouseholdIdreturn" timeoutForServer="30" httpVersion="1.1" protocol="TLSv1.2" messageDomainProperty="XMLNSC">
+        <translation xmi:type="utility:ConstantString" string="SearchService"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_18" location="313,406" computeExpression="esql://routine/#Casino_HouseholdDataFeed_SaveSearch.Main">
+        <translation xmi:type="utility:ConstantString" string="SaveSearch"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="45,192" queueName="CASINO_ACCOUNT_IN" messageDomainProperty="XMLNSC" logicalOrder="false">
+        <translation xmi:type="utility:ConstantString" string="InputQueue"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_12" location="956,208" queueName="CASINO_RESGUEST_IN" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="RESGUEST"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFlowOrder.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="250,60">
+        <translation xmi:type="utility:ConstantString" string="Flow Order"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_utils_SendMessageForReprocess.subflow:FCMComposite_1" xmi:id="FCMComposite_1_3" location="343,22">
+        <translation xmi:type="utility:ConstantString" string="SendMessageForReprocess"/>
+      </nodes>
+      <nodes xmi:type="UpdateTribrandId.subflow:FCMComposite_1" xmi:id="FCMComposite_1_19" location="550,407">
+        <translation xmi:type="utility:ConstantString" string="UpdateTribrandId"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_20" location="468,407" labelName="TRIBRAND">
+        <translation xmi:type="utility:ConstantString" string="TRIBRAND"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_21" location="248,193" computeExpression="esql://routine/#Casino_HouseholdDataFeed_ProcessSearchResp.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="ProcessSearchResp"/>
+      </nodes>
+      <nodes xmi:type="RetrieveContact.subflow:FCMComposite_1" xmi:id="FCMComposite_1_22" location="552,329">
+        <translation xmi:type="utility:ConstantString" string="RetrieveContact"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_23" location="455,329" labelName="GET_CONTACT">
+        <translation xmi:type="utility:ConstantString" string="GET_CONTACT"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_26" location="649,296" computeExpression="esql://routine/#Casino_HouseholdDataFeed_CreateContactReq2.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="UpsertSoapContact"/>
+      </nodes>
+      <nodes xmi:type="ComIbmSOAPRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_24" location="819,409" wsdlFileName="Enterprisewsdl.wsdl" selectedPortType="Soap" selectedBinding="SoapBinding" selectedOperation="update" selectedPort="Soap" targetNamespace="urn:enterprise.soap.sforce.com" useHTTPTransport="true" webServiceURL="https://test.salesforce.com/services/Soap/c/45.0/0DFQ00000004FD8" sslProtocol="TLSv1.2">
+        <translation xmi:type="utility:ConstantString" string="UpdateContact"/>
+        <mustUnderstandResponseHeadersWSDLDefined header="Header" namespace="urn:enterprise.soap.sforce.com"/>
+        <mustUnderstandResponseHeadersWSDLDefined header="Header" namespace="urn:enterprise.soap.sforce.com"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_28" location="972,408" computeExpression="esql://routine/#Casino_HouseholdDataFeed_HandleFault.Main">
+        <translation xmi:type="utility:ConstantString" string="HandleFault"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_7" location="510,122" destinationMode="list" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="CASINO_ACCNT_ERROR_IN"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_11" sourceNode="FCMComposite_1_10" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_14" sourceNode="FCMComposite_1_13" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_20" targetNode="FCMComposite_1_17" sourceNode="FCMComposite_1_16" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_21" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_17" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_22" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_17" sourceTerminalName="OutTerminal.error" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_4" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_9" sourceNode="FCMComposite_1_4" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_12" targetNode="FCMComposite_1_9" sourceNode="FCMComposite_1_4" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_18" targetNode="FCMComposite_1_12" sourceNode="FCMComposite_1_15" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.first" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_13" targetNode="FCMComposite_1_1" sourceNode="FCMComposite_1_9" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_15" targetNode="FCMComposite_1_13" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.second" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_17" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in">
+        <bendPoints>111,70,-447,59</bendPoints>
+        <bendPoints>267,70,-291,59</bendPoints>
+        <bendPoints>421,70,-137,59</bendPoints>
+      </connections>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_19" targetNode="FCMComposite_1_14" sourceNode="FCMComposite_1_15" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_19" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_21" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_24" targetNode="FCMComposite_1_22" sourceNode="FCMComposite_1_23" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_26" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_8" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_24" sourceNode="FCMComposite_1_26" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_14" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_24" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_28" targetNode="FCMComposite_1_26" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_29" targetNode="FCMComposite_1_28" sourceNode="FCMComposite_1_24" sourceTerminalName="OutTerminal.fault" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_31" targetNode="FCMComposite_1_26" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in">
+        <bendPoints>89,64,-311,-39</bendPoints>
+        <bendPoints>148,64,-252,-39</bendPoints>
+      </connections>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_7" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.out2" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.AccountRecordType">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.AccountRecordType" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.ContactRecordType">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.ContactRecordType" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OCIDB">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.OCIDB" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.RSSCDB">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.RSSCDB" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.TempAccountRecordType">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.TempAccountRecordType" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.TempContactRecordType">
+                  <propertyName xmi:type="utility:TranslatableString" key="Property.TempContactRecordType" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                  <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LogPayload">
+                    <propertyName xmi:type="utility:TranslatableString" key="Property.LogPayload" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                    <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.SearchServiceURI">
+                      <propertyName xmi:type="utility:TranslatableString" key="Property.SearchServiceURI" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.SendOptOut">
+                        <propertyName xmi:type="utility:TranslatableString" key="Property.SendOptOut" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.REPROCESS_QUEUE">
+                          <propertyName xmi:type="utility:TranslatableString" key="Property.REPROCESS_QUEUE" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.MaxRetries">
+                            <propertyName xmi:type="utility:TranslatableString" key="Property.MaxRetries" bundleName="Casino_HouseholdDataFeed" pluginId="Casino_AccountsContacts_APP"/>
+                          </propertyDescriptor>
+                        </propertyDescriptor>
+                      </propertyDescriptor>
+                    </propertyDescriptor>
+                  </propertyDescriptor>
+                </propertyDescriptor>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

@@ -1,0 +1,15 @@
+
+
+CREATE COMPUTE MODULE Monitoring_CheckResUtilResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') IDENTITY resourceHistResp;
+		SET rEnv.resourceHistResp = InputRoot.XMLNSC.soap:Envelope.*:Body.*:getResourceUtilizationDataHistoryResponse;
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

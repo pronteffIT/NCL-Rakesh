@@ -1,0 +1,50 @@
+
+
+CREATE COMPUTE MODULE RetrieveContact_RetrieveContactReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieving Contact from Salesforce ...', rEnv);
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';   
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.id = rEnv.Temp.ContactSFId;
+		
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].AccountId = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[2].OCI__c = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[3].RSSC__c = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[4].OCI_MP_Card__c = true;
+		SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[5].RSSC_MP_Card__c = true;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE RetrieveContact_VerifyContactInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		
+		SET rEnv.Temp.HouseholdSFId = rIn.AccountId;
+
+		IF rOrgMsg.Metadata.Source = 'oci' THEN
+			-- if brand info exist, create new contact
+			IF rIn.OCI__c = true AND rIn.OCI_MP_Card__c <> rOrgMsg.Details.*[1].MPCARD THEN
+				SET rEnv.Temp.ContactSFId = 'No Match Found';
+			END IF;
+		ELSE
+			-- if brand info exist, create new contact
+			IF rIn.RSSC__c = true AND rIn.RSSC_MP_Card__c <> rOrgMsg.Details.*[1].MPCARD THEN
+				SET rEnv.Temp.ContactSFId = 'No Match Found';
+			END IF;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

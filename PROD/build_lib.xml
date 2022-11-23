@@ -1,0 +1,379 @@
+<project name="IIB-CI-MAIN" default="dev" basedir="..">
+  <description>IIB Continuous Integration(main script)</description>
+	
+	<property name = "app.name" value = ""/>
+	<property name = "env.wrksp" value = ""/>
+	<property name = "iib.svr1" value = ""/>
+	<property name = "iib.svr2" value = ""/>
+	<property name = "iib.svr3" value = ""/>
+	<property name = "iib.svr4" value = ""/>
+	<property name = "iib.svr5" value = ""/>
+	<property name = "iib.svr6" value = ""/>
+	<property name = "iib.svr7" value = ""/>
+	<property name = "iib.svr8" value = ""/>
+	<property name = "iib.svr9" value = ""/>
+  <target name="init">
+    <tstamp />
+
+  	<property name = "path.parent" value = "${basedir}"/>
+  	
+  	<property name="path.build" value="PROD" />
+  	<property file="${path.build}/build.properties" />
+  </target>
+
+  <target name="dev" depends="init">
+
+  	 <!-- Creating Bar File for the libraries -->
+  	
+    <!--exec executable="mqsicreatebar">
+      <arg value="-data" />
+	   <arg value="${path.parent}" />
+      <arg value="-b" />
+      <arg value="${app.name}project.generated.bar" />
+      <arg value="-a" />
+      <arg value="${app.name}"/>
+     <arg value="-deployAsSource" />
+    </exec-->
+  	
+ <!-- Deploying Library Bar files to Integration Servers in Integration Node 1-->
+ 	
+   <exec executable="mqsideploy">
+     <arg value="-n" />
+     <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+     <arg value="-e" />
+     <arg value="${iib.svr1}" />
+     <arg value="-a" />
+     <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+   </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr2}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+ 	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr3}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr4}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr5}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr6}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr7}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr8}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+      <arg value="-e" />
+      <arg value="${iib.svr9}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  
+  	<!-- Deploying Library Bar files to Integration Servers in Integration Node 2-->
+  	
+   <exec executable="mqsideploy">
+     <arg value="-n" />
+     <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+     <arg value="-e" />
+     <arg value="${iib.svr1}" />
+     <arg value="-a" />
+     <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+   </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr2}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr3}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr4}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr5}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr6}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr7}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr8}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+    <exec executable="mqsideploy">
+      <arg value="-n" />
+      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+      <arg value="-e" />
+      <arg value="${iib.svr9}" />
+      <arg value="-a" />
+      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+    </exec>
+  	
+  	<!-- Deploying Library Bar files to Integration Servers in Integration Node 3-->
+  	  	
+  	   <exec executable="mqsideploy">
+  	     <arg value="-n" />
+  	     <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	     <arg value="-e" />
+  	     <arg value="${iib.svr1}" />
+  	     <arg value="-a" />
+  	     <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	   </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr2}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr3}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr4}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr5}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr6}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr7}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr8}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename3}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr9}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	    </exec>
+  	
+  	<!-- Deploying Library Bar files to Integration Servers in Integration Node 4-->
+  	  	  	
+  	  	   <exec executable="mqsideploy">
+  	  	     <arg value="-n" />
+  	  	     <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	     <arg value="-e" />
+  	  	     <arg value="${iib.svr1}" />
+  	  	     <arg value="-a" />
+  	  	     <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	   </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr2}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr3}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr4}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr5}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr6}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr7}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr8}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	  	  	
+  	  	    <exec executable="mqsideploy">
+  	  	      <arg value="-n" />
+  	  	      <arg value="${iib.brkfileloc}${iib.brkfilename4}" />
+  	  	      <arg value="-e" />
+  	  	      <arg value="${iib.svr9}" />
+  	  	      <arg value="-a" />
+  	  	      <arg value="${var.path}PROD/${app.name}_UAT.bar" />
+  	  	    </exec>
+  	
+ 	<!-- Backing up deployed Bar files with Date Time Stamp-->
+ 	
+ 	<copy file="${var.path}PROD/${app.name}_UAT.bar" overwrite="true" tofile="${var.path}backup/PROD/${app.name}_UAT.bar_${DSTAMP}${TSTAMP}"/>
+  	
+  	<!--Moving UAT Bar file to PROD folder for deployment-->
+  	
+  	<!--move file="${var.path}UAT/${app.name}project.generated.bar" overwrite="true" tofile="${var.path}PROD/${app.name}_UAT.bar"/-->
+ 	
+  	 </target>
+</project>

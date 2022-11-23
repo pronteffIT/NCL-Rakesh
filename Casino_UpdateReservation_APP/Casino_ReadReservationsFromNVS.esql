@@ -1,0 +1,97 @@
+DECLARE OCIDB EXTERNAL CHARACTER 'OCINVSDB';
+DECLARE RSSCDB EXTERNAL CHARACTER 'RSSCNVSDB';
+DECLARE TriggerTime EXTERNAL TIME '04:00:00';
+DECLARE TriggerCount EXTERNAL INTEGER -1;
+DECLARE TriggerInterval_sec EXTERNAL INTEGER 86400;
+DECLARE TriggerAction EXTERNAL CHARACTER 'SET';
+DECLARE IgnoreMissed EXTERNAL BOOLEAN true;
+
+CREATE COMPUTE MODULE Casino_ReadReservationsFromNVS_NotificationRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rTimer REFERENCE TO OutputRoot;
+		DECLARE dCurDate DATE CURRENT_DATE;
+		
+		CREATE FIELD OutputLocalEnvironment.TimeoutRequest AS rTimer;
+		
+		SET rTimer.Action = TriggerAction;
+		SET rTimer.Identifier = 'DailyOnce';
+		
+		IF CURRENT_TIME > TriggerTime THEN
+			SET rTimer.StartDate = CAST(dCurDate + INTERVAL '1' DAY AS CHARACTER FORMAT 'yyyy-MM-dd');
+		ELSE
+			SET rTimer.StartDate = CAST(dCurDate AS CHARACTER FORMAT 'yyyy-MM-dd');
+		END IF;
+		
+		SET rTimer.StartTime = CAST(TriggerTime AS CHARACTER FORMAT 'HH:mm:ss');
+		SET rTimer.Count = TriggerCount;
+		SET rTimer.Interval = TriggerInterval_sec;
+		SET rTimer.IgnoreMissed = IgnoreMissed;
+		SET rTimer.AllowOverwrite = 'TRUE';
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE Casino_ReadReservationsFromNVS_ReadNVSReservation
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		DECLARE bPayload BLOB;
+		DECLARE query CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', '', '', '', '', rEnv);
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of OCI reservations that are past sail date ...', rEnv);
+		
+		-- get all the reservations from OCI that are past sail date
+		SET query = 'SELECT S.INVOICE, C.CRUISE FROM SALES AS S ' ||
+						'INNER JOIN dbo.CRUISE AS C ON C.CRUISE = S.CRUISE AND ' ||
+							'C.TODATE < GETDATE() AND ' ||
+							'C.TODATE > GETDATE() - 1';
+		SET rEnv.Temp.Sales.INVOICE[] = PASSTHRU(query TO Database.{OCIDB});
+			
+		-- fan out OCI invoices
+		FOR rInvoice AS rEnv.Temp.Sales.INVOICE[] DO
+			SET OutputRoot.JSON.Data.SOURCE = 'OCI';
+			SET OutputRoot.JSON.Data.INVOICE = rInvoice.INVOICE;
+			SET OutputRoot.JSON.Data.CRUISE = rInvoice.CRUISE;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END FOR;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup of RSSC reservations that are past sail date ...', rEnv);
+
+		-- get all the reservations from RSSC that are past sail date
+		SET query = 'SELECT S.INVOICE, C.CRUISE FROM SALES AS S ' ||
+						'INNER JOIN dbo.CRUISE AS C ON C.CRUISE = S.CRUISE AND ' ||
+							'C.TODATE < GETDATE() AND ' ||
+							'C.TODATE > GETDATE() - 1';
+		SET rEnv.Temp.Sales.INVOICE[] = PASSTHRU(query TO Database.{RSSCDB});
+
+		-- fan out RSSC invoices
+		FOR rInvoice AS rEnv.Temp.Sales.INVOICE[] DO
+			SET OutputRoot.JSON.Data.SOURCE = 'RSSC';
+			SET OutputRoot.JSON.Data.INVOICE = rInvoice.INVOICE;
+			SET OutputRoot.JSON.Data.CRUISE = rInvoice.CRUISE;
+
+			PROPAGATE TO TERMINAL 'out1';			
+		END FOR;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+

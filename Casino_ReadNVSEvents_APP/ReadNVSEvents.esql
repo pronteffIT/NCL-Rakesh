@@ -1,0 +1,83 @@
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+
+CREATE COMPUTE MODULE ReadNVSEvents_LogAndRoute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.NVSData;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rIn.Metadata.Table,
+											   rIn.Metadata.Channel,
+											   '',
+											   '',
+											   '',
+											   rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NVS event message', 'xml', rEnv);
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Read event from NVS ...', rEnv);
+		
+		SET OutputLocalEnvironment = InputLocalEnvironment;
+		SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		
+		IF UPPER(rIn.Metadata.Table) = 'MPAUDIT' THEN
+			IF rIn.Metadata.Action = 'DELETE' THEN
+				SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'CASINO_CONTACTDEL_IN';
+			ELSE
+				SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'CASINO_ACCOUNT_IN';
+			END IF;
+		ELSEIF UPPER(rIn.Metadata.Table) = 'SALES' THEN
+			SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'CASINO_RESERVATION_IN';
+		ELSEIF UPPER(rIn.Metadata.Table) = 'PAYMENT' THEN
+			SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'CASINO_RESPAY_IN';
+		ELSEIF UPPER(rIn.Metadata.Table) = 'PAX' THEN
+			IF rIn.Metadata.Action = 'DELETE' THEN
+				SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'CASINO_RESGUEST_IN';
+			ELSE
+				SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'CASINO_ACCOUNT_IN';
+			END IF;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE ReadNVSEvents_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot.MQMD.SourceQueue = 'CASINO_READEVENTS_IN';
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

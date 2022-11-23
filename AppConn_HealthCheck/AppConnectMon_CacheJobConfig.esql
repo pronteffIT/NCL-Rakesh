@@ -1,0 +1,11 @@
+ DECLARE appConnectShared SHARED ROW; 
+
+
+CREATE COMPUTE MODULE AppConnectMon_CacheJobConfig
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.DFDL.AppConnectJobs;
+		SET appConnectShared.record[]=rIn.record[];
+		RETURN TRUE;
+	END;	
+END MODULE;

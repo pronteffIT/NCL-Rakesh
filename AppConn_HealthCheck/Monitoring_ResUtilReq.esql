@@ -1,0 +1,18 @@
+
+
+CREATE COMPUTE MODULE Monitoring_ResUtilReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE soap NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+		DECLARE sys NAMESPACE 'http://www.approuter.com/schemas/2008/1/system';
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL =  rEnv.Temp.SysEndPoint;
+		SET OutputRoot.XMLNSC.soap:Envelope.soap:Header.sys:sessionId= rEnv.Temp.SessionId; 
+		SET OutputRoot.XMLNSC.soap:Envelope.soap:Body.sys:getResourceUtilizationData= '';
+
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

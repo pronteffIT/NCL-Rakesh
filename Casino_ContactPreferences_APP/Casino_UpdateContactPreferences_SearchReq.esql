@@ -1,0 +1,34 @@
+
+
+CREATE COMPUTE MODULE Casino_UpdateContactPreferences_SearchReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rIn REFERENCE TO InputRoot.DFDL.ContactPreferences;
+		DECLARE rEnv REFERENCE TO Environment;
+				
+		FOR rRec AS rIn.record[] DO
+			SET rEnv.Temp.Brand = rRec.brand;
+			SET rEnv.Record = rRec;
+
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.operation = 'retrieve';   
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.object = 'Contact';
+
+			IF rRec.brand = 'OCE' THEN
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'OCI_MP_Card__c';
+			ELSEIF rRec.brand = 'SSC' THEN
+				SET OutputLocalEnvironment.Destination.Salesforce.Request.externalIdName = 'RSSC_MP_Card__c';
+			END IF;
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.externalId = rRec.mpcard;
+			--SET OutputLocalEnvironment.Destination.Salesforce.Request.Id = '0034400001yCuh6';
+			
+			SET OutputLocalEnvironment.Destination.Salesforce.Request.filter.field[1].Id = true;
+			
+			PROPAGATE;
+		END FOR;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

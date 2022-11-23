@@ -1,0 +1,41 @@
+DECLARE OCIDB EXTERNAL CHARACTER '';
+DECLARE RSSCDB EXTERNAL CHARACTER '';
+DECLARE FromEmailId EXTERNAL CHARACTER '';
+DECLARE ToEmailId EXTERNAL CHARACTER '';
+DECLARE EventThresholdCount EXTERNAL INTEGER 100;
+
+CREATE COMPUTE MODULE Casino_HealthCheck_CheckDBEvents
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE query CHARACTER '';
+		DECLARE ociCnt, rsscCnt INTEGER 0;
+		DECLARE crlf CHARACTER CAST(x'0D0A' AS CHARACTER CCSID 1208);
+		
+		SET query = 'SELECT COUNT(1) AS EVENT_CNT FROM dbo.IIB_Events WHERE EVENT_STATUS = 0';
+		
+		SET rEnv.Temp.OCI_CNT[] = PASSTHRU(query TO Database.{OCIDB});
+		SET rEnv.Temp.RSSC_CNT[] = PASSTHRU(query TO Database.{RSSCDB});
+		
+		SET ociCnt = rEnv.Temp.OCI_CNT.EVENT_CNT;
+		SET rsscCnt = rEnv.Temp.RSSC_CNT.EVENT_CNT;
+		
+		IF (ociCnt > EventThresholdCount OR rsscCnt > EventThresholdCount) THEN
+			-- send email
+			CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+			
+			SET rEmail.EmailSubject = 'CASINO NVS transactions are not getting processed in IIB';
+			SET rEmail.EmailContent = 'OCI events count: ' || CAST(ociCnt AS CHARACTER) || crlf || crlf ||
+									  'RSSC events count: ' || CAST(rsscCnt AS CHARACTER);
+			SET rEmail.EmailAddress.FromAddress = FromEmailId;
+			SET rEmail.EmailAddress.ToAddress = ToEmailId;
+			
+			RETURN TRUE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

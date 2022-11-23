@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:ComIbmTimeoutNotification.msgnode="ComIbmTimeoutNotification.msgnode" xmlns:com_ncl_iib_NCL_ErrorHandler.subflow="com/ncl/iib/NCL_ErrorHandler.subflow" xmlns:com_ncl_iib_NCL_Logging.subflow="com/ncl/iib/NCL_Logging.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="NCL_FetchGuestIds.msgflow" nsPrefix="NCL_FetchGuestIds.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LogPayload" name="LogPayload" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.TriggerTime" name="TriggerTime" lowerBound="1" defaultValueLiteral="04:00:00">
+      <eType xmi:type="ecore:EDataType" href="http://www.ibm.com/wbi/2005/eflow#//EsqlTime"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.TriggerCount" name="TriggerCount" lowerBound="1" defaultValueLiteral="-1">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.TriggerInterval_sec" name="TriggerInterval_sec" lowerBound="1" defaultValueLiteral="86400">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.TriggerAction" name="TriggerAction" lowerBound="1" defaultValueLiteral="SET">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.IgnoreMissed" name="IgnoreMissed" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.C_DAY_TO" name="C_DAY_TO" lowerBound="1" defaultValueLiteral="7">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.L_DAY_FROM" name="L_DAY_FROM" lowerBound="1" defaultValueLiteral="8">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.L_DAY_TO" name="L_DAY_TO" lowerBound="1" defaultValueLiteral="15">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="NCL_FetchGuestIds" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_SyncGlobalId_APP/icons/full/obj16/NCL_FetchGuestIds.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_SyncGlobalId_APP/icons/full/obj30/NCL_FetchGuestIds.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_18" location="210,139" computeExpression="esql://routine/#Common_Exception.Main">
+        <translation xmi:type="utility:ConstantString" string="Exception"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_20" location="235,40" dataSource="NCLSEAT" computeExpression="esql://routine/#NCL_FetchGuestIds_ReadCloseSailGuests.Main">
+        <translation xmi:type="utility:ConstantString" string="ReadCloseSailGuests"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_Logging.subflow:FCMComposite_1" xmi:id="FCMComposite_1_5" location="493,140">
+        <translation xmi:type="utility:ConstantString" string="NCL_Logging"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_iib_NCL_ErrorHandler.subflow:FCMComposite_1" xmi:id="FCMComposite_1_6" location="307,140">
+        <translation xmi:type="utility:ConstantString" string="NCL_ErrorHandler"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="426,231" queueName="NCL_SYNC_GLOBALID_IN" transactionMode="no" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="NCL_SYNC_GLOBALID_IN"/>
+      </nodes>
+      <nodes xmi:type="ComIbmTimeoutNotification.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_7" location="93,40" uniqueIdentifier="CloseSail" timeoutInterval="10800">
+        <translation xmi:type="utility:ConstantString" string="CloseSailTimer"/>
+      </nodes>
+      <nodes xmi:type="ComIbmTimeoutNotification.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="102,230" uniqueIdentifier="LaterSail" timeoutInterval="28800">
+        <translation xmi:type="utility:ConstantString" string="LaterSailTimer"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="241,230" dataSource="NCLSEAT" computeExpression="esql://routine/#NCL_FetchGuestIds_ReadLaterSailGuests.Main">
+        <translation xmi:type="utility:ConstantString" string="ReadLaterSailGuests"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_1" sourceNode="FCMComposite_1_20" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_7" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_13" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_14" targetNode="FCMComposite_1_1" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_20" sourceNode="FCMComposite_1_7" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LogPayload">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.LogPayload" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+        <propertyDescriptor groupName="Group.Trigger" configurable="true" userDefined="true" describedAttribute="Property.TriggerTime">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.TriggerTime" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+          <propertyDescriptor groupName="Group.Trigger" configurable="true" userDefined="true" describedAttribute="Property.TriggerCount">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.TriggerCount" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+            <propertyDescriptor groupName="Group.Trigger" configurable="true" userDefined="true" describedAttribute="Property.TriggerInterval_sec">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.TriggerInterval_sec" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+              <propertyDescriptor groupName="Group.Trigger" configurable="true" userDefined="true" describedAttribute="Property.TriggerAction">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.TriggerAction" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+                <propertyDescriptor groupName="Group.Trigger" configurable="true" userDefined="true" describedAttribute="Property.IgnoreMissed">
+                  <propertyName xmi:type="utility:TranslatableString" key="Property.IgnoreMissed" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+                  <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.C_DAY_TO">
+                    <propertyName xmi:type="utility:TranslatableString" key="Property.C_DAY_TO" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+                    <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.L_DAY_FROM">
+                      <propertyName xmi:type="utility:TranslatableString" key="Property.L_DAY_FROM" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+                      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.L_DAY_TO">
+                        <propertyName xmi:type="utility:TranslatableString" key="Property.L_DAY_TO" bundleName="NCL_FetchGuestIds" pluginId="NCL_SyncGlobalId_APP"/>
+                      </propertyDescriptor>
+                    </propertyDescriptor>
+                  </propertyDescriptor>
+                </propertyDescriptor>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

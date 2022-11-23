@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<MessagePool xmlns="http://wwww.ibm.com/iib/test/1.0.0">
+    <MQInputMessage timestamp="1520868543935" nodeId="FCMComposite_1_5" name="TEST1" id="1520868543935-7">
+        <plainText>%3C%21--+Reservation_Id+9995975812+already+present+--%3E%0D%0A%3CReservation%3E%0D%0A%3CReservation_Id%3E9995975812%3C%2FReservation_Id%3E%0D%0A%3C%2FReservation%3E</plainText>
+        <MessageHeader backoutCount="0" characterSet="0" encoding="0" expiry="-1" feedback="0" messageFlags="0" messageType="8" messageSequenceNumber="1" offset="0" originalLength="-1" persistence="2" priority="-1" putApplicationType="0" report="0"/>
+    </MQInputMessage>
+</MessagePool>

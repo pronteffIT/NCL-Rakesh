@@ -1,0 +1,28 @@
+
+
+CREATE COMPUTE MODULE Common_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
