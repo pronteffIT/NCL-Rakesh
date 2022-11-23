@@ -1,0 +1,83 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+
+CREATE COMPUTE MODULE Prepare_CruiseRemoveAmenityOrder_Request
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE RefInReq REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		
+		SET OutputRoot.MQMD = Environment.MQMD;
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut NAMESPACE ns NAME 'NCL_CruiseRemoveAmenityOrderRQ' ;
+
+		SET rOut.ns:POS = RefInReq.*:POS;
+		SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = RefInReq.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID;
+		SET rOut.ns:AmenityOrderID.(XMLNSC.Attribute)ID = rEnv.AmenityOrderID;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking CruiseRemoveAmenityOrder service ...', rEnv);
+		
+		PROPAGATE TO TERMINAL 'out';
+		RETURN FALSE;
+		
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE CruiseRemoveAmenityOrder_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutWarnings,rOutWarning REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseRemoveAmenityOrderRS;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+			
+		
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateAmenityOrderItemsRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		
+		CREATE LASTCHILD OF rOut AS rOutWarnings IDENTITY sc:Warnings;
+		DECLARE rInErrors REFERENCE TO rEnv.Errors;
+		DECLARE type CHARACTER '3';
+			
+		FOR rError AS rInErrors.*:Error[]
+			DO
+				CREATE LASTCHILD OF rOutWarnings AS rOutWarning IDENTITY sc:Warning;
+				IF rError.ErrorSeverity='W' OR rError.ErrorSeverity='I'
+				THEN
+					SET type = '';
+				END IF;
+				-- Map warnings to error
+				-- TODO FieldValue is not really needed here. But have to check how the target assignment works
+				SET rOutWarning = FIELDVALUE(rError.ErrorMessage);
+				SET rOutWarning.(XMLNSC.Attribute)Code = CAST(COALESCE(NULLIF(rError.ErrorCode,''), 99999) AS INTEGER);
+				SET rOutWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(rError.ErrorMessage FROM 1 FOR 64);
+				SET rOutWarning.(XMLNSC.Attribute)Type = type;
+			END FOR;
+
+		-- add response msg to log event
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Remove Amenity response message', 'xml', rEnv);
+		END IF;
+		PROPAGATE TO TERMINAL 'out';
+			
+		RETURN FALSE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE LogoutSessionForCreateAmenityOrderItems
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		-- Build the Logout Message and invoke Versonix Logout API to close the session
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();		
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.sessionID;		
+		RETURN TRUE;
+	END;
+END MODULE;

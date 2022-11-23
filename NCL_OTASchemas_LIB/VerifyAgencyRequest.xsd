@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" targetNamespace="http://NCL_ValidateBookingLib" xmlns="http://NCL_ValidateBookingLib">
+	<xsd:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xsd:element name = "VerifyAgencyRequest" type = "VerifyAgencyRequest"/>
+	<xsd:complexType name="VerifyAgencyRequest">
+		<xsd:sequence>
+			<xsd:element minOccurs="0" name="source" type="SourceType">
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+</xsd:schema>

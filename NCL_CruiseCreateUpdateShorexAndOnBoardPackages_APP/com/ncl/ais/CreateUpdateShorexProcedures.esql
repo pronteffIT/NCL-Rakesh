@@ -1,0 +1,515 @@
+BROKER SCHEMA com.ncl.ais
+
+/** Common procedures for this service **/
+
+CREATE PROCEDURE CreateLoadBookingReq(INOUT rEnv REFERENCE, INOUT rOut REFERENCE)
+BEGIN
+	DECLARE PROMOS ROW;
+	DECLARE rLoadBkngReq, rLoadBkngMsgHdr REFERENCE TO rOut;
+	DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+	
+	DECLARE cGuestRefNum, cFareCode CHARACTER '';
+	 
+	SET rOut.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;	
+	CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+	CREATE LASTCHILD OF rOut.XMLNSC AS rLoadBkngReq NAME 'LoadBooking_IN';
+	
+	--CREATE FIELD rOut.XMLNSC.LoadBooking_IN AS rLoadBkngReq;
+	
+--	CREATE LASTCHILD OF rLoadBkngReq AS rLoadBkngMsgHdr NAME 'MsgHeader';
+--	SET rLoadBkngMsgHdr.Version = VersonixAPIVersion;
+--	SET rLoadBkngMsgHdr.SessionGUID = rEnv.Temp.SessionId;
+--	CREATE FIELD rLoadBkngMsgHdr.CallerInfo.ExtSystemInfo.SourceCode;
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rLoadBkngReq);
+	SET rLoadBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+
+	
+	IF rEnv.Temp.ModeOfOperation = 'Edit' OR rEnv.Temp.ModeOfOperation = 'Update' 
+	THEN
+		CREATE FIELD rLoadBkngReq.Options;
+		SET rLoadBkngReq.Options.Lock = 'Y';
+		CREATE FIELD rLoadBkngReq.Options.LockMode;		
+		IF EXISTS(rOrgMsg.*:BookingLockExpirationExtensionTime[]) THEN
+			SET rLoadBkngReq.Options.LockMode.Duration = CAST(rOrgMsg.*:BookingLockExpirationExtensionTime AS INTEGER);
+		ELSE
+			SET rLoadBkngReq.Options.LockMode.Duration = 15;
+		END IF;		
+	END IF;
+	
+	CREATE FIELD rLoadBkngReq.ResShellOptions;
+	--SET rLoadBkngReq.ResShellOptions.IncludeElements = 'ResHeader ResPackages ResGuests ResStdDinings';
+	SET rLoadBkngReq.ResShellOptions.IncludeElements = 'ResHeader ResPackages ResGuests';
+	SET rLoadBkngReq.ResID = rEnv.Temp.ReservationId;
+END;
+
+
+
+CREATE PROCEDURE StoreErrorsAsWarnings(INOUT rErrors REFERENCE, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE)
+BEGIN
+	DECLARE cCode,cExternalCodeInfo CHARACTER '';
+	DECLARE rWarnings REFERENCE TO rEnv.Temp.Warnings;
+	DECLARE rWarn REFERENCE TO rEnv;
+	
+	IF NOT EXISTS(rEnv.Temp.Warnings[]) THEN
+		CREATE FIELD rEnv.Temp.Warnings AS rWarnings;				
+	END IF;
+
+	FOR rError AS rErrors.Error[] DO
+		SET cCode = rError.ErrorCode;
+		CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY ns:Warning;
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.Temp.Channel || '#' || AdvCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			-- trigger cache loader
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = rEnv.Temp.Channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = AdvCodeType;
+
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+
+			CALL CreateWarningResponse('', rEnv.Temp.Channel, cCode, AdvCodeType, rError, rWarn);
+		ELSE
+			CALL CreateWarningResponse(cExternalCodeInfo, rEnv.Temp.Channel, cCode, AdvCodeType, rError, rWarn);
+		END IF;
+	
+	END FOR; 	
+END;
+
+
+
+CREATE PROCEDURE BuildPromotions(IN rIn REFERENCE, INOUT rEnvProms REFERENCE)
+BEGIN
+	DECLARE PROMOS ROW;
+	DECLARE rPromoCode REFERENCE TO PROMOS;
+	DECLARE rEnvPromo, rExclPromo REFERENCE TO rEnvProms;
+	
+	DECLARE cGuestRefNum, cFareCode CHARACTER '';
+	
+	-- loop thru the guest list
+	FOR rGuestDtl AS rIn.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+		SET cGuestRefNum = rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber;
+		
+		-- loop thru the fare code
+		FOR rFareCode AS rGuestDtl.*:SelectedFareCode[] DO
+			SET cFareCode = rFareCode.(XMLNSC.Attribute)FareCode;
+			
+			IF LENGTH(cFareCode) > 0 THEN
+				IF EXISTS(PROMOS.{cFareCode}[]) THEN
+					SET PROMOS.{cFareCode} = PROMOS.{cFareCode} || ' ' || cGuestRefNum;
+				ELSE
+					SET PROMOS.{cFareCode} = cGuestRefNum;
+				END IF;
+			END IF;
+		END FOR;
+	END FOR;
+	
+	MOVE rPromoCode FIRSTCHILD;
+
+	-- loop thru the farecode list		
+	WHILE LASTMOVE(rPromoCode) DO
+		CREATE LASTCHILD OF rEnvProms AS rEnvPromo NAME 'Promotions';
+		SET rEnvPromo.PromoCode = FIELDNAME(rPromoCode);
+		SET rEnvPromo.GuestRefs = rPromoCode;
+
+		-- loop thru the guest list
+		FOR rGuestDtl AS rIn.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+			SET cGuestRefNum = rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber;
+			
+			IF NOT CONTAINS(rEnvPromo.GuestRefs, cGuestRefNum) THEN
+				CREATE LASTCHILD OF rEnvProms AS rExclPromo NAME 'Promotions';
+				
+				SET rExclPromo.GuestRefs = cGuestRefNum;
+				SET rExclPromo.PromoCode = FIELDNAME(rPromoCode);
+				SET rExclPromo.Mode = 'EXCLUDED';
+			END IF;
+		END FOR;
+		
+		MOVE rPromoCode NEXTSIBLING;
+	END WHILE;
+END;
+
+
+CREATE PROCEDURE CreateWarningResponseForVXErrors(INOUT rEnv REFERENCE, INOUT rOrgMsg REFERENCE, IN rVxError REFERENCE, INOUT rOutRoot REFERENCE)
+BEGIN
+	DECLARE rOut REFERENCE TO rOutRoot;
+	DECLARE rWarn REFERENCE TO rEnv;
+	
+	DECLARE cCode CHARACTER rVxError.Errors.Error.ErrorCode;
+	DECLARE cExternalCodeInfo, cErrorMsg CHARACTER '';
+	DECLARE sessionValid BOOLEAN FALSE;
+	DECLARE cChannel CHARACTER COALESCE(rEnv.Temp.Channel,'NCLWEBC');
+	
+	DECLARE WARNMSG ROW;
+	
+	CREATE LASTCHILD OF WARNMSG DOMAIN('XMLNSC') NAME 'Warnings';
+	
+	FOR rError AS rVxError.Errors.Error[] DO
+		SET cCode = rError.ErrorCode;
+		
+		CREATE LASTCHILD OF WARNMSG.Warnings AS rWarn NAMESPACE ns NAME 'Warning';
+		
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache( cChannel || '#' || AdvCodeType, cCode, XC10CacheMap, 
+																			XC10ConnectionConfig);
+		
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+			-- trigger cache loader
+			IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, AdvCodeType) THEN
+				CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				SET rOutRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+				SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = AdvCodeType;
+				
+				SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || AdvCodeType || '#';
+				
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+			END IF;
+																		
+			CALL CreateWarningResponse('', cChannel, cCode, AdvCodeType, rError, rWarn);
+		ELSE		
+			CALL CreateWarningResponse(cExternalCodeInfo, cChannel, cCode, AdvCodeType, rError, rWarn);
+		END IF;
+		
+		SET cErrorMsg = FIELDVALUE(rError.ErrorMessage);
+		
+		IF CONTAINS(cErrorMsg, 'Session expired') THEN
+			SET sessionValid = com.ncl.ais.utils.CheckSessionValidity(rEnv.Temp.SessionId);
+			
+			IF NOT sessionValid THEN
+				CALL com.ncl.ais.utils.CleanupInvalidSession(rEnv.Temp.SessionId);
+			END IF;
+		ELSEIF cErrorMsg = 't_ResControl.ExtendLock: Not locked' AND LENGTH(COALESCE(rEnv.Temp.ReservationId, '')) > 0 THEN
+			CALL com.ncl.ais.utils.DeleteResLock(rEnv.Temp.SessionId, rEnv.Temp.ReservationId, 'NCLWEBGDS');
+		END IF;
+	END FOR;
+
+	-- create response message
+	CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	--CREATE FIELD rOutRoot.XMLNSC.ns:NCL_StatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+	CREATE FIELD rOutRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+	
+	CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+	SET rOut.ns:Warnings = WARNMSG.Warnings;
+END;
+
+CREATE PROCEDURE CreateWarningResponse(IN cExternalCodeDetails CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+										IN rVxError REFERENCE, INOUT rWarn REFERENCE) 
+BEGIN
+	DECLARE cAdvCode, cErrorMsg, cExternalCode CHARACTER '';
+	DECLARE defAdvCode CHARACTER '12228';
+	DECLARE defErrorMsg CHARACTER 'System error from backend Try Later';
+	
+	SET cExternalCode = cExternalCodeDetails;
+	
+	IF cExternalCode = '' THEN		
+		IF (cErrorCode = '' OR cChannel = '') THEN
+			SET cAdvCode = defAdvCode;
+			SET cErrorMsg = defErrorMsg;
+		ELSE
+			SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+			
+			SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+			SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+		END IF;
+	ELSE
+		SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+	END IF;
+		
+	IF COALESCE(cAdvCode, '') = '' THEN
+		SET rWarn.(XMLNSC.Attribute)Code = defAdvCode;
+		SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(defErrorMsg FROM 1 FOR 64);
+	ELSE
+		SET rWarn.(XMLNSC.Attribute)Code = cAdvCode;
+		SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);
+	END IF;
+		
+	IF rVxError.ErrorSeverity IN('W', 'I') THEN
+		SET rWarn.(XMLNSC.Attribute)Type = '2';
+	ELSE
+		SET rWarn.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	
+	SET rWarn = FIELDVALUE(rVxError.ErrorMessage);
+END;
+
+
+CREATE PROCEDURE CreateUpdateBookingReqWithResId(INOUT rEnv REFERENCE, INOUT rOrgMsg REFERENCE, INOUT rLoadBkgRes REFERENCE, 
+													INOUT rUpdtBkngReq REFERENCE, INOUT OutputRoot REFERENCE)
+BEGIN
+	DECLARE rUpdtBkngResPkgs,rUpdtBkngResPkg,rUpdtBkngResStdDinings, rUpdtBkngDining, rUpdtBkngGuestInfos, rGuests, 
+			rRemLoyaltyID, rUpdtBkngGuestInfo, rResShipReq REFERENCE TO rUpdtBkngReq;
+	DECLARE rSailInfo REFERENCE TO rOrgMsg.*:SailingInfo;
+	DECLARE rGuestDtl REFERENCE TO rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail;
+
+	DECLARE cCompareGuest, cLoyalMbrId, cClientId, cResPromoCode, cLookupCode CHARACTER '';
+	DECLARE iGuestCnt1, iGuestCnt2 INTEGER 0;
+	DECLARE hasLoyaltyMembershipId, guestDetailsDontMatch BOOLEAN FALSE;
+	
+	--CREATE FIELD rUpdtBkngReq.MsgHeader.CallerInfo.ExtSystemInfo;
+--	CREATE FIELD rUpdtBkngReq.MsgHeader;
+--	SET rUpdtBkngReq.MsgHeader.Version = VersonixAPIVersion;
+--	SET rUpdtBkngReq.MsgHeader.SessionGUID = rLoadBkgRes.MsgHeader.SessionGUID; 
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rUpdtBkngReq);
+	SET rUpdtBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;	
+	
+	CREATE FIELD rUpdtBkngReq.ResShellOptions;
+	SET rUpdtBkngReq.ResShellOptions.ExcludeElements = 'SpecialRequests';
+	
+	CREATE FIELD rUpdtBkngReq.ResShell;	
+	SET rUpdtBkngReq.ResShell.ResHeader = rLoadBkgRes.ResShell.ResHeader;
+
+	-- Create Client GuestRef Map
+	FOR rLBGuest AS rLoadBkgRes.ResShell.ResGuests.ResGuest[] 
+	DO		
+		SET rEnv.Temp.ClientsGuestRefMap.{rLBGuest.ClientID} = rLBGuest.GuestSeqN;		
+	END FOR;
+	
+	-- Loop through in message guest details and create relevant arrays
+	FOR rInPkg AS rOrgMsg.*:Packages.*:PackageID[] 
+	DO	
+		IF NOT com.ncl.ais.utils.isNumeric(FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID)) THEN
+			THROW USER EXCEPTION MESSAGE 2951 VALUES('Package ID: ' || FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID) || ' is invalid') ;										
+		END IF;
+		
+		IF FIELDVALUE(rInPkg.(XMLNSC.Attribute)mode) = 'Add'
+		THEN
+				SET rEnv.Temp.AddPkgs.{FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID)} = rInPkg.*:GuestInfo;
+		ELSEIF rInPkg.(XMLNSC.Attribute)mode = 'Remove'
+		THEN
+			--IF NOT EXISTS(rEnv.Temp.RemovePkgs.{FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID)}[]) THEN
+			--	CREATE FIELD rEnv.Temp.RemovePkgs.{FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID)} ;
+			--END IF;
+				--SET rEnv.Temp.RemovePkgs.{FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID)} = rInPkg.*:GuestInfo;
+			DECLARE cRemGuestRefs CHARACTER '';	
+			FOR rRemLoyaltyID AS rInPkg.*:GuestInfo.*:Guest.*:LoyaltyMembershipID[] 
+			DO
+				 SET cRemGuestRefs = cRemGuestRefs || ' ' || rEnv.Temp.ClientsGuestRefMap.{rRemLoyaltyID};			
+			END FOR;
+			
+			SET rEnv.Temp.RemovePkgs.{FIELDVALUE(rInPkg.(XMLNSC.Attribute)ID)} = TRIM(cRemGuestRefs);	
+		END IF;			
+	END FOR;
+	
+	
+	-- Map Res Packages
+	CREATE FIELD rUpdtBkngReq.ResShell.ResPackages AS rUpdtBkngResPkgs;
+		
+	FOR rLBPackage AS rLoadBkgRes.ResShell.ResPackages.ResPackage[] 
+	DO		
+		IF EXISTS(rEnv.Temp.RemovePkgs.{rLBPackage.PackageID}[]) 
+		THEN
+			DECLARE cTempGuestRefs,cRemainingGuestRefs CHARACTER '';
+			DECLARE cExistingGuestRefs CHARACTER COALESCE(rLBPackage.GuestRefs, '');
+			--DECLARE rRemPkg REFERENCE TO rEnv.Temp.RemovePkgs.{rLBPackage.PackageID};
+			DECLARE cRemoveGuestRefs CHARACTER rEnv.Temp.RemovePkgs.{rLBPackage.PackageID};
+			
+			IF LENGTH(TRIM(cExistingGuestRefs)) > 0 THEN
+				SET cTempGuestRefs = cExistingGuestRefs || ' ';
+			END IF;
+
+			WHILE LENGTH(cTempGuestRefs) > 0 DO
+				DECLARE cGuestRef CHARACTER SUBSTRING(cTempGuestRefs BEFORE ' ');
+				
+				IF NOT CONTAINS(cRemoveGuestRefs,cGuestRef) THEN
+             		SET cRemainingGuestRefs = cGuestRef || ' ';
+         		END IF;
+         		SET cTempGuestRefs = SUBSTRING(cTempGuestRefs AFTER ' ');
+     		END WHILE;
+			
+			--CREATE LASTCHILD OF rUpdtBkngResPkgs AS rUpdtBkngResPkg NAME 'ResPackage';
+			IF LENGTH(TRIM(cRemainingGuestRefs))> 0 THEN
+				CREATE LASTCHILD OF rUpdtBkngResPkgs AS rUpdtBkngResPkg NAME 'ResPackage';
+  
+				SET rUpdtBkngResPkg.PackageID = rLBPackage.PackageID;
+				SET rUpdtBkngResPkg.GuestRefs = cRemainingGuestRefs; 
+				
+			END IF;
+		ELSE
+			CREATE LASTCHILD OF rUpdtBkngResPkgs AS rUpdtBkngResPkg NAME 'ResPackage';
+			--SET rUpdtBkngResPkg = rLBPackage;
+			--SET rUpdtBkngResPkg = rLBPackage;
+			
+			SET rUpdtBkngResPkg.*[] = rLBPackage.*[];
+		END IF;					
+	END FOR;
+			
+	DECLARE rAddPkg REFERENCE TO rEnv.Temp.AddPkgs.*[1] ;
+	
+	WHILE LASTMOVE(rAddPkg) DO
+		DECLARE cGuestRefStr CHARACTER '';
+		
+		--DECLARE rAddGuest REFERENCE TO rAddPkg;
+		--MOVE rAddGuest FIRSTCHILD; -- rAddPkg.Guest
+		
+		--DECLARE rAddLoyaltyID REFERENCE TO rAddGuest; 
+		--MOVE rAddLoyaltyID FIRSTCHILD; -- rAddPkg.Guest
+		
+		--FOR rGuestID AS rAddPkg.Guest[] DO
+		FOR rGuestID AS rAddPkg.*:Guest.*:LoyaltyMembershipID[] 
+		DO	
+			IF NOT com.ncl.ais.utils.isEmpty(rGuestID) THEN
+				SET cGuestRefStr = cGuestRefStr || rEnv.Temp.ClientsGuestRefMap.{rGuestID} || ' ';
+			END IF;
+		--FOR rGuestID AS rAddGuest.LoyaltyMembershipID[] DO
+		--WHILE LASTMOVE(rAddLoyaltyID) DO
+			--SET cGuestRefStr = cGuestRefStr || rEnv.Temp.ClientsGuestRefMap.{rGuest.LoyaltyMembershipID} || ' ';
+			--SET cGuestRefStr = cGuestRefStr || rEnv.Temp.ClientsGuestRefMap.{rAddLoyaltyID} || ' ';
+			--MOVE rAddLoyaltyID NEXTSIBLING;
+		--END WHILE;						
+		END FOR;
+			
+			FOR rLBPckg AS rLoadBkgRes.ResShell.ResPackages.ResPackage[] DO
+				
+				IF rLBPckg.PackageID = FIELDNAME(rAddPkg) THEN
+					SET cGuestRefStr = REPLACE( cGuestRefStr , rLBPckg.GuestRefs|| ' ');
+				END IF;
+			END FOR;
+		
+		IF LENGTH(cGuestRefStr)>1 THEN
+				CREATE LASTCHILD OF rUpdtBkngResPkgs AS rUpdtBkngResPkg NAME 'ResPackage';
+				SET rUpdtBkngResPkg.PackageID = FIELDNAME(rAddPkg);
+				SET rUpdtBkngResPkg.GuestRefs = TRIM(cGuestRefStr);
+				SET rUpdtBkngResPkg.BookMode = COALESCE(rAddPkg.BookMode, 'PRE-SELL ONLY');
+		END IF;		
+		
+		
+		MOVE rAddPkg NEXTSIBLING;	
+	END WHILE;		
+	
+	-- Map Res Dining
+	CREATE FIELD rUpdtBkngReq.ResShell.ResStdDinings AS rUpdtBkngResStdDinings;
+	FOR rInDining AS rOrgMsg.*:StandardDinings.*:Dining[]  
+	DO
+		IF FIELDVALUE(rInDining.(XMLNSC.Attribute)mode) = 'Add' OR FIELDVALUE(rInDining.(XMLNSC.Attribute)mode) = 'Update'
+		THEN
+			DECLARE guestRefs CHARACTER '';
+			CREATE LASTCHILD OF rUpdtBkngResStdDinings AS rUpdtBkngDining NAME 'Dining';
+			
+			SET rUpdtBkngDining.Ship = rInDining.*:Ship;
+			SET rUpdtBkngDining.Restaurant = rInDining.*:RestaurantName;
+			SET rUpdtBkngDining.StartDateTime = rInDining.*:StartDateTime;
+			
+			CREATE FIELD rUpdtBkngDining.Guests AS rGuests;
+			CREATE FIELD rUpdtBkngDining.ExtraGuestInfos AS rUpdtBkngGuestInfos;
+			
+			FOR rGuest AS rInDining.*:GuestDetails.*:Guest[] 
+			DO
+				DECLARE cGuestRef CHARACTER COALESCE(rEnv.Temp.ClientsGuestRefMap.{rGuest.*:LoyaltyMembershipID},'');
+				SET guestRefs = guestRefs || cGuestRef  || ' ';	
+				
+				IF LENGTH(cGuestRef) > 0 AND CAST(cGuestRef AS INTEGER) > 0 
+				THEN
+					CREATE LASTCHILD OF rUpdtBkngGuestInfos AS rUpdtBkngGuestInfo NAME 'ExtraGuestInfo';
+					SET rUpdtBkngGuestInfo.GuestSeqN = cGuestRef;
+					SET rUpdtBkngGuestInfo.ExtraGuestCount = rGuest.*:AdditionalGuestCount;
+				END IF; 		
+			END FOR;
+			
+			--SET rUpdtBkngDining.Guests = TRIM(guestRefs);
+			SET rGuests = TRIM(guestRefs);			
+		END IF;	
+	END FOR;			
+END;
+
+
+
+CREATE PROCEDURE LookupAgencyByResID(INOUT resID CHARACTER, INOUT rEnv REFERENCE) BEGIN
+	DECLARE query CHARACTER 'SELECT AP.AGENCY_ID as AGENCYID, AP.AGENCY_NAME AS AGENCYNAME,AP.OFFICE_CODE AS OFFICECODE, AP.AGENCY_TYPE AS ' ||
+	 						'AGENCYTYPE, AP.DEFAULT_CURRENCY CURRENCYCODE, (SELECT PHONE_NUMBER FROM AGENCY_PHONE A WHERE A.AGENCY_ID = AP.AGENCY_ID ' ||
+	 						'AND PHONE_TYPE IN (''PRIMARY'',''BUSINESS'') AND ROWNUM = 1) AS AGENCYPHONE, SEC.AGENCY_ID AS SECONDARYAGENCYID, ' ||
+	 						'SEC.AGENCY_NAME AS SECONDARYAGENCYNAME,( SELECT PHONE_NUMBER FROM AGENCY_PHONE A WHERE A.AGENCY_ID = SEC.AGENCY_ID AND ' ||
+	 						'PHONE_TYPE IN (''PRIMARY'',''BUSINESS'') AND ROWNUM = 1) AS SECONDARYAGENCYPHONE FROM RES_HEADER RH, AGENCY AP, ' ||
+	 						'AGENCY SEC WHERE RH.RES_ID = ? AND RH.AGENCY_ID = AP.AGENCY_ID AND RH.SEC_AGENCY_ID = SEC.AGENCY_ID(+)';
+	
+	SET rEnv.Temp.AgencyInfo[] = PASSTHRU(query VALUES (resID));
+END;
+
+CREATE PROCEDURE LookupResLockExpiration(IN resID CHARACTER, IN sessionID CHARACTER) RETURNS CHARACTER 
+BEGIN
+	DECLARE cQueryResLock, cQuerySessionLock CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQueryResLock = 'SELECT CASE WHEN (TIMERELEASE-SYSDATE)*24*60 > 5 THEN TO_CHAR(TIMERELEASE,''yyyy-mm-dd hh24:mi:ss'') ELSE '||
+					'TO_CHAR(TIMERELEASE+ 5/(24*60),''yyyy-mm-dd hh24:mi:ss'') END AS BOOKINGLOCKEXPIRATIONTIME FROM RES_LOCK WHERE ' ||
+					'TABLE_REC_ID = ? and LOCK_NAME = ? AND EXTERNAL_ID = ? ' ;
+	
+	--SET DB.Result[] = PASSTHRU(cQueryResLock VALUES(resID, 'RES.' || resID, sessionID));
+	-- This is how externalID being stored now
+	SET DB.Result[] = PASSTHRU(cQueryResLock VALUES(resID, 'RES.' || resID, resID || '.' || sessionID));
+	
+	RETURN COALESCE(CAST(DB.Result.BOOKINGLOCKEXPIRATIONTIME AS CHARACTER),'');
+
+END;	
+
+DECLARE blobXML1 SHARED BLOB ;
+DECLARE blobXML2 SHARED BLOB ;
+CREATE PROCEDURE CreateUpdateBookingTransform(INOUT rTrans REFERENCE,INOUT rEnvTemp REFERENCE)
+BEGIN
+	DECLARE rQuery REFERENCE TO rTrans;
+
+	IF blobXML1 IS NULL THEN	
+		SET blobXML1 = CAST('<XSLBody><!-- $NoKeywords$ --><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:msxsl="urn:schemas-microsoft-com:xslt" xmlns:SwMain="urn:objects-versonix-com:SwMain" xmlns:set="http://exslt.org/sets" exclude-result-prefixes="msxsl SwMain set" version="1.0"><xsl:output method="xml" omit-xml-declaration="yes"/><!-- Set to ''Y'' by SwMain --><xsl:param name="SwMain"/><!-- Currency Code --><xsl:param name="CurrCode">USD</xsl:param><!-- Currency Rate --><xsl:param name="CurrRate">1</xsl:param><!-- Currency Symbol Code --><xsl:param name="CurrSymb">36</xsl:param><!-- Show Invoice Details (Y/N) --><xsl:param name="InvcDetails">Y</xsl:param><!-- Hide Invoice (Y/N) for WL or invalid bookings --><xsl:param name="HideInvoice">N</xsl:param><!-- --><!-- Global variables --><!-- --><xsl:variable name="Customer"><xsl:value-of select="//RES_HEADER/UT_SETTINGS/SETTING[NAME=''CUSTOMER'']/VALUE"/></xsl:variable><!-- The ITEM_TYPE variable will contain INV_ITEM_TYPE elements --><xsl:variable name="ITEM_TYPE"><xsl:apply-templates select="//RES_HEADER/INV_ITEM_TYPE/ROW" mode="copy_append_nodes"> </xsl:apply-templates></xsl:variable><!-- The INV_ITEM_GROUP_MATCH variable will contain INV_ITEM_GROUP_MATCH elements --><xsl:variable name="INV_ITEM_GROUP_MATCH"><xsl:apply-templates select="//RES_HEADER/INV_ITEM_GROUP_MATCH/ROW" mode="copy_append_nodes"> </xsl:apply-templates></xsl:variable><!-- The INVOICE_ITEM_GROUP variable will contain INVOICE_ITEM_GROUP elements --><xsl:variable name="INVOICE_ITEM_GROUP"><xsl:apply-templates select="//RES_HEADER/INVOICE_ITEM_GROUP/ROW" mode="copy_append_nodes"> </xsl:apply-templates></xsl:variable><!-- --><!-- Root template --><!-- --><xsl:template match="/"><OUT_INVOICE><xsl:copy-of select="/RES_HEADER"/><CUSTOMER><xsl:value-of select="$Customer"/></CUSTOMER><xsl:variable name="vacationStart"><xsl:for-each select="/RES_HEADER/UT_RES_COMPONENT/RES_COMPONENT"><xsl:sort select="START_DATE" data-type="text" order="ascending"/><xsl:if test="position() = 1"><xsl:value-of select="START_DATE"/></xsl:if></xsl:for-each></xsl:variable><VACATION_START><xsl:value-of select="$vacationStart"/></VACATION_START><xsl:variable name="vacationEnd"><xsl:for-each select="/RES_HEADER/UT_RES_COMPONENT/RES_COMPONENT"><xsl:sort select="END_DATE" data-type="text" order="descending"/><xsl:if test="position() = 1"><xsl:value-of select="END_DATE"/></xsl:if></xsl:for-each></xsl:variable><VACATION_END><xsl:value-of select="$vacationEnd"/></VACATION_END><xsl:variable name="CurrencyCode" select="/RES_HEADER/CURRENCY_CODE"/><xsl:choose><xsl:when test="$CurrencyCode = ''GBP''"><CURRENCY_SYMBOL>&amp;#163;</CURRENCY_SYMBOL><CURRENCY_FORMAT>###,###,##0.00</CURRENCY_FORMAT><CURRENCY_SYMBOL_POSITION>prepend</CURRENCY_SYMBOL_POSITION></xsl:when><xsl:when test="$CurrencyCode = ''EUR''"><CURRENCY_SYMBOL>&amp;#8364;</CURRENCY_SYMBOL><CURRENCY_FORMAT>###,###,##0.00</CURRENCY_FORMAT><CURRENCY_SYMBOL_POSITION>prepend</CURRENCY_SYMBOL_POSITION></xsl:when><xsl:otherwise><CURRENCY_SYMBOL>&amp;#36;</CURRENCY_SYMBOL><CURRENCY_FORMAT>###,###,##0.00</CURRENCY_FORMAT><CURRENCY_SYMBOL_POSITION>prepend</CURRENCY_SYMBOL_POSITION></xsl:otherwise></xsl:choose><xsl:if test="$HideInvoice = ''Y''"><ERROR>Invoice is not shown for invalid or waitlisted bookings.</ERROR></xsl:if><xsl:if test="$HideInvoice != ''Y''"><xsl:apply-templates/></xsl:if></OUT_INVOICE></xsl:template><!-- --><!-- Override built-in template rule for text nodes. --><!-- --><xsl:template match="text()"/><!-- --><!-- Main template for Invoice totals --><!-- --><xsl:template match="UT_RES_INVOICE_ITEM"><!-- The InvcWithGroup variable will contain RES_INVOICE_ITEM elements with grouping data appended (INV_ITEM_GROUP and SORT_SEQN) --><xsl:variable name="InvcWithGroup"><xsl:apply-templates select="RES_INVOICE_ITEM" mode="set_grouping"/></xsl:variable><!-- The InvcGroups variable will contain list of distinct INV_ITEM_GROUP with their SORT_SEQN --><xsl:variable name="InvcGroups"><xsl:call-template name="set:distinct"><xsl:with-param name="nodes" select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM/INV_ITEM_GROUP"/></xsl:call-template></xsl:variable><!-- The InvItemType variable will contain list of distinct INVOICE_ITEM_TYPE --><xsl:variable name="InvItemType"><xsl:call-template name="set:distinct"><xsl:with-param name="nodes" select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM/INV_ITEM_GROUP_MATCH"/></xsl:call-template></xsl:variable><!-- --><!-- Res level totals --><!-- --><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM/AMOUNT) div $CurrRate"/></TOTAL><!-- --><!-- Invoice item group totals --><!-- --><INVC_GROUP_TOTALS><xsl:for-each select="msxsl:node-set($InvcGroups)/INV_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="INV_ITEM_GROUP"/><INV_ITEM_GROUP><xsl:variable name="InvItemGroup" select="INV_ITEM_GROUP"/><SORT_SEQN><xsl:value-of select="SORT_SEQN"/></SORT_SEQN><CODE><xsl:value-of select="INV_ITEM_GROUP"/></CODE><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[INV_ITEM_GROUP=current()/INV_ITEM_GROUP]/AMOUNT) div $CurrRate"/></TOTAL><INV_ITEM_GROUP_DETAILS><xsl:for-each select="msxsl:node-set($InvItemType)/INV_ITEM[INV_ITEM_GROUP=$InvItemGroup]"><xsl:sort select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemGroupD" select="INV_ITEM_GROUP"/><xsl:variable name="InvItemTypeD" select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemTypeComment" select="msxsl:node-set($ITEM_TYPE)/ROW[ROW/INVOICE_ITEM_TYPE=$InvItemTypeD]/ROW/COMMENTS"/><INV_ITEM_GROUP_DETAIL><INV_ITEM_GROUP_CODE><xsl:value-of select="INV_ITEM_GROUP"/></INV_ITEM_GROUP_CODE><INVOICE_ITEM_TYPE><xsl:value-of select="INVOICE_ITEM_TYPE"/></INVOICE_ITEM_TYPE><INVOICE_ITEM_TYPE_COMMENT><xsl:value-of select="$InvItemTypeComment"/></INVOICE_ITEM_TYPE_COMMENT><INVOICE_ITEM_TYPE_LONG><xsl:choose><xsl:when test="string-length(InvItemTypeComment) > 1"><xsl:value-of select="$InvItemTypeComment"/></xsl:when><xsl:otherwise><xsl:value-of select="INVOICE_ITEM_TYPE"/></xsl:otherwise></xsl:choose></INVOICE_ITEM_TYPE_LONG><AMOUNT><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[INV_ITEM_GROUP=$InvItemGroupD and INVOICE_ITEM_TYPE=$InvItemTypeD]/AMOUNT) div $CurrRate"/></AMOUNT></INV_ITEM_GROUP_DETAIL></xsl:for-each></INV_ITEM_GROUP_DETAILS></INV_ITEM_GROUP></xsl:for-each></INVC_GROUP_TOTALS><!-- --><!-- Guest totals --><!-- --><INVC_GUEST_TOTALS><xsl:for-each select="/RES_HEADER/UT_RES_GUEST/RES_GUEST"><GUEST><xsl:variable name="GuestSeqN"><xsl:value-of select="GUEST_SEQN"/></xsl:variable><xsl:variable name="ClientID"><xsl:value-of select="CLIENT_ID"/></xsl:variable><GUEST_SEQN><xsl:value-of select="GUEST_SEQN"/></GUEST_SEQN><GUEST_NAME><xsl:value-of select="FULL_NAME"/></GUEST_NAME><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN]/AMOUNT) div $CurrRate"/></TOTAL><INVC_GROUP_TOTALS><xsl:for-each select="msxsl:node-set($InvcGroups)/INV_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="INV_ITEM_GROUP"/><xsl:if test="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN and INV_ITEM_GROUP=current()/INV_ITEM_GROUP]"><INV_ITEM_GROUP><SORT_SEQN><xsl:value-of select="SORT_SEQN"/></SORT_SEQN><CODE><xsl:value-of select="INV_ITEM_GROUP"/></CODE><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN and INV_ITEM_GROUP=current()/INV_ITEM_GROUP]/AMOUNT) div $CurrRate"/></TOTAL><GUEST_INV_ITEM_GROUP_DETAILS><xsl:for-each select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN and INV_ITEM_GROUP=current()/INV_ITEM_GROUP]"><xsl:sort select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemGroupD" select="INV_ITEM_GROUP"/><xsl:variable name="InvItemTypeD" select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemTypeComment" select="msxsl:node-set($ITEM_TYPE)/ROW[ROW/INVOICE_ITEM_TYPE=$InvItemTypeD]/ROW/COMMENTS"/><GUEST_INV_ITEM_GROUP_DETAIL><INV_ITEM_GROUP_CODE><xsl:value-of select="INV_ITEM_GROUP"/></INV_ITEM_GROUP_CODE><INVOICE_ITEM_TYPE><xsl:value-of select="INVOICE_ITEM_TYPE"/></INVOICE_ITEM_TYPE><INVOICE_ITEM_TYPE_LONG><xsl:choose><xsl:when test="string-length(InvItemTypeComment) > 1"><xsl:value-of select="$InvItemTypeComment"/></xsl:when><xsl:otherwise><xsl:value-of select="INVOICE_ITEM_TYPE"/></xsl:otherwise></xsl:choose></INVOICE_ITEM_TYPE_LONG><INVOICE_ITEM_TYPE_COMMENT><xsl:value-of select="$InvItemTypeComment"/></INVOICE_ITEM_TYPE_COMMENT><AMOUNT><xsl:value-of select="AMOUNT div $CurrRate"/></AMOUNT></GUEST_INV_ITEM_GROUP_DETAIL></xsl:for-each></GUEST_INV_ITEM_GROUP_DETAILS></INV_ITEM_GROUP></xsl:if></xsl:for-each></INVC_GROUP_TOTALS></GUEST></xsl:for-each></INVC_GUEST_TOTALS><!-- --><!-- Invoice details --><!-- --><xsl:if test="$InvcDetails = ''Y''"><INVC_DETAILS><xsl:for-each select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM"><xsl:sort select="GUEST_SEQN" data-type="number"/><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="INV_ITEM_GROUP"/><xsl:sort select="INVOICE_ITEM_TYPE"/><INVC_DETAIL><INV_ITEM_GROUP_MATCH><xsl:value-of select="INV_ITEM_GROUP_MATCH"/></INV_ITEM_GROUP_MATCH><GUEST_SEQN><xsl:value-of select="GUEST_SEQN"/></GUEST_SEQN><INV_ITEM_GROUP><xsl:value-of select="INV_ITEM_GROUP"/></INV_ITEM_GROUP><SORT_SEQN><xsl:value-of select="SORT_SEQN"/></SORT_SEQN><INVOICE_ITEM_TYPE><xsl:value-of select="INVOICE_ITEM_TYPE"/></INVOICE_ITEM_TYPE><xsl:if test="INVOICE_ITEM_SUBTYPE != ''''"><INVOICE_ITEM_SUBTYPE><xsl:value-of select="INVOICE_ITEM_SUBTYPE"/></INVOICE_ITEM_SUBTYPE></xsl:if><xsl:if test="INVOICE_ITEM_SUBTYPE2 != ''''"><INVOICE_ITEM_SUBTYPE2><xsl:value-of select="INVOICE_ITEM_SUBTYPE2"/></INVOICE_ITEM_SUBTYPE2></xsl:if><xsl:if test="INVOICE_ITEM_SUBTYPE3 != ''''"><INVOICE_ITEM_SUBTYPE3><xsl:value-of select="INVOICE_ITEM_SUBTYPE3"/></INVOICE_ITEM_SUBTYPE3></xsl:if><xsl:if test="PRICE_PROGRAM != ''''"><PRICE_PROGRAM><xsl:value-of select="PRICE_PROGRAM"/></PRICE_PROGRAM></xsl:if><AMOUNT><xsl:value-of select="AMOUNT div $CurrRate"/></AMOUNT><xsl:if test="COMMISSION_PERCENT != ''''"><COMMISSION_PERCENT><xsl:value-of select="COMMISSION_PERCENT"/></COMMISSION_PERCENT></xsl:if></INVC_DETAIL></xsl:for-each></INVC_DETAILS></xsl:if><!-- if $InvcDetails --></xsl:template><!-- --><!-- Following template appends grouping data to the RES_INVOICE_ITEM elements --><!-- --><xsl:template match="RES_INVOICE_ITEM" mode="set_grouping"><xsl:copy><xsl:copy-of select="@*"/><xsl:copy-of select="*"/><xsl:variable name="ForcedGroup"><xsl:choose><xsl:when test="$Customer = ''RSSC'' and INVOICE_ITEM_SUBTYPE = ''AIR CREDIT'' and INVOICE_ITEM_SUBTYPE2 = ''VOYAGE''"><xsl:text>AIR CREDIT</xsl:text></xsl:when><xsl:otherwise><xsl:text/></xsl:otherwise></xsl:choose></xsl:variable><xsl:for-each select="msxsl:node-set($INV_ITEM_GROUP_MATCH)/ROW[INVOICE_ITEM_TYPE = current()/INVOICE_ITEM_TYPE][1]"><xsl:element name="ORG_INV_ITEM_GROUP"><xsl:value-of select="INV_ITEM_GROUP"/></xsl:element><xsl:choose><xsl:when test="$ForcedGroup != ''''"><xsl:element name="INV_ITEM_GROUP_MATCH"><xsl:value-of select="concat($ForcedGroup,''_'',INVOICE_ITEM_TYPE)"/></xsl:element><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="$ForcedGroup"/></xsl:element><xsl:element name="SORT_SEQN"><xsl:text>9999</xsl:text></xsl:element></xsl:when><xsl:otherwise><xsl:element name="INV_ITEM_GROUP_MATCH"><xsl:value-of select="concat(INV_ITEM_GROUP,''_'',INVOICE_ITEM_TYPE)"/></xsl:element><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="INV_ITEM_GROUP"/></xsl:element><xsl:element name="SORT_SEQN"><xsl:value-of select="msxsl:node-set($INVOICE_ITEM_GROUP)/ROW[INV_ITEM_GROUP=current()/INV_ITEM_GROUP]/SORT_SEQN"/></xsl:element></xsl:otherwise></xsl:choose></xsl:for-each><xsl:element name="GUEST_SEQN"><xsl:value-of select="/RES_HEADER/UT_RES_GUEST/RES_GUEST[GUEST_ID=current()/GUEST_ID]/GUEST_SEQN"/></xsl:element></xsl:copy></xsl:template><!-- --><!-- Following template is called by ''set:distinct'' (distinct invoice item type selection). --><!-- --><xsl:template match="INV_ITEM_GROUP_MATCH" mode="set:distinct"><xsl:element name="INV_ITEM"><xsl:element name="INV_ITEM_GROUP_MATCH"><xsl:value-of select="."/></xsl:element><xsl:element name="INVOICE_ITEM_TYPE"><xsl:value-of select="parent::*/INVOICE_ITEM_TYPE"/></xsl:element><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="parent::*/INV_ITEM_GROUP"/></xsl:element></xsl:element></xsl:template><!-- set append node for variable --><xsl:template match="ROW" mode="copy_append_nodes"><xsl:copy><xsl:copy-of select="*"/></xsl:copy></xsl:template><!-- --><!-- Following template is called by ''set:distinct'' (distinct invoice groups selection). --><!-- --><xsl:template match="INV_ITEM_GROUP" mode="set:distinct"><xsl:element name="INV_GROUP"><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="."/></xsl:element><xsl:element name="SORT_SEQN"><xsl:value-of select="parent::*/SORT_SEQN"/></xsl:element></xsl:element></xsl:template><!-- --><!-- Following template is part of the EXSLT library (see http://exslt.org/). --><!-- --><xsl:template name="set:distinct"><xsl:param name="nodes" select="/.."/><xsl:param name="distinct" select="/.."/><xsl:choose><xsl:when test="$nodes"><xsl:call-template name="set:distinct"><xsl:with-param name="distinct" select="$distinct | $nodes[1][not(. = $distinct)]"/><xsl:with-param name="nodes" select="$nodes[position() > 1]"/></xsl:call-template></xsl:when><xsl:otherwise><xsl:apply-templates select="$distinct" mode="set:distinct"/></xsl:otherwise></xsl:choose></xsl:template></xsl:stylesheet></XSLBody>' AS BLOB CCSID 1208);
+	END IF;
+	IF blobXML2 IS NULL THEN
+	    SET blobXML2 = CAST('<XSLBody><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:msxsl="urn:schemas-microsoft-com:xslt" exclude-result-prefixes="msxsl" version="1.0"><!-- Override built-in template rule for text nodes. --><xsl:template match="text()"/><!-- Override built-in template rule for root and element nodes. --><xsl:template match="*|/"/><xsl:template match="/"><root><xsl:apply-templates select="OUT_INVOICE"/></root></xsl:template><xsl:template match="OUT_INVOICE"><invoices><xsl:apply-templates select="INVC_GROUP_TOTALS" mode="total_invoice"/><xsl:for-each select="INVC_GUEST_TOTALS/GUEST"><xsl:apply-templates select="INVC_GROUP_TOTALS" mode="guest_invoice"/></xsl:for-each></invoices></xsl:template><!-- Total invoices --><xsl:template match="INVC_GROUP_TOTALS" mode="total_invoice"><xsl:apply-templates select="ERROR"/><xsl:variable name="nonCommFare" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/INV_ITEM_GROUP_DETAILS/INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''NON-COMM FARE'']/AMOUNT)"/><xsl:variable name="voyageFareDbl" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/INV_ITEM_GROUP_DETAILS/INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE DBL'']/AMOUNT)"/><xsl:variable name="voyageFare38" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/INV_ITEM_GROUP_DETAILS/INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE 3-8'']/AMOUNT)"/><xsl:variable name="groupTotal" select="parent::*/TOTAL"/><invoice><seqn>0</seqn> <!-- Fake guest seq.number for invoive totals --><groups><xsl:for-each select="INV_ITEM_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="CODE"/><xsl:variable name="amountTotal"><!-- if code is VOYAGE FARE, subtract NON-COMM FARE--> <xsl:choose> <xsl:when test="(CODE = ''VOYAGE FARE'') and ($nonCommFare > 0)"><xsl:value-of select="TOTAL - $nonCommFare"/> </xsl:when> <xsl:otherwise> <xsl:value-of select="TOTAL"/> </xsl:otherwise></xsl:choose></xsl:variable><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="CODE"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template><!-- Return AMADEUS_CRUISE_RATE = VOYAGE FARE (already without NON-COMM FARE) --><xsl:if test="CODE=''VOYAGE FARE''"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="''AMADEUS_CRUISE_RATE''"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template></xsl:if></xsl:for-each><!-- Specific processing of subitems for NON-COMM FARE , VOYAGE FARE DBL, VOYAGE FARE 3-8 --><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''NON-COMM FARE''"/><xsl:with-param name="Value" select="$nonCommFare"/></xsl:call-template><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE DBL''"/><xsl:with-param name="Value" select="$voyageFareDbl"/></xsl:call-template><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE 3-8''"/><xsl:with-param name="Value" select="$voyageFare38"/></xsl:call-template><!-- Also add BaseInvoiceParams here --><xsl:for-each select="//BaseInvoiceParams/Param"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="Name"/><xsl:with-param name="Value" select="Value"/></xsl:call-template></xsl:for-each> <!-- Explicit output of NET_TOTALS for the case when it is missing : --> <xsl:if test="not(//BaseInvoiceParams/Param[Name=''AMADEUS_NET_TOTALS''])"> <xsl:choose> <xsl:when test="//BaseInvoiceParams/Param[Name=''COM_TOTAL'']/Value !='''' "><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''AMADEUS_NET_TOTALS''"/><xsl:with-param name="Value" select="$groupTotal - //BaseInvoiceParams/Param[Name=''COM_TOTAL'']/Value"/></xsl:call-template> </xsl:when> <xsl:otherwise><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''AMADEUS_NET_TOTALS''"/><xsl:with-param name="Value" select="$groupTotal"/></xsl:call-template> </xsl:otherwise></xsl:choose></xsl:if></groups><total><xsl:call-template name="SummaryRow"><xsl:with-param name="Title">GRAND_TOTAL</xsl:with-param><xsl:with-param name="Value" select="parent::*/TOTAL"/></xsl:call-template></total></invoice></xsl:template><!-- Invoices per guest --><xsl:template match="INVC_GROUP_TOTALS" mode="guest_invoice"><xsl:apply-templates select="ERROR"/><xsl:variable name="nonCommFare" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/GUEST_INV_ITEM_GROUP_DETAILS/GUEST_INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''NON-COMM FARE'']/AMOUNT)"/><xsl:variable name="voyageFareDbl" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/GUEST_INV_ITEM_GROUP_DETAILS/GUEST_INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE DBL'']/AMOUNT)"/><xsl:variable name="voyageFare38" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/GUEST_INV_ITEM_GROUP_DETAILS/GUEST_INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE 3-8'']/AMOUNT)"/><invoice><name><xsl:value-of select="parent::node()/GUEST_NAME"/></name><seqn><xsl:value-of select="parent::node()/GUEST_SEQN"/></seqn><groups><xsl:for-each select="INV_ITEM_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="CODE"/><xsl:variable name="amountTotal"><!-- if code is VOYAGE FARE, subtract NON-COMM FARE--> <xsl:choose> <xsl:when test="(CODE = ''VOYAGE FARE'') and ($nonCommFare > 0)"><xsl:value-of select="TOTAL - $nonCommFare"/> </xsl:when> <xsl:otherwise> <xsl:value-of select="TOTAL"/> </xsl:otherwise></xsl:choose></xsl:variable><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="CODE"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template><!-- Return AMADEUS_CRUISE_RATE = VOYAGE FARE (already without NON-COMM FARE) --><xsl:if test="CODE=''VOYAGE FARE''"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="''AMADEUS_CRUISE_RATE''"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template></xsl:if></xsl:for-each><!-- Specific processing of subitems for NON-COMM FARE , VOYAGE FARE DBL , VOYAGE FARE 3-8 --><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''NON-COMM FARE''"/><xsl:with-param name="Value" select="$nonCommFare"/></xsl:call-template><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE DBL''"/><xsl:with-param name="Value" select="$voyageFareDbl"/></xsl:call-template><xsl:if test="$voyageFare38"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE 3-8''"/><xsl:with-param name="Value" select="$voyageFare38"/></xsl:call-template></xsl:if></groups><total><xsl:call-template name="SummaryRow"><xsl:with-param name="Title">GRAND_TOTAL</xsl:with-param><xsl:with-param name="Value" select="parent::*/TOTAL"/></xsl:call-template></total></invoice></xsl:template><xsl:template name="SummaryRow"><xsl:param name="Title"/><xsl:param name="Value"/><xsl:variable name="NullSafeValue"><xsl:choose><xsl:when test="$Value != ''''"> <xsl:value-of select="$Value"/></xsl:when><xsl:otherwise> <xsl:value-of select="0"/></xsl:otherwise></xsl:choose></xsl:variable><group><code><xsl:value-of select="$Title"/></code><value><xsl:value-of select="$NullSafeValue"/></value></group></xsl:template><xsl:template match="ERROR"><error><xsl:value-of select="."/></error></xsl:template></xsl:stylesheet></XSLBody>'  AS BLOB CCSID 1208);
+	END IF;
+	SET rTrans.AppendData.Settings.Setting.Name = 'CUSTOMER';
+	
+	CREATE LASTCHILD OF rTrans.AppendData AS rQuery NAME 'Query';
+	SET rQuery.ElementName = 'ACC_INVOICE_DETAIL';
+	SET rQuery.SQL = ' select * from ACC_INVOICE_DETAIL where ENTITY_TYPE=''RES'' and ENTITY_ID=:RES_ID';
+	SET rQuery.SQLParams.SQLParam.Name = 'RES_ID';
+	SET rQuery.SQLParams.SQLParam.Type = 'INTEGER';
+	SET rQuery.SQLParams.SQLParam.XPath = '/RES_HEADER/RES_ID';
+
+	CREATE LASTCHILD OF rTrans.AppendData AS rQuery NAME 'Query';
+	SET rQuery.ElementName = 'INV_ITEM_GROUP_MATCH';
+	SET rQuery.SQL = 'select * from inv_item_group_match t where t.office_code = :OFFICE_CODE and t.INV_ITEM_GROUP_TYPE=''DISPLAY'' and t.INVOICE_ITEM_TYPE=:INV_TYPE';
+	SET rQuery.SQLParams.SQLParam[1].Name = 'INV_TYPE';
+	SET rQuery.SQLParams.SQLParam[1].Type = 'STRING';
+	SET rQuery.SQLParams.SQLParam[1].XPath = '//UT_RES_INVOICE_ITEM//RES_INVOICE_ITEM//INVOICE_ITEM_TYPE';
+	SET rQuery.SQLParams.SQLParam[2].Name = 'OFFICE_CODE';
+	SET rQuery.SQLParams.SQLParam[2].Type = 'STRING';
+	SET rQuery.SQLParams.SQLParam[2].XPath = '//OFFICE_CODE';
+
+	CREATE LASTCHILD OF rTrans.AppendData AS rQuery NAME 'Query';
+	SET rQuery.ElementName = 'INVOICE_ITEM_GROUP';
+	SET rQuery.SQL = ' select t.INV_ITEM_GROUP, t.COMMENTS, t.SORT_SEQN, t.APPLY_TO_FIRST_GUEST from invoice_item_group t';
+	CREATE FIELD rQuery.SQLParams;
+	--CREATE LASTCHILD OF rTrans    PARSE ( xslt DOMAIN 'XMLNSC' NAME 'XSLBody');
+	--SET rTrans.XSLBody = '<!-- $NoKeywords$ --><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:msxsl="urn:schemas-microsoft-com:xslt" xmlns:SwMain="urn:objects-versonix-com:SwMain" xmlns:set="http://exslt.org/sets" exclude-result-prefixes="msxsl SwMain set" version="1.0"><xsl:output method="xml" omit-xml-declaration="yes"/><!-- Set to ''Y'' by SwMain --><xsl:param name="SwMain"/><!-- Currency Code --><xsl:param name="CurrCode">USD</xsl:param><!-- Currency Rate --><xsl:param name="CurrRate">1</xsl:param><!-- Currency Symbol Code --><xsl:param name="CurrSymb">36</xsl:param><!-- Show Invoice Details (Y/N) --><xsl:param name="InvcDetails">Y</xsl:param><!-- Hide Invoice (Y/N) for WL or invalid bookings --><xsl:param name="HideInvoice">N</xsl:param><!--  --><!-- Global variables --><!--  --><xsl:variable name="Customer"><xsl:value-of select="//RES_HEADER/UT_SETTINGS/SETTING[NAME=''CUSTOMER'']/VALUE"/></xsl:variable><!-- The ITEM_TYPE variable will contain INV_ITEM_TYPE elements --><xsl:variable name="ITEM_TYPE"><xsl:apply-templates select="//RES_HEADER/INV_ITEM_TYPE/ROW" mode="copy_append_nodes">    </xsl:apply-templates></xsl:variable><!-- The INV_ITEM_GROUP_MATCH variable will contain INV_ITEM_GROUP_MATCH elements --><xsl:variable name="INV_ITEM_GROUP_MATCH"><xsl:apply-templates select="//RES_HEADER/INV_ITEM_GROUP_MATCH/ROW" mode="copy_append_nodes">    </xsl:apply-templates></xsl:variable><!-- The INVOICE_ITEM_GROUP variable will contain INVOICE_ITEM_GROUP elements --><xsl:variable name="INVOICE_ITEM_GROUP"><xsl:apply-templates select="//RES_HEADER/INVOICE_ITEM_GROUP/ROW" mode="copy_append_nodes">    </xsl:apply-templates></xsl:variable><!--  --><!-- Root template --><!--  --><xsl:template match="/"><OUT_INVOICE><xsl:copy-of select="/RES_HEADER"/><CUSTOMER><xsl:value-of select="$Customer"/></CUSTOMER><xsl:variable name="vacationStart"><xsl:for-each select="/RES_HEADER/UT_RES_COMPONENT/RES_COMPONENT"><xsl:sort select="START_DATE" data-type="text" order="ascending"/><xsl:if test="position() = 1"><xsl:value-of select="START_DATE"/></xsl:if></xsl:for-each></xsl:variable><VACATION_START><xsl:value-of select="$vacationStart"/></VACATION_START><xsl:variable name="vacationEnd"><xsl:for-each select="/RES_HEADER/UT_RES_COMPONENT/RES_COMPONENT"><xsl:sort select="END_DATE" data-type="text" order="descending"/><xsl:if test="position() = 1"><xsl:value-of select="END_DATE"/></xsl:if></xsl:for-each></xsl:variable><VACATION_END><xsl:value-of select="$vacationEnd"/></VACATION_END><xsl:variable name="CurrencyCode" select="/RES_HEADER/CURRENCY_CODE"/><xsl:choose><xsl:when test="$CurrencyCode = ''GBP''"><CURRENCY_SYMBOL>&amp;#163;</CURRENCY_SYMBOL><CURRENCY_FORMAT>###,###,##0.00</CURRENCY_FORMAT><CURRENCY_SYMBOL_POSITION>prepend</CURRENCY_SYMBOL_POSITION></xsl:when><xsl:when test="$CurrencyCode = ''EUR''"><CURRENCY_SYMBOL>&amp;#8364;</CURRENCY_SYMBOL><CURRENCY_FORMAT>###,###,##0.00</CURRENCY_FORMAT><CURRENCY_SYMBOL_POSITION>prepend</CURRENCY_SYMBOL_POSITION></xsl:when><xsl:otherwise><CURRENCY_SYMBOL>&amp;#36;</CURRENCY_SYMBOL><CURRENCY_FORMAT>###,###,##0.00</CURRENCY_FORMAT><CURRENCY_SYMBOL_POSITION>prepend</CURRENCY_SYMBOL_POSITION></xsl:otherwise></xsl:choose><xsl:if test="$HideInvoice = ''Y''"><ERROR>Invoice is not shown for invalid or waitlisted bookings.</ERROR></xsl:if><xsl:if test="$HideInvoice != ''Y''"><xsl:apply-templates/></xsl:if></OUT_INVOICE></xsl:template><!--  --><!-- Override built-in template rule for text nodes. --><!--  --><xsl:template match="text()"/><!--  --><!-- Main template for Invoice totals --><!--  --><xsl:template match="UT_RES_INVOICE_ITEM"><!-- The InvcWithGroup variable will contain RES_INVOICE_ITEM elements with grouping data appended (INV_ITEM_GROUP and SORT_SEQN) --><xsl:variable name="InvcWithGroup"><xsl:apply-templates select="RES_INVOICE_ITEM" mode="set_grouping"/></xsl:variable><!-- The InvcGroups variable will contain list of distinct INV_ITEM_GROUP with their SORT_SEQN --><xsl:variable name="InvcGroups"><xsl:call-template name="set:distinct"><xsl:with-param name="nodes" select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM/INV_ITEM_GROUP"/></xsl:call-template></xsl:variable><!-- The InvItemType variable will contain list of distinct INVOICE_ITEM_TYPE --><xsl:variable name="InvItemType"><xsl:call-template name="set:distinct"><xsl:with-param name="nodes" select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM/INV_ITEM_GROUP_MATCH"/></xsl:call-template></xsl:variable><!--  --><!-- Res level totals --><!--  --><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM/AMOUNT) div $CurrRate"/></TOTAL><!--  --><!-- Invoice item group totals --><!--  --><INVC_GROUP_TOTALS><xsl:for-each select="msxsl:node-set($InvcGroups)/INV_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="INV_ITEM_GROUP"/><INV_ITEM_GROUP><xsl:variable name="InvItemGroup" select="INV_ITEM_GROUP"/><SORT_SEQN><xsl:value-of select="SORT_SEQN"/></SORT_SEQN><CODE><xsl:value-of select="INV_ITEM_GROUP"/></CODE><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[INV_ITEM_GROUP=current()/INV_ITEM_GROUP]/AMOUNT) div $CurrRate"/></TOTAL><INV_ITEM_GROUP_DETAILS><xsl:for-each select="msxsl:node-set($InvItemType)/INV_ITEM[INV_ITEM_GROUP=$InvItemGroup]"><xsl:sort select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemGroupD" select="INV_ITEM_GROUP"/><xsl:variable name="InvItemTypeD" select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemTypeComment" select="msxsl:node-set($ITEM_TYPE)/ROW[ROW/INVOICE_ITEM_TYPE=$InvItemTypeD]/ROW/COMMENTS"/><INV_ITEM_GROUP_DETAIL><INV_ITEM_GROUP_CODE><xsl:value-of select="INV_ITEM_GROUP"/></INV_ITEM_GROUP_CODE><INVOICE_ITEM_TYPE><xsl:value-of select="INVOICE_ITEM_TYPE"/></INVOICE_ITEM_TYPE><INVOICE_ITEM_TYPE_COMMENT><xsl:value-of select="$InvItemTypeComment"/></INVOICE_ITEM_TYPE_COMMENT><INVOICE_ITEM_TYPE_LONG><xsl:choose><xsl:when test="string-length(InvItemTypeComment) > 1"><xsl:value-of select="$InvItemTypeComment"/></xsl:when><xsl:otherwise><xsl:value-of select="INVOICE_ITEM_TYPE"/></xsl:otherwise></xsl:choose></INVOICE_ITEM_TYPE_LONG><AMOUNT><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[INV_ITEM_GROUP=$InvItemGroupD and INVOICE_ITEM_TYPE=$InvItemTypeD]/AMOUNT) div $CurrRate"/></AMOUNT></INV_ITEM_GROUP_DETAIL></xsl:for-each></INV_ITEM_GROUP_DETAILS></INV_ITEM_GROUP></xsl:for-each></INVC_GROUP_TOTALS><!--  --><!-- Guest totals --><!--  --><INVC_GUEST_TOTALS><xsl:for-each select="/RES_HEADER/UT_RES_GUEST/RES_GUEST"><GUEST><xsl:variable name="GuestSeqN"><xsl:value-of select="GUEST_SEQN"/></xsl:variable><xsl:variable name="ClientID"><xsl:value-of select="CLIENT_ID"/></xsl:variable><GUEST_SEQN><xsl:value-of select="GUEST_SEQN"/></GUEST_SEQN><GUEST_NAME><xsl:value-of select="FULL_NAME"/></GUEST_NAME><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN]/AMOUNT) div $CurrRate"/></TOTAL><INVC_GROUP_TOTALS><xsl:for-each select="msxsl:node-set($InvcGroups)/INV_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="INV_ITEM_GROUP"/><xsl:if test="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN and INV_ITEM_GROUP=current()/INV_ITEM_GROUP]"><INV_ITEM_GROUP><SORT_SEQN><xsl:value-of select="SORT_SEQN"/></SORT_SEQN><CODE><xsl:value-of select="INV_ITEM_GROUP"/></CODE><TOTAL><xsl:value-of select="sum(msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN and INV_ITEM_GROUP=current()/INV_ITEM_GROUP]/AMOUNT) div $CurrRate"/></TOTAL><GUEST_INV_ITEM_GROUP_DETAILS><xsl:for-each select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM[GUEST_SEQN=$GuestSeqN and INV_ITEM_GROUP=current()/INV_ITEM_GROUP]"><xsl:sort select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemGroupD" select="INV_ITEM_GROUP"/><xsl:variable name="InvItemTypeD" select="INVOICE_ITEM_TYPE"/><xsl:variable name="InvItemTypeComment" select="msxsl:node-set($ITEM_TYPE)/ROW[ROW/INVOICE_ITEM_TYPE=$InvItemTypeD]/ROW/COMMENTS"/><GUEST_INV_ITEM_GROUP_DETAIL><INV_ITEM_GROUP_CODE><xsl:value-of select="INV_ITEM_GROUP"/></INV_ITEM_GROUP_CODE><INVOICE_ITEM_TYPE><xsl:value-of select="INVOICE_ITEM_TYPE"/></INVOICE_ITEM_TYPE><INVOICE_ITEM_TYPE_LONG><xsl:choose><xsl:when test="string-length(InvItemTypeComment) &amp;gt; 1"><xsl:value-of select="$InvItemTypeComment"/></xsl:when><xsl:otherwise><xsl:value-of select="INVOICE_ITEM_TYPE"/></xsl:otherwise></xsl:choose></INVOICE_ITEM_TYPE_LONG><INVOICE_ITEM_TYPE_COMMENT><xsl:value-of select="$InvItemTypeComment"/></INVOICE_ITEM_TYPE_COMMENT><AMOUNT><xsl:value-of select="AMOUNT div $CurrRate"/></AMOUNT></GUEST_INV_ITEM_GROUP_DETAIL></xsl:for-each></GUEST_INV_ITEM_GROUP_DETAILS></INV_ITEM_GROUP></xsl:if></xsl:for-each></INVC_GROUP_TOTALS></GUEST></xsl:for-each></INVC_GUEST_TOTALS><!--  --><!-- Invoice details --><!--  --><xsl:if test="$InvcDetails = ''Y''"><INVC_DETAILS><xsl:for-each select="msxsl:node-set($InvcWithGroup)/RES_INVOICE_ITEM"><xsl:sort select="GUEST_SEQN" data-type="number"/><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="INV_ITEM_GROUP"/><xsl:sort select="INVOICE_ITEM_TYPE"/><INVC_DETAIL><INV_ITEM_GROUP_MATCH><xsl:value-of select="INV_ITEM_GROUP_MATCH"/></INV_ITEM_GROUP_MATCH><GUEST_SEQN><xsl:value-of select="GUEST_SEQN"/></GUEST_SEQN><INV_ITEM_GROUP><xsl:value-of select="INV_ITEM_GROUP"/></INV_ITEM_GROUP><SORT_SEQN><xsl:value-of select="SORT_SEQN"/></SORT_SEQN><INVOICE_ITEM_TYPE><xsl:value-of select="INVOICE_ITEM_TYPE"/></INVOICE_ITEM_TYPE><xsl:if test="INVOICE_ITEM_SUBTYPE != ''''"><INVOICE_ITEM_SUBTYPE><xsl:value-of select="INVOICE_ITEM_SUBTYPE"/></INVOICE_ITEM_SUBTYPE></xsl:if><xsl:if test="INVOICE_ITEM_SUBTYPE2 != ''''"><INVOICE_ITEM_SUBTYPE2><xsl:value-of select="INVOICE_ITEM_SUBTYPE2"/></INVOICE_ITEM_SUBTYPE2></xsl:if><xsl:if test="INVOICE_ITEM_SUBTYPE3 != ''''"><INVOICE_ITEM_SUBTYPE3><xsl:value-of select="INVOICE_ITEM_SUBTYPE3"/></INVOICE_ITEM_SUBTYPE3></xsl:if><xsl:if test="PRICE_PROGRAM != ''''"><PRICE_PROGRAM><xsl:value-of select="PRICE_PROGRAM"/></PRICE_PROGRAM></xsl:if><AMOUNT><xsl:value-of select="AMOUNT div $CurrRate"/></AMOUNT><xsl:if test="COMMISSION_PERCENT != ''''"><COMMISSION_PERCENT><xsl:value-of select="COMMISSION_PERCENT"/></COMMISSION_PERCENT></xsl:if></INVC_DETAIL></xsl:for-each></INVC_DETAILS></xsl:if><!-- if $InvcDetails --></xsl:template><!--  --><!-- Following template appends grouping data to the RES_INVOICE_ITEM elements --><!--  --><xsl:template match="RES_INVOICE_ITEM" mode="set_grouping"><xsl:copy><xsl:copy-of select="@*"/><xsl:copy-of select="*"/><xsl:variable name="ForcedGroup"><xsl:choose><xsl:when test="$Customer = ''RSSC'' and INVOICE_ITEM_SUBTYPE = ''AIR CREDIT'' and INVOICE_ITEM_SUBTYPE2 = ''VOYAGE''"><xsl:text>AIR CREDIT</xsl:text></xsl:when><xsl:otherwise><xsl:text/></xsl:otherwise></xsl:choose></xsl:variable><xsl:for-each select="msxsl:node-set($INV_ITEM_GROUP_MATCH)/ROW[INVOICE_ITEM_TYPE = current()/INVOICE_ITEM_TYPE][1]"><xsl:element name="ORG_INV_ITEM_GROUP"><xsl:value-of select="INV_ITEM_GROUP"/></xsl:element><xsl:choose><xsl:when test="$ForcedGroup != ''''"><xsl:element name="INV_ITEM_GROUP_MATCH"><xsl:value-of select="concat($ForcedGroup,''_'',INVOICE_ITEM_TYPE)"/></xsl:element><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="$ForcedGroup"/></xsl:element><xsl:element name="SORT_SEQN"><xsl:text>9999</xsl:text></xsl:element></xsl:when><xsl:otherwise><xsl:element name="INV_ITEM_GROUP_MATCH"><xsl:value-of select="concat(INV_ITEM_GROUP,''_'',INVOICE_ITEM_TYPE)"/></xsl:element><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="INV_ITEM_GROUP"/></xsl:element><xsl:element name="SORT_SEQN"><xsl:value-of select="msxsl:node-set($INVOICE_ITEM_GROUP)/ROW[INV_ITEM_GROUP=current()/INV_ITEM_GROUP]/SORT_SEQN"/></xsl:element></xsl:otherwise></xsl:choose></xsl:for-each><xsl:element name="GUEST_SEQN"><xsl:value-of select="/RES_HEADER/UT_RES_GUEST/RES_GUEST[GUEST_ID=current()/GUEST_ID]/GUEST_SEQN"/></xsl:element></xsl:copy></xsl:template><!-- --><!-- Following template is called by ''set:distinct'' (distinct invoice item type selection). --><!--  --><xsl:template match="INV_ITEM_GROUP_MATCH" mode="set:distinct"><xsl:element name="INV_ITEM"><xsl:element name="INV_ITEM_GROUP_MATCH"><xsl:value-of select="."/></xsl:element><xsl:element name="INVOICE_ITEM_TYPE"><xsl:value-of select="parent::*/INVOICE_ITEM_TYPE"/></xsl:element><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="parent::*/INV_ITEM_GROUP"/></xsl:element></xsl:element></xsl:template><!-- set append node for variable --><xsl:template match="ROW" mode="copy_append_nodes"><xsl:copy><xsl:copy-of select="*"/></xsl:copy></xsl:template><!--  --><!-- Following template is called by ''set:distinct'' (distinct invoice groups selection). --><!--  --><xsl:template match="INV_ITEM_GROUP" mode="set:distinct"><xsl:element name="INV_GROUP"><xsl:element name="INV_ITEM_GROUP"><xsl:value-of select="."/></xsl:element><xsl:element name="SORT_SEQN"><xsl:value-of select="parent::*/SORT_SEQN"/></xsl:element></xsl:element></xsl:template><!--  --><!-- Following template is part of the EXSLT library (see http://exslt.org/). --><!--  --><xsl:template name="set:distinct"><xsl:param name="nodes" select="/.."/><xsl:param name="distinct" select="/.."/><xsl:choose><xsl:when test="$nodes"><xsl:call-template name="set:distinct"><xsl:with-param name="distinct" select="$distinct | $nodes[1][not(. = $distinct)]"/><xsl:with-param name="nodes" select="$nodes[position() > 1]"/></xsl:call-template></xsl:when><xsl:otherwise><xsl:apply-templates select="$distinct" mode="set:distinct"/></xsl:otherwise></xsl:choose></xsl:template></xsl:stylesheet></XSLBody><XSLBody><xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:msxsl="urn:schemas-microsoft-com:xslt" exclude-result-prefixes="msxsl" version="1.0"><!-- Override built-in template rule for text nodes. --><xsl:template match="text()"/><!-- Override built-in template rule for root and element nodes. --><xsl:template match="*|/"/><xsl:template match="/"><root><xsl:apply-templates select="OUT_INVOICE"/></root></xsl:template><xsl:template match="OUT_INVOICE"><invoices><xsl:apply-templates select="INVC_GROUP_TOTALS" mode="total_invoice"/><xsl:for-each select="INVC_GUEST_TOTALS/GUEST"><xsl:apply-templates select="INVC_GROUP_TOTALS" mode="guest_invoice"/></xsl:for-each></invoices></xsl:template><!-- Total invoices --><xsl:template match="INVC_GROUP_TOTALS" mode="total_invoice"><xsl:apply-templates select="ERROR"/><xsl:variable name="nonCommFare" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/INV_ITEM_GROUP_DETAILS/INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''NON-COMM FARE'']/AMOUNT)"/><xsl:variable name="voyageFareDbl" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/INV_ITEM_GROUP_DETAILS/INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE DBL'']/AMOUNT)"/><xsl:variable name="voyageFare38" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/INV_ITEM_GROUP_DETAILS/INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE 3-8'']/AMOUNT)"/><xsl:variable name="groupTotal" select="parent::*/TOTAL"/><invoice><seqn>0</seqn> <!-- Fake guest seq.number for invoive totals --><groups><xsl:for-each select="INV_ITEM_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="CODE"/><xsl:variable name="amountTotal"><!-- if code is VOYAGE FARE, subtract NON-COMM FARE--> <xsl:choose>     <xsl:when test="(CODE = ''VOYAGE FARE'') and ($nonCommFare > 0)"><xsl:value-of select="TOTAL - $nonCommFare"/>    </xsl:when>     <xsl:otherwise>        <xsl:value-of select="TOTAL"/>    </xsl:otherwise></xsl:choose></xsl:variable><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="CODE"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template><!-- Return AMADEUS_CRUISE_RATE = VOYAGE FARE (already without NON-COMM FARE) --><xsl:if test="CODE=''VOYAGE FARE''"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="''AMADEUS_CRUISE_RATE''"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template></xsl:if></xsl:for-each><!-- Specific processing of subitems for NON-COMM FARE , VOYAGE FARE DBL, VOYAGE FARE 3-8 --><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''NON-COMM FARE''"/><xsl:with-param name="Value" select="$nonCommFare"/></xsl:call-template><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE DBL''"/><xsl:with-param name="Value" select="$voyageFareDbl"/></xsl:call-template><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE 3-8''"/><xsl:with-param name="Value" select="$voyageFare38"/></xsl:call-template><!-- Also add BaseInvoiceParams here --><xsl:for-each select="//BaseInvoiceParams/Param"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="Name"/><xsl:with-param name="Value" select="Value"/></xsl:call-template></xsl:for-each>            <!-- Explicit output of NET_TOTALS for the case when it is missing : -->             <xsl:if test="not(//BaseInvoiceParams/Param[Name=''AMADEUS_NET_TOTALS''])">                <xsl:choose>                <xsl:when test="//BaseInvoiceParams/Param[Name=''COM_TOTAL'']/Value !='''' "><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''AMADEUS_NET_TOTALS''"/><xsl:with-param name="Value" select="$groupTotal - //BaseInvoiceParams/Param[Name=''COM_TOTAL'']/Value"/></xsl:call-template>                </xsl:when>                <xsl:otherwise><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''AMADEUS_NET_TOTALS''"/><xsl:with-param name="Value" select="$groupTotal"/></xsl:call-template>                </xsl:otherwise></xsl:choose></xsl:if></groups><total><xsl:call-template name="SummaryRow"><xsl:with-param name="Title">GRAND_TOTAL</xsl:with-param><xsl:with-param name="Value" select="parent::*/TOTAL"/></xsl:call-template></total></invoice></xsl:template><!-- Invoices per guest --><xsl:template match="INVC_GROUP_TOTALS" mode="guest_invoice"><xsl:apply-templates select="ERROR"/><xsl:variable name="nonCommFare" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/GUEST_INV_ITEM_GROUP_DETAILS/GUEST_INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''NON-COMM FARE'']/AMOUNT)"/><xsl:variable name="voyageFareDbl" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/GUEST_INV_ITEM_GROUP_DETAILS/GUEST_INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE DBL'']/AMOUNT)"/><xsl:variable name="voyageFare38" select="sum(INV_ITEM_GROUP[CODE=''VOYAGE FARE'']/GUEST_INV_ITEM_GROUP_DETAILS/GUEST_INV_ITEM_GROUP_DETAIL[INVOICE_ITEM_TYPE = ''VOYAGE FARE 3-8'']/AMOUNT)"/><invoice><name><xsl:value-of select="parent::node()/GUEST_NAME"/></name><seqn><xsl:value-of select="parent::node()/GUEST_SEQN"/></seqn><groups><xsl:for-each select="INV_ITEM_GROUP"><xsl:sort select="SORT_SEQN" data-type="number"/><xsl:sort select="CODE"/><xsl:variable name="amountTotal"><!-- if code is VOYAGE FARE, subtract NON-COMM FARE--> <xsl:choose>     <xsl:when test="(CODE = ''VOYAGE FARE'') and ($nonCommFare > 0)"><xsl:value-of select="TOTAL - $nonCommFare"/>    </xsl:when>     <xsl:otherwise>        <xsl:value-of select="TOTAL"/>    </xsl:otherwise></xsl:choose></xsl:variable><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="CODE"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template><!-- Return AMADEUS_CRUISE_RATE = VOYAGE FARE (already without NON-COMM FARE) --><xsl:if test="CODE=''VOYAGE FARE''"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title"><xsl:value-of select="''AMADEUS_CRUISE_RATE''"/></xsl:with-param><xsl:with-param name="Value" select="$amountTotal"/></xsl:call-template></xsl:if></xsl:for-each><!-- Specific processing of subitems for NON-COMM FARE , VOYAGE FARE DBL , VOYAGE FARE 3-8 --><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''NON-COMM FARE''"/><xsl:with-param name="Value" select="$nonCommFare"/></xsl:call-template><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE DBL''"/><xsl:with-param name="Value" select="$voyageFareDbl"/></xsl:call-template><xsl:if test="$voyageFare38"><xsl:call-template name="SummaryRow"><xsl:with-param name="Title" select="''VOYAGE FARE 3-8''"/><xsl:with-param name="Value" select="$voyageFare38"/></xsl:call-template></xsl:if></groups><total><xsl:call-template name="SummaryRow"><xsl:with-param name="Title">GRAND_TOTAL</xsl:with-param><xsl:with-param name="Value" select="parent::*/TOTAL"/></xsl:call-template></total></invoice></xsl:template><xsl:template name="SummaryRow"><xsl:param name="Title"/><xsl:param name="Value"/><xsl:variable name="NullSafeValue"><xsl:choose><xsl:when test="$Value != ''''">   <xsl:value-of select="$Value"/></xsl:when><xsl:otherwise>   <xsl:value-of select="0"/></xsl:otherwise></xsl:choose></xsl:variable><group><code><xsl:value-of select="$Title"/></code><value><xsl:value-of select="$NullSafeValue"/></value></group></xsl:template><xsl:template match="ERROR"><error><xsl:value-of select="."/></error></xsl:template></xsl:stylesheet>';
+	--SET rTrans.XSLBody = PARSE ( xslt DOMAIN 'XMLNSC' NAME 'XSLBody');
+	--DECLARE blobXML1 BLOB CAST(xmlBody1 AS BLOB CCSID 1208);
+	CREATE LASTCHILD of rEnvTemp DOMAIN('XMLNSC')  PARSE (blobXML1 CCSID 1208 ENCODING 546);
+	CREATE LASTCHILD of rEnvTemp DOMAIN('XMLNSC')  PARSE (blobXML2 CCSID 1208 ENCODING 546);
+    SET rTrans.XSLBody[1] = rEnvTemp.XMLNSC[1].XSLBody;
+    SET rTrans.XSLBody[2] = rEnvTemp.XMLNSC[2].XSLBody;
+    SET rEnvTemp.XMLNSC[1].XSLBody = NULL;
+    SET rEnvTemp.XMLNSC[2].XSLBody = NULL;
+	SET rTrans.ApplyToResObjectXML = 'Y';
+END;
+
+-- lookup price code from database
+CREATE PROCEDURE LookupPriceCode(IN cChannel CHARACTER, IN cCodeType CHARACTER, IN swCode CHARACTER, INOUT CACHE REFERENCE) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cPriceCode CHARACTER '';
+	
+	SET cPriceCode = THE(SELECT ITEM P.EXTERNAL_CODE FROM CACHE.{cChannel}.CODE[] AS P WHERE P.SW_CODE = swCode);
+	
+	IF COALESCE(cPriceCode, '') = '' THEN
+		IF NOT EXISTS(CACHE.{cChannel}.CODE[]) THEN
+			SET cQuery = 'SELECT DETAILS.SW_CODE, DETAILS.EXTERNAL_CODE ' ||
+							'FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' || 
+							'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+							'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+							'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE = ?';
+			
+			SET CACHE.{cChannel}.CODE[] = PASSTHRU(cQuery VALUES(cChannel, cCodeType));
+			SET cPriceCode = THE(SELECT ITEM P.EXTERNAL_CODE FROM CACHE.{cChannel}.CODE[] AS P WHERE P.SW_CODE = swCode);
+		END IF;
+	END IF;
+	
+	RETURN cPriceCode;
+END;
+

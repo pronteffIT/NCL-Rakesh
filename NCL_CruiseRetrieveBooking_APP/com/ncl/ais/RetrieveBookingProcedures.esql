@@ -1,0 +1,366 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE PROCEDURE CreateResponseFromAdvisoryCode(IN cExternalCodeInfo CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+												 IN rLoadBook REFERENCE, INOUT rOut REFERENCE) 
+BEGIN
+	
+	DECLARE cAdvCode, cErrorMsg, cExternalCode CHARACTER ;
+	
+	SET cExternalCode = cExternalCodeInfo;
+	
+	IF com.ncl.ais.utils.IsEmpty( cExternalCode) THEN		
+		
+		IF com.ncl.ais.utils.IsEmpty(cErrorCode) OR com.ncl.ais.utils.IsEmpty(cChannel) THEN
+			
+			SET cAdvCode = '12228';
+			SET cErrorMsg = 'System error from backend. Try Later';
+			
+		ELSE
+			SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+		END IF;
+		
+	END IF;
+
+	SET cErrorMsg = rLoadBook.Errors.Error.ErrorMessage;
+
+	IF NOT com.ncl.ais.utils.IsEmpty(cExternalCode) THEN
+		
+		SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+	END IF;
+	
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(cAdvCode,'12228');
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(SUBSTRING(cErrorMsg FROM 1 FOR 64) , 'System error from backend. Try Later');
+	
+	IF rLoadBook.Errors.Error.ErrorSeverity IN('W', 'I') THEN
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+	ELSE
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	
+	SET rOut.ns:Warnings.ns:Warning = FIELDVALUE(rLoadBook.Errors.Error.ErrorMessage);
+END;
+
+
+
+CREATE PROCEDURE getSrcEntityType (IN SrcEntity REFERENCE ) RETURNS CHARACTER
+BEGIN
+	 DECLARE SrcEntityType CHARACTER;
+	CASE
+		
+		WHEN EXISTS(SrcEntity.ClientID[]) THEN  SET SrcEntityType  = 'CLNT';
+		WHEN EXISTS(SrcEntity.ResID[]) 	THEN  SET SrcEntityType  = 'RES';
+    	WHEN EXISTS(SrcEntity.GroupID[]) THEN  SET SrcEntityType  = 'GRP';
+    	WHEN EXISTS(SrcEntity.AgencyID[]) THEN  SET SrcEntityType  = 'AGEN';
+    	WHEN EXISTS(SrcEntity.BankID[]) THEN  SET SrcEntityType  = 'CLNTBNK';
+    	WHEN EXISTS(SrcEntity.AgencyBankID[]) THEN  SET SrcEntityType  = 'AGENBNK';
+    	WHEN EXISTS(SrcEntity.ClientBankID[]) THEN  SET SrcEntityType  = 'CLNTBNK';
+    	WHEN EXISTS(SrcEntity.ChargeID[]) THEN  SET SrcEntityType  = 'CHARGES';
+    	WHEN EXISTS(SrcEntity.TourCreditID[]) THEN  SET SrcEntityType  = 'TOUR_CREDIT';
+    	WHEN EXISTS(SrcEntity.AmenityID[]) THEN  SET SrcEntityType  = 'AMENITY';
+    	WHEN EXISTS(SrcEntity.GL.Item.Value[]) THEN  SET SrcEntityType  = 'GL';
+		
+	ELSE
+		SET SrcEntityType  = 'ORPHAN';
+	END CASE;
+	
+	RETURN SrcEntityType;
+END;
+
+CREATE PROCEDURE getSrcEntityID (IN SrcEntity REFERENCE ) RETURNS CHARACTER
+BEGIN
+	 DECLARE SrcEntityID CHARACTER;
+	CASE
+		
+		WHEN EXISTS(SrcEntity.ClientID[]) THEN SET SrcEntityID = SrcEntity.ClientID;
+			
+    	WHEN EXISTS(SrcEntity.ResID[]) THEN SET SrcEntityID = SrcEntity.ResID;
+    		
+    	WHEN EXISTS(SrcEntity.GroupID[]) THEN SET SrcEntityID = SrcEntity.GroupID;
+    		
+    	WHEN EXISTS(SrcEntity.AgencyID[]) THEN SET SrcEntityID = SrcEntity.AgencyID;
+    		
+    	WHEN EXISTS(SrcEntity.BankID[]) THEN SET SrcEntityID = SrcEntity.BankID;
+    		
+    	WHEN EXISTS(SrcEntity.AgencyBankID[]) THEN SET SrcEntityID = SrcEntity.AgencyBankID;
+    		
+    	WHEN EXISTS(SrcEntity.ClientBankID[]) THEN SET SrcEntityID = SrcEntity.ClientBankID;
+    		
+    	WHEN EXISTS(SrcEntity.ChargeID[]) THEN SET SrcEntityID = SrcEntity.ChargeID;
+    		
+    	WHEN EXISTS(SrcEntity.TourCreditID[]) THEN SET SrcEntityID = SrcEntity.TourCreditID;
+    		
+    	WHEN EXISTS(SrcEntity.AmenityID[]) THEN SET SrcEntityID = SrcEntity.AmenityID;
+    		
+    	WHEN EXISTS(SrcEntity.GL.Item.Value[]) THEN SET SrcEntityID = SrcEntity.GL.Item.Value;
+    		
+	ELSE
+		SET SrcEntityID = '0';	
+    		
+	END CASE;	
+	
+	RETURN SrcEntityID;	
+	
+END;
+
+
+CREATE PROCEDURE AirSegEffectiveDate (IN Segment REFERENCE ) RETURNS CHARACTER
+BEGIN
+	DECLARE effDate TIMESTAMP;
+	
+	IF Segment.SeqN='1' THEN
+		
+		CASE
+			
+		WHEN EXISTS(Segment.Departure.ActualTime[]) THEN
+			
+			SET effDate = CAST(Segment.Departure.ActualTime AS TIMESTAMP FORMAT 'IU');
+		
+		WHEN EXISTS(Segment.Arrival.ActualTime[]) THEN
+			
+			SET effDate = CAST(Segment.Arrival.ActualTime AS TIMESTAMP FORMAT 'IU');
+				
+		WHEN EXISTS(Segment.Arrival.LatestTime[]) THEN
+			
+			SET effDate = CAST(Segment.Arrival.LatestTime AS TIMESTAMP FORMAT 'IU');
+		ELSE
+			
+			SET effDate = CURRENT_TIMESTAMP ;
+		END CASE;	
+	
+	ELSE
+		SET effDate = CURRENT_TIMESTAMP;
+	END IF;	
+	--
+RETURN CAST(CAST(effDate AS DATE FORMAT 'yyyy-MM-dd') AS CHARACTER FORMAT 'yyyy-MM-dd');
+
+END;
+
+CREATE PROCEDURE AirIndSegEffectiveDate (IN Flight REFERENCE ) RETURNS CHARACTER
+BEGIN
+	DECLARE effDate TIMESTAMP;
+	
+	IF Flight.LegSeqN='1' THEN
+		
+		CASE
+			
+		WHEN EXISTS(Flight.DepartureDateTime[]) THEN			
+			SET effDate = CAST(Flight.DepartureDateTime AS TIMESTAMP FORMAT 'IU');		
+		WHEN EXISTS(Flight.ArrivalDateTime[]) THEN			
+			SET effDate = CAST(Flight.ArrivalDateTime AS TIMESTAMP FORMAT 'IU');				
+		--WHEN EXISTS(Flight.Arrival.LatestTime[]) THEN			
+		--	SET effDate = CAST(Segment.Arrival.LatestTime AS TIMESTAMP FORMAT 'IU');
+		ELSE			
+			SET effDate = CURRENT_TIMESTAMP ;
+		END CASE;	
+	
+	ELSE
+		SET effDate = CURRENT_TIMESTAMP;
+	END IF;	
+	--
+RETURN CAST(CAST(effDate AS DATE FORMAT 'yyyy-MM-dd') AS CHARACTER FORMAT 'yyyy-MM-dd');
+	
+END;
+
+
+
+
+CREATE PROCEDURE CreateItineraryDetails (IN rsegment REFERENCE, INOUT rItnryDtls REFERENCE)
+BEGIN
+	DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+	SET rItnryDtls.Seq = rsegment.SeqN;
+	SET rItnryDtls.Carrier = COALESCE(rsegment.MarketingCarrier,rsegment.OperatingCarrier);
+	SET rItnryDtls.Flight = rsegment.Flight;
+	SET rItnryDtls.DeparturePort = rsegment.Departure.Airport;
+	SET rItnryDtls.DepartureTime = CAST(CAST(rsegment.Departure.ActualTime AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+	SET rItnryDtls.ArrivalPort = rsegment.Arrival.Airport; 
+	SET rItnryDtls.ArrivalTime = CAST(CAST(rsegment.Arrival.ActualTime AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+END;
+
+CREATE PROCEDURE CreateItineraryDetailsAirInd (IN rflight REFERENCE, INOUT rItnryDtls REFERENCE)
+BEGIN
+	DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+	SET rItnryDtls.Seq = rflight.LegSeqN;
+	SET rItnryDtls.Carrier = rflight.Airline;
+	SET rItnryDtls.Flight = rflight.FlightNo;
+	SET rItnryDtls.DeparturePort = rflight.DepartureAirport;
+	SET rItnryDtls.DepartureTime = CAST(CAST(rflight.DepartureDateTime AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+	SET rItnryDtls.ArrivalPort = rflight.ArrivalAirport; 
+	SET rItnryDtls.ArrivalTime = CAST(CAST(rflight.ArrivalDateTime AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+	
+END;
+
+CREATE PROCEDURE MapGenericWarning (IN rEnv REFERENCE, INOUT refOut REFERENCE)
+	BEGIN
+	--	DECLARE refOut REFERENCE TO OutputRoot;
+		DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ;
+		SET refOut.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF refOut.XMLNSC AS refOut IDENTITY ns:NCL_CruiseRetrieveBookingRS;
+		
+		
+		-- This Proc creates/copy the attributes for Root Element
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,refOut);
+		SET refOut.Errors.Error.(XMLNSC.Attribute)Code = '1228';
+		SET refOut.Errors.Error.(XMLNSC.Attribute)ShortText = '';
+		SET refOut.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+END;
+
+
+CREATE PROCEDURE getNationality ( IN rClientHdr REFERENCE) RETURNS CHARACTER
+BEGIN
+	
+	DECLARE Nationality CHARACTER;
+	
+	CASE  
+    	WHEN EXISTS(rClientHdr.Nationality[]) THEN
+    		
+			SET Nationality = rClientHdr.Nationality;
+    
+		WHEN EXISTS(rClientHdr.Citizenship[]) THEN
+			
+    		SET Nationality = rClientHdr.Citizenship;	
+    	
+	ELSE
+		SET Nationality = 'US';
+	END CASE;
+	
+	RETURN Nationality;
+END;
+
+
+CREATE PROCEDURE getDuration ( IN StartDateTime CHARACTER, IN EndDateTime CHARACTER) RETURNS CHARACTER
+BEGIN
+	
+	DECLARE Days,Hours,Minutes INTEGER;
+    DECLARE Duration CHARACTER;
+    DECLARE Diff INTEGER;
+    DECLARE FromTime,ToTime TIMESTAMP;
+    DECLARE SEC_DAY,SEC_HOUR,SEC_MINUTE INTEGER;
+    
+    SET FromTime = CAST(StartDateTime AS TIMESTAMP FORMAT 'IU');
+    SET ToTime = CAST(EndDateTime AS TIMESTAMP FORMAT 'IU');
+    
+    SET SEC_DAY = 60*60*24;
+    SET SEC_HOUR = 60*60;
+    SET SEC_MINUTE = 60;
+    
+    
+    SET Diff = (ToTime - FromTime)SECOND;
+    SET Days= Diff/SEC_DAY;
+    SET Hours = (Diff - (Days*SEC_DAY))/SEC_HOUR;
+    
+    SET Minutes = (Diff - (Days*SEC_DAY)-(Hours*SEC_HOUR))/SEC_MINUTE;
+
+    
+    IF Days <=0 AND Hours<=0 AND Minutes <=0 THEN
+    	
+    	SET Duration = 'P0D';
+    
+    END IF;
+    
+    IF Days >0 THEN
+    	SET Duration = 'P' || CAST(Days AS CHARACTER FORMAT '')|| 'D';
+    
+    ELSE
+    
+    	IF Minutes > 0 THEN
+    		
+    	  SET Minutes = Minutes+ Hours*60;
+          SET  Duration = 'PT'|| CAST(Minutes AS CHARACTER FORMAT '')  || 'M';
+          
+    	ELSE
+    		
+    		IF Hours >0 THEN
+            	SET Duration = 'PT'|| CAST(Hours AS CHARACTER FORMAT '') ||'H';
+    		END IF;                   
+    	END IF;
+    	
+    END IF;
+		
+	
+	RETURN Duration;
+	
+	
+END;
+
+
+
+
+-- return just Subexternal code
+CREATE PROCEDURE XrefSubExternalCodeUsingSWCode(IN channel CHARACTER, IN codeType CHARACTER, IN code CHARACTER, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) RETURNS CHARACTER
+BEGIN	
+	DECLARE cLookupCode CHARACTER '';
+	
+	SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+	
+	-- get external error code from cache
+	IF COALESCE(channel, '') <> '' THEN
+		
+		SET cLookupCode = com.ncl.ais.utils.GetSubExternalCodeFromCache(channel || '#' || codeType, code, XC10CacheMap, XC10ConnectionConfig);
+	END IF;
+
+	IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+		SET cLookupCode = com.ncl.ais.utils.LookupSubExternalCodeUsingSWCode(channel, code, codeType);
+		
+		-- trigger cache loader
+		IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, codeType) AND LENGTH(cLookupCode) > 0 THEN
+			
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = codeType;
+			CREATE FIELD rOutRoot.XMLNSC.CacheMetadata.LoadSubCodes;
+			
+			SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || codeType || '#';
+			
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+	END IF;
+	
+	SET cLookupCode = TRIM(SUBSTRING(COALESCE(cLookupCode, '')  BEFORE '#1#'));
+	
+	RETURN cLookupCode;
+END;
+
+CREATE FUNCTION ConvertToOffset(IN gmtTs CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE localTime CHARACTER '';
+	
+	DECLARE gmt TIMESTAMP CAST(gmtTs AS TIMESTAMP FORMAT 'IU');
+	DECLARE offSet CHARACTER CAST(LOCAL_TIMEZONE AS INTERVAL HOUR TO MINUTE);
+	
+	SET offSet = SUBSTRING(SUBSTRING(offSet AFTER 'INTERVAL ''') BEFORE ''' HOUR');
+	SET offSet = REPLACE(offSet, '-','-0');
+	
+	SET localTime = CAST((gmt + LOCAL_TIMEZONE) AS CHARACTER FORMAT 'IU');
+	SET localTime = REPLACE(localTime, '.000Z', offSet);		
+	
+	RETURN localTime;
+
+END;
+
+CREATE PROCEDURE ConvertToOFFset_Temp (IN gmtTs CHARACTER ) RETURNS CHARACTER
+BEGIN
+	
+	DECLARE localTime,TempTime CHARACTER '';
+		
+	SET TempTime = CAST(CAST(gmtTs  AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT 'IU');
+	
+	DECLARE InitTime TIMESTAMP CAST(gmtTs  AS TIMESTAMP FORMAT 'IU');
+	
+	IF CONTAINS(TempTime,'-04:00') THEN
+		
+		SET InitTime = InitTime - CAST('4' AS INTERVAL HOUR); 
+		
+	ELSEIF CONTAINS(TempTime,'-05:00') THEN
+		
+		SET InitTime= InitTime - CAST('5' AS INTERVAL HOUR);	
+			
+	END IF;
+	
+	SET localTime = CAST(InitTime AS CHARACTER FORMAT 'IU');
+	RETURN localTime;
+	
+END;
+

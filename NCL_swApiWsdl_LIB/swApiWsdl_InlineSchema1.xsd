@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://versonix.com/api/schemas" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions" xmlns:sch="http://versonix.com/api/schemas" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://versonix.com/api/definitions" xmlns:vx="http://versonix.com/api/schemas" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+	<xsd:element ibmSchExtn:docRoot="true" name="processAmadeusRequest" type="xsd:anyType"/>
+	<xsd:element ibmSchExtn:docRoot="true" name="processAmadeusResponse" type="xsd:anyType"/>
+	<xsd:element ibmSchExtn:docRoot="true" name="processXmlApiRequest">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="xmlString" type="xsd:string"/>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processXmlApiResponse">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="xmlString" type="xsd:string"/>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processEncryptDecryptRequest">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="Encrypt_Decrypt">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="Action" type="xsd:string"/>
+							<xsd:choice>
+								<xsd:element name="EncryptString" type="xsd:string"/>
+								<xsd:element name="DecryptString" type="xsd:string"/>
+							</xsd:choice>
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processEncryptDecryptResponse">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="Encrypt_Decrypt">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="Action" type="xsd:string"/>
+							<xsd:element name="EncryptString" type="xsd:string"/>
+							<xsd:element name="DecryptString" type="xsd:string"/>
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processPaymentRequest">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="Payment_IN">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="bookingInfo">
+								<xsd:complexType>
+									<xsd:sequence>
+										<xsd:element name="resId" type="xsd:integer"/>
+										<xsd:element name="agencyId" type="xsd:integer"/>
+										<xsd:element name="clientID" type="xsd:integer"/>
+									</xsd:sequence>
+								</xsd:complexType>
+							</xsd:element>
+							<xsd:element name="paymentGroup">
+								<xsd:complexType>
+									<xsd:sequence>
+										<xsd:element name="paymentInfo">
+											<xsd:complexType>
+												<xsd:sequence>
+													<xsd:element name="paymentDetails">
+														<xsd:complexType>
+															<xsd:sequence>
+																<xsd:element name="formOfPaymentCode" type="xsd:string"/>
+																<xsd:element name="paymentType" type="xsd:string"/>
+																<xsd:element name="extendedPaymentIndicator"/>
+																<xsd:element name="amount" type="xsd:integer"/>
+																<xsd:element name="currency" type="xsd:string"/>
+																<xsd:element name="referenceNbr" type="xsd:integer"/>
+																<xsd:element name="extensionDays" type="xsd:integer"/>
+															</xsd:sequence>
+														</xsd:complexType>
+													</xsd:element>
+													<xsd:element name="creditCardInfo">
+														<xsd:complexType>
+															<xsd:sequence>
+																<xsd:element name="creditCardCode" type="xsd:string"/>
+																<xsd:element name="creditCardNbr" type="xsd:integer"/>
+																<xsd:element name="creditCardExpiryDate" type="xsd:string"/>
+															</xsd:sequence>
+														</xsd:complexType>
+													</xsd:element>
+												</xsd:sequence>
+											</xsd:complexType>
+										</xsd:element>
+										<xsd:element name="billingAddress">
+											<xsd:complexType>
+												<xsd:sequence>
+													<xsd:element name="addressDetails">
+														<xsd:complexType>
+															<xsd:sequence>
+																<xsd:element name="addressLine1" type="xsd:string"/>
+															</xsd:sequence>
+														</xsd:complexType>
+													</xsd:element>
+													<xsd:element name="cityName" type="xsd:string"/>
+													<xsd:element name="zipCode" type="xsd:string"/>
+													<xsd:element name="CountryIsoCode" type="xsd:string"/>
+													<xsd:element name="locationDetails">
+														<xsd:complexType>
+															<xsd:sequence>
+																<xsd:element name="stateCode" type="xsd:string"/>
+															</xsd:sequence>
+														</xsd:complexType>
+													</xsd:element>
+												</xsd:sequence>
+											</xsd:complexType>
+										</xsd:element>
+										<xsd:element name="ccHolderName" type="xsd:string"/>
+									</xsd:sequence>
+								</xsd:complexType>
+							</xsd:element>
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processPaymentResponse">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="Payment_OUT">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="resId" type="xsd:integer"/>
+							<xsd:element name="clientID" type="xsd:integer"/>
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processBookPackagesRequest">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="BookPackages_IN">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="bookingInfo">
+								<xsd:complexType>
+									<xsd:sequence>
+										<xsd:element name="resId" type="xsd:integer"/>
+										<xsd:element name="voyageNumber" type="xsd:integer"/>
+										<xsd:element name="agencyId" type="xsd:integer"/>
+										<xsd:element name="bookingSource" type="xsd:string"/>
+										<xsd:element name="agentOfficeID" type="xsd:integer"/>
+										<xsd:element name="receivedFrom" type="xsd:string"/>
+									</xsd:sequence>
+								</xsd:complexType>
+							</xsd:element>
+							<xsd:element maxOccurs="unbounded" name="otherPackages">
+								<xsd:complexType>
+									<xsd:sequence>
+										<xsd:element name="packageType" type="xsd:integer"/>
+										<xsd:element name="packageCode" type="xsd:integer"/>
+										<xsd:element name="otherPackageFeatures" type="xsd:string"/>
+										<xsd:element name="packageAssociation">
+											<xsd:complexType>
+												<xsd:sequence>
+													<xsd:element name="lastName" type="xsd:string"/>
+												</xsd:sequence>
+											</xsd:complexType>
+										</xsd:element>
+									</xsd:sequence>
+								</xsd:complexType>
+							</xsd:element>
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+	<xsd:element ibmSchExtn:docRoot="true" name="processBookPackagesResponse">
+		<xsd:complexType>
+			<xsd:sequence>
+				<xsd:element name="BookPackages_OUT">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element name="BookingInfo">
+								<xsd:complexType>
+									<xsd:sequence>
+										<xsd:element name="resId" type="xsd:integer"/>
+									</xsd:sequence>
+								</xsd:complexType>
+							</xsd:element>
+						</xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+</xsd:schema>

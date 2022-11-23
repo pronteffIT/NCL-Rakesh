@@ -1,0 +1,75 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE GetCabinDetails_PrepareCabinReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rReq, rCabinNbrs, rCabin REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.GetAvailPrimPackages_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rEnvSailInfo REFERENCE TO rEnv.Temp.Message.OutSailingInfo ;
+		--DECLARE rEnvSFare REFERENCE TO rEnvSailInfo.*:SailingInfo.*:SelectedFare;
+		DECLARE rEnvSFare REFERENCE TO rEnvSailInfo.*:SailingInfo.*:SelectedFare.*:SelectedCategory;
+		
+		-- Build PrimePackages Request
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rReq IDENTITY CabinLookupDetails;	
+		
+		CREATE FIELD rReq.CabinLookupReq.CabinNumbers AS rCabinNbrs;
+				
+		FOR rCabinOpt AS rEnvSFare.*:CabinOptions.*:CabinOption[]
+		DO
+			CREATE LASTCHILD OF rCabinNbrs AS rCabin IDENTITY Cabins;
+			
+			SET rCabin = FIELDVALUE(rCabinOpt.(XMLNSC.Attribute)CabinNumber);
+		END FOR;
+		
+		SET rReq.CabinLookupReq.ShipCode = rEnvSailInfo.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)ShipCode;
+		SET rReq.CabinLookupReq.ExternalSystemName = DefaultChannel;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE GetCabinDetails_BuildFinalResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rReturnOpt, rCabinList REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.CabinLookupRes;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rEnvSailInfo REFERENCE TO rEnv.Temp.Message.OutSailingInfo ;
+		DECLARE rEnvSCategory REFERENCE TO rEnvSailInfo.*:SailingInfo.*:SelectedFare.*:SelectedCategory;
+		
+		CREATE FIELD rEnv.Temp.CabinDetailsList AS rCabinList;
+		
+		FOR rCabinDets AS rIn.CabinDetails[]
+		DO
+			SET rCabinList.{FIELDVALUE(rCabinDets.(XMLNSC.Attribute)CabinNumber)} = rCabinDets;			
+		END FOR; 
+		
+		-- Start Building Final Response
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseFastSellRS;	
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		CREATE LASTCHILD OF rOut IDENTITY ns:Success;
+		
+		CREATE LASTCHILD OF rOut AS rReturnOpt IDENTITY ns:FastSellReturnOptions;
+		
+		CALL UpdateCabinDetails(rCabinList,rEnvSCategory);
+		
+		SET rReturnOpt.ns:SailingInfo = rEnvSailInfo.*:SailingInfo;		
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);		
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+

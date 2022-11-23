@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:xsl="http://www.w3.org/1999/XSL/Transform" elementFormDefault="qualified">
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:simpleType name="EventType">
+		<xs:annotation>
+			<xs:documentation>Describes type of check-in event: whether CheckIn is COMPLETED or CANCELLED</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="15"/>
+			<xs:enumeration value="COMPLETED"/>
+			<xs:enumeration value="CANCELLED"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="StoreNotificationType">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="20"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="StoreAndUnlock"/>
+			<xs:enumeration value="Store"/>
+			<xs:enumeration value="Unlock"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="GuestsNotification">
+		<xs:annotation>
+			<xs:documentation>Includes res. ID, list of guests with common departure information.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="EventType" type="EventType"/>
+			<xs:element name="ResID" type="RecordID"/>
+			<xs:element name="GuestRefs" type="GuestRefs" minOccurs="0"/>
+			<xs:element name="CarRefs" minOccurs="0" type="RecordIDList">
+				<xs:annotation>
+					<xs:documentation>(Un)Checked-in cars - list of ResCarDeckRequest.RequestID.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Departure" type="Departure"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="CheckInGuestNotification">
+		<xs:annotation>
+			<xs:documentation>Subscription name: CHECKIN_GUEST. Notification sent when check-in is completed (or canceled) for a guest. It includes res. ID, list of guests and common departure information.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="CheckInGuests" type="GuestsNotification" maxOccurs="unbounded"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ResStoreNotification">
+		<xs:annotation>
+			<xs:documentation>Subscription name: RES_STORE. Notification sent on Res. Store and includes Res. Header and combined sail/departure information.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="ResHeader" type="ResHeader"/>
+				<xs:element name="Sails" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>List of Sails </xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Sail" type="SailRange" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="NotificationType">
+					<xs:simpleType>
+						<xs:restriction base="StoreNotificationType"/>
+					</xs:simpleType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DepartureStatusNotification">
+		<xs:annotation>
+			<xs:documentation>Subscription name: DEPARTURE_STATUS, status that has been changed is included</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="DepRefID" type="RecordID"/>
+				<xs:element name="PaxStatus" type="DepartureStatus" minOccurs="0"/>
+				<xs:element name="CargoStatus" type="DepartureStatus" minOccurs="0"/>
+				<xs:element name="Reason" type="ShortComment" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Reason for changing the status.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Comments" type="ShortComment" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Additional comments for users currently working with this departure.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Operator" type="OracleUsername"/>
+				<xs:element name="Timestamp" type="xs:dateTime"/>
+				<xs:element name="IsPrepared" type="Boolean" minOccurs="0"/>
+				<xs:element name="IsFinalized" type="Boolean" minOccurs="0"/>
+				<xs:element name="IsAccountingReady" type="Boolean" minOccurs="0"/>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

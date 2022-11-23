@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" targetNamespace="http://com.ibm.ncl.category" xmlns:bons1="http://com.ibm.ncl.category">
+
+	<xsd:include schemaLocation="CategorySummary.xsd"/>
+	<xsd:complexType name="CabinCategoryInfoResponse">
+		<xsd:sequence>
+
+			<xsd:element minOccurs="0" name="selectedFareCode" type="xsd:string">
+			</xsd:element>
+			<xsd:element maxOccurs="unbounded" minOccurs="0" name="categorySummary" type="bons1:CategorySummary">
+			</xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+</xsd:schema>

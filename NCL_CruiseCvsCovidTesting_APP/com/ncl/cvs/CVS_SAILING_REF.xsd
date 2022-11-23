@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:csv="http://www.ibm.com/dfdl/CommaSeparatedFormat" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+
+
+    <xsd:import namespace="http://www.ibm.com/dfdl/CommaSeparatedFormat" schemaLocation="../../../IBMdefined/CommaSeparatedFormat.xsd"/>
+    <xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format documentFinalTerminatorCanBeMissing="yes" encoding="{$dfdl:encoding}" escapeSchemeRef="csv:CSVEscapeScheme" ref="csv:CommaSeparatedFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+
+	<xsd:element ibmSchExtn:docRoot="true" name="CVS_SAILING_REF">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="">
+				<xsd:element dfdl:terminator="%NL;%WSP*;" name="header">
+					<xsd:complexType>
+						<xsd:sequence dfdl:separator="%#124;" dfdl:separatorSuppressionPolicy="anyEmpty">
+                            							<xsd:element default="COMPANY_CODE" ibmDfdlExtn:sampleValue="COMPANY_CODE" name="COMPANY_CODE" type="xsd:string"/>
+                            <xsd:element default="CLIENT_CO_NAME" ibmDfdlExtn:sampleValue="CLIENT_CO_NAME" name="CLIENT_CO_NAME" type="xsd:string"/>
+                            <xsd:element default="SAIL_ID" ibmDfdlExtn:sampleValue="SAIL_ID" name="SAIL_ID" type="xsd:string"/>
+                            							                                                        <xsd:element default="SHIP_BRAND" ibmDfdlExtn:sampleValue="SHIP_BRAND" name="SHIP_BRAND" type="xsd:string"/>							
+                            							                                                        <xsd:element default="SHIP_NAME" ibmDfdlExtn:sampleValue="SHIP_NAME" name="SHIP_NAME" type="xsd:string"/>							
+                                                                                                                <xsd:element default="SAIL_DATE" ibmDfdlExtn:sampleValue="SAIL_DATE" name="SAIL_DATE" type="xsd:string"/>
+                                                                                                                <xsd:element default="RETURN_DATE" ibmDfdlExtn:sampleValue="RETURN_DATE" name="RETURN_DATE" type="xsd:string"/>
+                                                                                                                <xsd:element default="EMBARK_PORT" ibmDfdlExtn:sampleValue="EMBARK_PORT" name="EMBARK_PORT" type="xsd:string"/>
+                                                                                                                <xsd:element default="DEBARK_PORT" ibmDfdlExtn:sampleValue="DEBARK_PORT" name="DEBARK_PORT" type="xsd:string"/>
+                                                                                                                <xsd:element default="MAX_NO_PASSENGER" ibmDfdlExtn:sampleValue="MAX_NO_PASSENGER" name="MAX_NO_PASSENGER" type="xsd:string"/>
+                                                                                                    </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>			
+				<xsd:element dfdl:occursCountKind="implicit" dfdl:terminator="%NL;%WSP*;" maxOccurs="unbounded" name="record">
+					<xsd:complexType>
+						<xsd:sequence dfdl:separator="%#124;" dfdl:separatorSuppressionPolicy="anyEmpty"> 
+                            							<xsd:element default="619446" ibmDfdlExtn:sampleValue="619446" name="COMPANY_CODE" type="xsd:string"/>
+                            <xsd:element default="Norwegian Cruise Line Holdings Ltd" ibmDfdlExtn:sampleValue="Norwegian Cruise Line Holdings Ltd" name="CLIENT_CO_NAME" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="1234" name="SAIL_ID" type="xsd:string"/>
+                            							                                                        <xsd:element ibmDfdlExtn:sampleValue="NCL" name="SHIP_BRAND" type="xsd:string"/>
+                            							                                                        <xsd:element ibmDfdlExtn:sampleValue="BLISS" name="SHIP_NAME" type="xsd:string"/>
+                                                                                                                <xsd:element ibmDfdlExtn:sampleValue="20220101" name="SAIL_DATE" type="xsd:string"/>
+                                                                                                                <xsd:element ibmDfdlExtn:sampleValue="20220108" name="RETURN_DATE" type="xsd:string"/>
+                                                                                                                <xsd:element ibmDfdlExtn:sampleValue="MIA" name="EMBARK_PORT" type="xsd:string"/>
+                                                                                                                <xsd:element ibmDfdlExtn:sampleValue="MIA" name="DEBARK_PORT" type="xsd:string"/>
+                                                                                                                <xsd:element ibmDfdlExtn:sampleValue="2000" name="MAX_NO_PASSENGER" type="xsd:string"/>
+                                                                                                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>				
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+
+
+
+</xsd:schema>

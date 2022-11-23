@@ -1,0 +1,49 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE EnrichAmenityOrder_ProcessHelperResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE bPayload BLOB;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:enrichAmenityOrdersResponse;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+		
+		-- Log the GetListOfAmenityOrders Response payload
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'EnrichAmenityOrders response message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from EnrichAmenityOrders service ...', rEnv);
+		
+		-- Prepare to call generic Warning subflow
+		CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+		-- Set the MQMD header details from the Environment
+		SET OutputRoot.MQMD = Environment.MQMD;		
+		--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+		
+		-- Tree copy enrich response
+		SET OutputRoot.XMLNSC = rIn;
+		
+		-- Remove the elements sessionID and reservationID
+		SET OutputRoot.XMLNSC.*:sessionGUID = NULL;
+		SET OutputRoot.XMLNSC.*:reservationID = NULL;
+		SET OutputRoot.XMLNSC.*:Endpoint = NULL;
+		
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveAmenityOrders response message', 'xml', rEnv);
+		
+		-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;		
+			
+		PROPAGATE TO TERMINAL 'out';
+		
+		IF NOT rEnv.callableReq THEN
+			-- Close session
+			PROPAGATE TO TERMINAL 'out1';			
+		END IF;
+		RETURN FALSE;
+	END;
+
+END MODULE;

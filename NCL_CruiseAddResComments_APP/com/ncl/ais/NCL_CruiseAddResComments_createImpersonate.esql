@@ -1,0 +1,30 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_createImpersonate
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.*:XMLNSC;
+		DECLARE resImpersonate REFERENCE TO OutputRoot.XMLNSC.*:Impersonate_IN;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.*:Impersonate_IN AS resImpersonate;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,resImpersonate);
+		IF(rEnv.*:XMLNSC.*:Impersonate.*:ResAgentLogin IS NOT NULL) THEN
+			SET resImpersonate.ResAgent.Username = rEnv.*:XMLNSC.*:Impersonate.*:ResAgentLogin;
+		ELSE
+			SET resImpersonate.TravelAgent.AgentID = rEnv.*:XMLNSC.*:Impersonate.*:TravelAgentID;
+		END IF;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_processImpersonate
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rImpersonateIn REFERENCE TO InputRoot.XMLNSC.*:Impersonate_OUT;
+		IF EXISTS(rImpersonateIn.Errors[]) THEN
+			SET rEnv.Temp.ImpersonateError = 'Y';
+		END IF;
+	END;
+END MODULE;

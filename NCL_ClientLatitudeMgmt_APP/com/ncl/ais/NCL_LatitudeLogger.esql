@@ -1,0 +1,57 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_LatitudeLogger_LatitudeLog
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLatlog REFERENCE TO InputRoot.XMLNSC.Latlog;
+		
+		/*IF rLatlog.OperationType = 'INSERT' THEN
+			CALL LatitudeInsertLog(rLatlog.RecordId, rLatlog.SourceCode, rLatlog.RequestTs, rLatlog.RequestTypeCode, rLatlog.XML);
+		ELSEIF rLatlog.OperationType = 'UPDATE' THEN
+			CALL LatitudeUpdateLog(rLatlog.ResponseTs, rLatlog.XML, rLatlog.RecordId);
+		END IF;*/
+		
+		CALL LatitudeAISLog(rLatlog.RecordId, rLatlog.SourceCode, rLatlog.RequestTs, rLatlog.ResponseTs, rLatlog.RequestTypeCode, rLatlog.RequestMsg, rLatlog.ResponseMsg);
+		
+		RETURN TRUE;
+	END;
+
+	-- stored proc for lat log for request and response msg
+	CREATE PROCEDURE LatitudeAISLog(IN RecordId CHARACTER, IN Source CHARACTER, IN RequestTs CHARACTER, IN ResponseTs CHARACTER, IN RequestType CHARACTER, 
+									IN RequestMsg CHARACTER, IN ResponseMsg CHARACTER)
+	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_AIS_LAT_INSERT_LOG";
+	
+	-- stored proc for lat log for request msg
+	CREATE PROCEDURE LatitudeInsertLog(IN RecordId CHARACTER, IN Source CHARACTER, IN RequestTs CHARACTER, IN RequestType CHARACTER, IN RequestMsg CHARACTER)
+	LANGUAGE DATABASE 
+	EXTERNAL NAME "NCLSEA.NCL_LAT_INSERT_LOG";
+	
+	-- stored proc for lat log for response msg
+	CREATE PROCEDURE LatitudeUpdateLog(IN ResponseTs CHARACTER, IN ResponseMsg CHARACTER, IN RecordId CHARACTER)
+	LANGUAGE DATABASE 
+	EXTERNAL NAME "NCLSEA.NCL_LAT_UPDATE_LOG";	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_LatitudeLogger_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

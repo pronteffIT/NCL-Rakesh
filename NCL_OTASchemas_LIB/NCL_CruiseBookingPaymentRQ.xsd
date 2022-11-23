@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?><!-- edited with XMLSpy v2005 rel. 3 U (http://www.altova.com) by XMLSPY 2005 Professional Ed. Release 3, Installed for 3 users (with SMP from 2005-04-15 to 2006-04-16) (NCL) --><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" id="OTA2006A" targetNamespace="http://nclapi/schemas" version="2.1" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the  OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseBookingPaymentRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Booking Payment message is used to request a payment to be applied to a booking. 
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element minOccurs="0" name="AgentInfo">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Specifies the information of the an agent who is making the payment</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:attribute name="Contact" type="StringLength1to64" use="optional">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Provides either the agent or agency's name that created the booking.</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+						<xs:attribute name="ContactID" type="StringLength1to32" use="optional">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Agent or agency's identifier (e.g., an employee reward number).</xs:documentation>
+							</xs:annotation>
+						</xs:attribute>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ReservationInfo" type="CruiseGuestInfoType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Specifies information about the booking.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+			<xs:attribute name="TransactionActionCode" type="TransactionActionType" use="optional"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

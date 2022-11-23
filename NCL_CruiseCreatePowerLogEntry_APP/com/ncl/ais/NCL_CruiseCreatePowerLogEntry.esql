@@ -1,0 +1,344 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE BatchSize EXTERNAL INT 3000;
+DECLARE BatchIntervalStr EXTERNAL CHAR '15';
+DECLARE NCL_LOG_TO_NEWRELIC BOOLEAN TRUE;
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreatePowerLogEntry
+ * MODULE NAME       :     NCL_CruiseCreatePowerLogEntry_DBUpdate
+ * Description       :     This module takes the informations from input queue and stores into DB table
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreatePowerLogEntry_DBUpdate
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE encoding INT InputRoot.Properties.Encoding;
+		DECLARE CCSID INT InputRoot.Properties.CodedCharSetId;
+		DECLARE options INTEGER BITOR(FolderBitStream, 0,0);
+		DECLARE inCollRef REFERENCE TO InputRoot;
+		SET Environment.Batch = Environment.Batch+1;
+		SET Environment.CurrTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+	
+		CREATE FIELD OutputRoot.XMLNSC;
+		CREATE LASTCHILD OF OutputRoot.XMLNSC DOMAIN 'XMLNSC' PARSE(inCollRef.BLOB.BLOB, encoding, CCSID, '','', '', options); 
+		DECLARE inRef, rEnv REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseCreatePowerLogEntryRQ;		
+		
+		SET Environment.Variables=NULL;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE RECORD_ID, SERVER_NAM, APPLICATION_NAM, FUNCTION_NAM, TOTAL_LATENCY_TIME, BACKEND_LATENCY_TIME, SESSION_ID, 
+				PARTITION_NBR, AGENCY_ID, OCCUPANCY_NAM, CACHE_HIT, BACK_SERVER_NAM, ERROR_CD, SQLStmt CHAR;
+		DECLARE CREATE_TS TIMESTAMP;
+			
+		SET RECORD_ID = COALESCE(NULLIF(TRIM(inRef.*:RecordID),''),'null');
+		SET SERVER_NAM = COALESCE(inRef.*:ServerName,'');
+		SET APPLICATION_NAM = COALESCE(inRef.*:ApplicationName,'');
+		--SET CREATE_TS = /*'TO_TIMESTAMP ('''||CAST(*/COALESCE(CAST(inRef.*:CreationTime AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ssZZZ'),CURRENT_TIMESTAMP);-- AS CHAR FORMAT 'dd-MMM-yy hh.mm.ss.SSSSSS a');--||''',''DD-MON-RR HH.MI.SSXFF AM'')';
+		SET CREATE_TS = COALESCE(CAST(inRef.*:CreationTime AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ssZZZ'), CURRENT_TIMESTAMP);
+		SET FUNCTION_NAM = COALESCE(inRef.*:FunctionName,'');
+		SET TOTAL_LATENCY_TIME = COALESCE(NULLIF(TRIM(inRef.*:TotalLatencyTime),''),0);
+		SET BACKEND_LATENCY_TIME = COALESCE(NULLIF(TRIM(inRef.*:BackendLatencyTime),''),0);
+		SET SESSION_ID = COALESCE(inRef.*:SessionID,'');
+		SET PARTITION_NBR = COALESCE(NULLIF(TRIM(inRef.*:PartitionNumber),''),EXTRACT(MONTH FROM CURRENT_DATE));
+		SET AGENCY_ID = NULLIF(TRIM(inRef.*:AgencyID),'');
+		SET OCCUPANCY_NAM = NULLIF(TRIM(inRef.*:OccupancyNam),'');
+		SET CACHE_HIT = NULLIF(TRIM(inRef.*:CacheHit),'');
+		SET BACK_SERVER_NAM = NULLIF(TRIM(inRef.*:BackServerNam),'');
+		SET ERROR_CD = NULLIF(TRIM(inRef.*:ErrorCd),'');
+	
+
+		PASSTHRU('INSERT INTO NCLSEA.POWER_LOG (RECORD_ID, SERVER_NAM, APPLICATION_NAM, CREATE_TS, FUNCTION_NAM, TOTAL_LATENCY_TIME, BACKEND_LATENCY_TIME, SESSION_ID, PARTITION_NBR,
+					AGENCY_ID, OCCUPANCY_NAM, CACHE_HIT, BACK_SERVER_NAM, ERROR_CD) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', 
+				RECORD_ID, SERVER_NAM, APPLICATION_NAM, CREATE_TS, FUNCTION_NAM, TOTAL_LATENCY_TIME, BACKEND_LATENCY_TIME, SESSION_ID, PARTITION_NBR, 
+					AGENCY_ID, OCCUPANCY_NAM, CACHE_HIT, BACK_SERVER_NAM, ERROR_CD);
+					
+		IF NCL_LOG_TO_NEWRELIC THEN
+			CREATE LASTCHILD of rEnv.Temp  DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			DECLARE rNewRelic REFERENCE TO rEnv.XMLNSC.nr:NewRelicInsightEvent;
+			CREATE LASTCHILD of rEnv.Temp.XMLNSC as rNewRelic NAMESPACE nr NAME 'NewRelicInsightEvent';
+			DECLARE nrEventRef REFERENCE TO rNewRelic.nr:Events[1]; 		--
+			--SET rNewRelic.(XML.NamespaceDecl)xmlns=nr;
+			SET rNewRelic.nr:Events[1].nr:EventType = 'NCL_POWER_LOG'; 
+			SET rNewRelic.nr:Events[1].nr:Fields[1].nr:FieldName ='RECORD_ID';
+			SET rNewRelic.nr:Events[1].nr:Fields[1].nr:FieldValue = CAST(RECORD_ID AS CHAR);
+			SET rNewRelic.nr:Events[1].nr:Fields[2].nr:FieldName ='SERVER_NAM';
+			SET rNewRelic.nr:Events[1].nr:Fields[2].nr:FieldValue = SERVER_NAM;
+			SET rNewRelic.nr:Events[1].nr:Fields[3].nr:FieldName ='CREATE_TS';
+			SET rNewRelic.nr:Events[1].nr:Fields[3].nr:FieldValue = TO_EPOCH_MILLI(CREATE_TS);
+			SET rNewRelic.nr:Events[1].nr:Fields[3].nr:FieldType = 'INTEGER';
+			SET rNewRelic.nr:Events[1].nr:Fields[4].nr:FieldName ='FUNCTION_NAM';
+			SET rNewRelic.nr:Events[1].nr:Fields[4].nr:FieldValue = FUNCTION_NAM;
+			SET rNewRelic.nr:Events[1].nr:Fields[5].nr:FieldName ='TOTAL_LATENCY_TIME';
+			SET rNewRelic.nr:Events[1].nr:Fields[5].nr:FieldValue = CAST(TOTAL_LATENCY_TIME AS CHAR);
+			SET rNewRelic.nr:Events[1].nr:Fields[5].nr:FieldType = 'INTEGER';
+			SET rNewRelic.nr:Events[1].nr:Fields[6].nr:FieldName ='BACKEND_LATENCY_TIME';
+			SET rNewRelic.nr:Events[1].nr:Fields[6].nr:FieldValue = CAST(BACKEND_LATENCY_TIME AS CHAR);
+			SET rNewRelic.nr:Events[1].nr:Fields[6].nr:FieldType = 'INTEGER';
+			SET rNewRelic.nr:Events[1].nr:Fields[7].nr:FieldName ='SESSION_ID';
+			SET rNewRelic.nr:Events[1].nr:Fields[7].nr:FieldValue = SESSION_ID;		
+			SET rNewRelic.nr:Events[1].nr:Fields[8].nr:FieldName ='PARTITION_NBR';
+			SET rNewRelic.nr:Events[1].nr:Fields[8].nr:FieldValue = CAST(PARTITION_NBR AS CHAR);
+			SET rNewRelic.nr:Events[1].nr:Fields[8].nr:FieldType = 'INTEGER';
+			SET rNewRelic.nr:Events[1].nr:Fields[9].nr:FieldName ='AGENCY_ID';
+			SET rNewRelic.nr:Events[1].nr:Fields[9].nr:FieldValue = CAST(AGENCY_ID AS CHAR);
+			SET rNewRelic.nr:Events[1].nr:Fields[10].nr:FieldName ='OCCUPANCY_NAM';
+			SET rNewRelic.nr:Events[1].nr:Fields[10].nr:FieldValue = CAST(OCCUPANCY_NAM AS CHAR);				
+			SET rNewRelic.nr:Events[1].nr:Fields[11].nr:FieldName ='CACHE_HIT';
+			SET rNewRelic.nr:Events[1].nr:Fields[11].nr:FieldValue = CAST(CACHE_HIT AS CHAR);
+			SET rNewRelic.nr:Events[1].nr:Fields[11].nr:FieldType = 'INTEGER';	
+			SET rNewRelic.nr:Events[1].nr:Fields[12].nr:FieldName ='BACK_SERVER_NAM';
+			SET rNewRelic.nr:Events[1].nr:Fields[12].nr:FieldValue = BACK_SERVER_NAM;
+			SET rNewRelic.nr:Events[1].nr:Fields[13].nr:FieldName ='ERROR_CD';
+			SET rNewRelic.nr:Events[1].nr:Fields[13].nr:FieldValue = ERROR_CD;
+			SET rNewRelic.nr:Events[1].nr:Fields[14].nr:FieldName ='APPLICATION_NAM';
+			SET rNewRelic.nr:Events[1].nr:Fields[14].nr:FieldValue = APPLICATION_NAM;		
+			SET OutputRoot = rEnv.Temp;
+			RETURN TRUE;
+		ELSE
+			SET OutputRoot = NULL;			
+			RETURN FALSE;
+		END IF;	
+		
+	END;
+	
+END MODULE;
+
+/* Function to convert TIMESTAMP to UNIX EPOCH INTEGER  */
+CREATE FUNCTION TO_EPOCH_MILLI( IN CREATE_TS TIMESTAMP ) RETURNS INTEGER
+BEGIN
+	DECLARE EPOCH_TIME , IN_TIMESTAMP TIMESTAMP;
+	SET EPOCH_TIME = CAST('1970-01-01T00:00:00.000+04:00' AS TIMESTAMP FORMAT 'IU');
+	RETURN CAST( (CREATE_TS - EPOCH_TIME )SECOND AS INTEGER ) * 1000;
+END;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreatePowerLogEntry
+ * MODULE NAME       :     NCL_CruiseCreatePowerLogEntry_Exception
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePowerLogEntry_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		DECLARE bPayload BLOB InputRoot.BLOB.BLOB;--ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		CALL CopyMessageHeaders();
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+						
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreatePowerLogEntry
+ * MODULE NAME       :     NCL_CruiseCreatePowerLogEntry_CatchException
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePowerLogEntry_CatchException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			DECLARE pntr INT Environment.CntPntr;					
+			SET OutputRoot = InputRoot.Collection.Req[pntr];
+			SET OutputExceptionList = InputExceptionList;
+			--PROPAGATE TO TERMINAL 'out1';
+--			SET OutputRoot.Properties = InputRoot.Properties;
+--			DECLARE inReq,cRef REFERENCE TO InputRoot;
+--			MOVE inReq TO InputRoot.Collection.Req[pntr+1];
+--			CREATE FIELD OutputRoot.Collection;
+--			WHILE LASTMOVE(inReq) DO
+--				CREATE LASTCHILD OF OutputRoot.Collection AS cRef NAME 'Req';
+--				SET cRef= inReq;
+--				MOVE inReq NEXTSIBLING REPEAT NAME;
+--			END WHILE;
+			RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreatePowerLogEntry
+ * MODULE NAME       :     NCL_CruiseCreatePowerLogEntry_ControlProcess
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePowerLogEntry_ControlProcess
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET OutputRoot=InputRoot;			
+			SET Environment.Batch=0;
+			PROPAGATE TO TERMINAL 'out2';			
+		
+			SET Environment.StartTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+			SET Environment.CurrTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+			DECLARE BatchInterval INTERVAL CAST(BatchIntervalStr AS INTERVAL SECOND);
+		
+			SET Environment.ForcedExit=FALSE;
+			WHILE (NOT(Environment.ForcedExit)) AND  (Environment.Batch < BatchSize) AND (( CAST(Environment.CurrTime AS TIMESTAMP) - CAST(Environment.StartTime AS TIMESTAMP)) SECOND < BatchInterval) DO
+
+				PROPAGATE TO TERMINAL 'out1';
+			END WHILE;	
+			RETURN TRUE;
+			
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreatePowerLogEntry
+ * MODULE NAME       :     NCL_CruiseCreatePowerLogEntry_CatchException
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePowerLogEntry_NoMsg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET Environment.CurrTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+			RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreatePowerLogEntry
+ * MODULE NAME       :     NCL_CruiseCreatePowerLogEntry_CatchException
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePowerLogEntry_HandleMQErrs
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET Environment.ForcedExit=TRUE;			
+			RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;

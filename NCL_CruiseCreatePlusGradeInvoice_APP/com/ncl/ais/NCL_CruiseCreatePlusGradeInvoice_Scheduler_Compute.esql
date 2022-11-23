@@ -1,0 +1,59 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE timeOutSeconds EXTERNAL CHAR '600';
+DECLARE deadLetterExpiry EXTERNAL INT 86400;
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePlusGradeInvoice_Scheduler_CheckMessagesPresent
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		CREATE FIELD Environment.Variables.MsgPresent;
+		SET Environment.Variables.MsgPresent = TRUE;
+		WHILE Environment.Variables.MsgPresent DO
+			PROPAGATE TO TERMINAL 'out1';
+		END WHILE;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePlusGradeInvoice_Scheduler_NoMessagesHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET Environment.Variables.MsgPresent = FALSE;
+
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreatePlusGradeInvoice_Scheduler_DiffTimeInterval
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE IntvTime INTERVAL CAST(timeOutSeconds AS INTERVAL SECOND);
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		--SET OutputRoot=InputRoot;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreatePlusGradeInvoiceRQ AS rOut;
+		SET rOut = InputRoot.XMLNSC.*:NCL_CruiseCreatePlusGradeInvoiceRQ;
+		
+
+		IF COALESCE(InputRoot.XMLNSC.*:NCL_CruiseCreatePlusGradeInvoiceRQ.*:OriginalPutTime,'')='' THEN
+
+			SET rOut.ns:OriginalPutTime = InputRoot.Properties.CreationTime;
+			PROPAGATE TO TERMINAL 'out';
+		ELSE
+			IF (CURRENT_TIMESTAMP- CAST(OutputRoot.XMLNSC.ns:NCL_CruiseCreatePlusGradeInvoiceRQ.ns:OriginalPutTime AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss.SSS')) SECOND < IntvTime THEN
+				PROPAGATE TO TERMINAL 'out';
+			ELSE
+				SET OutputRoot.MQMD.Expiry = deadLetterExpiry*10;
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		END IF;
+		RETURN FALSE;
+
+
+	END;
+END MODULE;

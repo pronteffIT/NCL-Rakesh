@@ -1,0 +1,71 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvailDesc_FareAvailResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseFareAvailRS;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		
+		DECLARE rFareAvailReq,rFareCdOptn REFERENCE TO rEnv.Temp.Message.NCL_CruiseFareAvailDescRQ;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailDescRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rFareAvailReq, rOut);
+		CREATE FIELD rOut.ns:Success;
+		DECLARE FareRemarkQuery CHARACTER;
+		SET FareRemarkQuery = 'SELECT to_char(details.long_description) as COMMENTS FROM SEA.EXTERNAL_XREF_DETAIL DETAILS INNER JOIN 
+								(SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF INNER JOIN SEA.EXTERNAL_NAMES NAMES ON
+							   XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where NAMES.EXTERNAL_NAME = ''SABREXML'') TEMP_JOIN ON
+							   DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=''PromosToDisplay'' AND DETAILS.EXTERNAL_CODE=?';
+		
+		SET rOut.ns:SailingInfo = rIn.*:SailingInfo;
+		IF LENGTH(rEnv.FareCode) > 0 THEN
+			SET rEnv.FareCdOptns.FareCodeOption[] = SELECT A FROM rIn.*:FareCodeOptions.*:FareCodeOption[] AS A WHERE FIELDVALUE (A.(XMLNSC.Attribute)FareCode) = rEnv.FareCode;
+		ELSE
+			-- IF NO FareCode in the FareAvailDesc Request
+			FOR rInFareCdOptn AS rIn.*:FareCodeOptions.*:FareCodeOption[] DO
+				CREATE LASTCHILD OF rOut.ns:FareCodeOptions AS rFareCdOptn IDENTITY ns:FareCodeOption;
+				SET rEnv.TempFareCode = FIELDVALUE(rInFareCdOptn.FareCode);
+				SET rFareCdOptn = rInFareCdOptn;
+				SET rFareCdOptn.(XMLNSC.Attribute)FareCodeDescription = COALESCE(FIELDVALUE(rInFareCdOptn.(XMLNSC.Attribute)FareCodeDescription),FIELDVALUE(rInFareCdOptn.FareDescription)); 
+				SET rEnv.FareRemark = PASSTHRU(FareRemarkQuery VALUES(rEnv.TempFareCode));
+				SET rFareCdOptn.ns:FareRemark = COALESCE(rEnv.FareRemark.COMMENTS,''); 
+				DETACH rEnv.TempFareCode;
+			END FOR;	
+		END IF;
+		IF EXISTS(rEnv.FareCdOptns.FareCodeOption[]) THEN
+				
+			FOR rInFareCdOptn AS rEnv.FareCdOptns.FareCodeOption[] DO 
+				
+				CREATE LASTCHILD OF rOut.ns:FareCodeOptions AS rFareCdOptn IDENTITY ns:FareCodeOption;
+				SET rEnv.TempFareCode = FIELDVALUE(rInFareCdOptn.FareCode);
+				SET rFareCdOptn.(XMLNSC.Attribute)FareCode = rEnv.TempFareCode;
+				
+				SET rFareCdOptn.(XMLNSC.Attribute)FareDescription = FIELDVALUE(rInFareCdOptn.FareDescription);
+				SET rFareCdOptn.(XMLNSC.Attribute)Status = FIELDVALUE(rInFareCdOptn.Status);
+				SET rEnv.FareRemark = PASSTHRU(FareRemarkQuery VALUES(rEnv.TempFareCode));
+				SET rFareCdOptn.ns:FareRemark = COALESCE(rEnv.FareRemark.COMMENTS,''); 
+				SET rEnv.TempFareCode = NULL;
+		
+			END FOR;
+		END IF;	
+		DECLARE FareCdCount INTEGER SELECT COUNT(*) FROM rOut.ns:FareCodeOptions.ns:FareCodeOption[] AS A WHERE FIELDVALUE (A.(XMLNSC.Attribute)FareCode) IS NOT NULL;
+		
+		IF FareCdCount = 0 THEN
+			DETACH rOut.ns:SailingInfo;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '10019';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Invalid FareCode';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		END IF;	
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise FareAvailDesc Response', 'xml', rEnv);
+		END IF;	
+		-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+END MODULE;

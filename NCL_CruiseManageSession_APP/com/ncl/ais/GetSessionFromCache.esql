@@ -1,0 +1,48 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE XC10BaseUrl EXTERNAL CHARACTER '';
+DECLARE CacheGrid EXTERNAL CHARACTER '';
+DECLARE CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10User EXTERNAL CHARACTER '';
+DECLARE XC10Pwd EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE GetSessionFromCache_CacheRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.GetSessionIn;
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = XC10BaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rEnv.Temp.GetSessionIn.Key;
+		--SET OutputLocalEnvironment.Destination.HTTP.RequestURL = XC10BaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rIn.Key;
+		
+		SET OutputRoot.HTTPRequestHeader.Authorization = 'Basic ' || BASE64ENCODE(XC10User || ':' || XC10Pwd);
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'application/xml';
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE GetSessionFromCache_SaveCacheResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET rEnv.Temp.GetSessionOut.Value = 'ERROR: ' || COALESCE(rEnv.ErrorSummary.ErrorText, 'ERROR:');
+		ELSE
+			SET rEnv.Temp.GetSessionOut.Value = CAST(InputRoot.BLOB.BLOB AS CHARACTER CCSID 1208 ENCODING 546);
+			
+			IF rEnv.Temp.GetSessionOut.Value = '<html>404</html>' THEN
+				SET rEnv.Temp.GetSessionOut.Value = '';
+			END IF;
+		END IF;
+		
+		--SET OutputRoot.XMLNSC.GetSessionOut.Value = rEnv.Temp.GetSessionOut.Value;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+

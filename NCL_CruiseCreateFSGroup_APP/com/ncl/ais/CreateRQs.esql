@@ -1,0 +1,70 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE CreateRQs_CreateRQRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ;
+		DECLARE rRQBkg REFERENCE TO OutputRoot;
+
+		DECLARE index INTEGER 1;
+		DECLARE iRecordId INTEGER 0;
+		DECLARE DB ROW;
+		DECLARE bPayload BLOB;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+		SET OutputRoot.MQMD.Expiry = MQEI_UNLIMITED;
+		
+		-- get the sequence number from database
+		SET DB.Result = PASSTHRU('SELECT NCLSEA.NCL_AIS_FS_GROUP_REC_ID_SEQ.NEXTVAL FROM DUAL');
+		SET iRecordId = DB.Result.NEXTVAL;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Creating RQs ...', rEnv);
+		
+		-- loop thru the categories
+		FOR rEnvCat AS rEnv.Temp.Objects.Categories.Category[] DO
+			-- add entry into FS group header table
+			INSERT INTO Database.NCLSEA.NCL_AIS_FS_GROUP_HEADER(RECORD_ID, COLLECTION_ID, CATEGORY, REQ_QTY, AVAILABILITY, REQUEST_TS, CALCULATED_RQ_COUNT, EXISTING_RQ_COUNT) 
+					VALUES(iRecordId, rEnv.Temp.CollectionId, rEnvCat.CategoryCode, rEnvCat.RequestedCabin, rEnvCat.AvailableCabin, CURRENT_TIMESTAMP, 
+							rEnvCat.CalculatedReqCount, rEnvCat.ExistingRQCount);
+			
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseCreateRQBooking AS rRQBkg;
+			
+			SET rRQBkg.(XMLNSC.Attribute)Endpoint = rEnv.endpoint;
+			SET rRQBkg.recordId = iRecordId;
+			SET rRQBkg.sessionGUID = rEnv.Temp.SessionId;
+			SET rRQBkg.collectionID = rEnv.Temp.CollectionId;
+			SET rRQBkg.agencyID = rEnv.Temp.Objects.AgentInfo.agencyId;
+			--SET rRQBkg.bookingChannel = rOrgMsg.*:SourceCode;
+			SET rRQBkg.bookingChannel = rEnv.Temp.Channel;
+			SET rRQBkg.categoryCode = rEnvCat.CategoryCode;
+			SET rRQBkg.PromoCodes[] = rEnvCat.CommonPromos.CommonPromo[];
+			SET rRQBkg.officeCode = rOrgMsg.*:OfficeCode;
+			SET rRQBkg.PackageID = rOrgMsg.*:SailingInfo.*:VoyageID;
+			SET rRQBkg.collectionName = rOrgMsg.*:CollectionName;
+			SET rRQBkg.requestNumber = index;
+			SET rRQBkg.availableCabin = rEnvCat.AvailableCabin;
+			SET rRQBkg.calculatedRQCount = rEnvCat.CalculatedReqCount;
+			SET rRQBkg.requestedRQ = rEnvCat.RequestedCabin;
+			SET rRQBkg.timeInMillliSeconds = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmmssSSS');
+			SET rRQBkg.existingRQCount = rEnvCat.ExistingRQCount;
+			
+			-- send RQ booking request
+			WHILE index <= rEnvCat.CalculatedReqCount DO
+				SET rRQBkg.requestNumber = index;
+				SET index = index + 1;
+				
+				PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+			END WHILE;
+			
+			-- reset index for next category
+			SET index = 1;
+			SET OutputRoot.XMLNSC.NCL_CruiseCreateRQBooking = NULL;
+		END FOR;
+
+		RETURN TRUE;
+	END;
+END MODULE;

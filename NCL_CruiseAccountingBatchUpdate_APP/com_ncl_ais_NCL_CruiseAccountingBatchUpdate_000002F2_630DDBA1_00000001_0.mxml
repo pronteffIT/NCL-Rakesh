@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?><MessageAssembly iib:parser="GENERICROOT" xmlns:iib="http://com.ibm.iib/lt/1.0">
+   <version xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="INTEGER">1</version>
+   <checkpoint>
+      <messageId xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">000002F2-630DDBA1-00000001</messageId>
+      <propagationCount xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="INTEGER">0</propagationCount>
+      <nodeCallDepth xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="INTEGER">1</nodeCallDepth>
+      <timestamp xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="TIMESTAMP">2022-08-30 09:42:57.480424</timestamp>
+      <source>
+         <name xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">MQ Input</name>
+         <identifier xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">com.ncl.ais.NCL_CruiseAccountingBatchUpdate#FCMComposite_1_1</identifier>
+         <type xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">ComIbmMQInputNode</type>
+         <terminal xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">out</terminal>
+         <nodePath>
+            <application xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">NCL_CruiseAccountingBatchUpdate_APP</application>
+            <messageFlow xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">com.ncl.ais.NCL_CruiseAccountingBatchUpdate</messageFlow>
+            <node xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">MQ Input</node>
+         </nodePath>
+         <inputNode xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="BOOLEAN">TRUE</inputNode>
+      </source>
+      <target>
+         <name xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">LogIn</name>
+         <identifier xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">com.ncl.ais.NCL_CruiseAccountingBatchUpdate#FCMComposite_1_2</identifier>
+         <type xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">ComIbmComputeNode</type>
+         <terminal xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">in</terminal>
+         <nodePath>
+            <application xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">NCL_CruiseAccountingBatchUpdate_APP</application>
+            <messageFlow xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">com.ncl.ais.NCL_CruiseAccountingBatchUpdate</messageFlow>
+            <node xmlns:iib="http://com.ibm.iib/lt/1.0" iib:valueType="CHARACTER">LogIn</node>
+         </nodePath>
+      </target>
+   </checkpoint>
+   <environment/>
+   <localEnvironment/>
+   <exceptionList/>
+   <message xmlns:iib="http://com.ibm.iib/lt/1.0" iib:parser="MQROOT">
+      <Properties iib:parser="MQPROPERTYPARSER">
+         <MessageSet iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <MessageType iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <MessageFormat iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <Encoding iib:valueType="INTEGER">546</Encoding>
+         <CodedCharSetId iib:valueType="INTEGER">437</CodedCharSetId>
+         <Transactional iib:valueType="BOOLEAN">TRUE</Transactional>
+         <Persistence iib:valueType="BOOLEAN">FALSE</Persistence>
+         <CreationTime iib:valueType="GMTTIMESTAMP">2022-08-30 09:42:57.450</CreationTime>
+         <ExpirationTime iib:valueType="GMTTIMESTAMP">2022-08-30 09:44:57.480424</ExpirationTime>
+         <Priority iib:valueType="INTEGER">0</Priority>
+         <ReplyIdentifier iib:valueType="BLOB">000000000000000000000000000000000000000000000000</ReplyIdentifier>
+         <ReplyProtocol iib:valueType="CHARACTER">MQ</ReplyProtocol>
+         <Topic iib:elementType="0x03000000"/>
+         <ContentType iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentitySourceType iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentitySourceToken iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentitySourcePassword iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentitySourceIssuedBy iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentityMappedType iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentityMappedToken iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentityMappedPassword iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+         <IdentityMappedIssuedBy iib:elementType="0x03000000" iib:valueType="CHARACTER"/>
+      </Properties>
+      <MQMD iib:parser="MQHMD">
+         <SourceQueue iib:valueType="CHARACTER">NCL_CRUISE_ACC_BATCH_UPDATE_REQ</SourceQueue>
+         <Transactional iib:valueType="BOOLEAN">TRUE</Transactional>
+         <Encoding iib:valueType="INTEGER">546</Encoding>
+         <CodedCharSetId iib:valueType="INTEGER">437</CodedCharSetId>
+         <Format iib:valueType="CHARACTER">        </Format>
+         <Version iib:valueType="INTEGER">2</Version>
+         <Report iib:valueType="INTEGER">0</Report>
+         <MsgType iib:valueType="INTEGER">8</MsgType>
+         <Expiry iib:valueType="GMTTIMESTAMP">2022-08-30 09:44:57.480424</Expiry>
+         <Feedback iib:valueType="INTEGER">0</Feedback>
+         <Priority iib:valueType="INTEGER">0</Priority>
+         <Persistence iib:valueType="INTEGER">0</Persistence>
+         <MsgId iib:valueType="BLOB">414d51204844515053575141514d3120c4b707630c189f40</MsgId>
+         <CorrelId iib:valueType="BLOB">000000000000000000000000000000000000000000000000</CorrelId>
+         <BackoutCount iib:valueType="INTEGER">0</BackoutCount>
+         <ReplyToQ iib:valueType="CHARACTER">                                                </ReplyToQ>
+         <ReplyToQMgr iib:valueType="CHARACTER">HDQPSWQAQM1                                     </ReplyToQMgr>
+         <UserIdentifier iib:valueType="CHARACTER">mqm         </UserIdentifier>
+         <AccountingToken iib:valueType="BLOB">1601051500000093e362489a7cd63643170a32b13a020000000000000000000b</AccountingToken>
+         <ApplIdentityData iib:valueType="CHARACTER">                                </ApplIdentityData>
+         <PutApplType iib:valueType="INTEGER">11</PutApplType>
+         <PutApplName iib:valueType="CHARACTER">til (2)\rfhutil\rfhutilc.exe</PutApplName>
+         <PutDate iib:valueType="DATE">2022-08-30</PutDate>
+         <PutTime iib:valueType="GMTTIME">09:42:57.450</PutTime>
+         <ApplOriginData iib:valueType="CHARACTER">    </ApplOriginData>
+         <GroupId iib:valueType="BLOB">000000000000000000000000000000000000000000000000</GroupId>
+         <MsgSeqNumber iib:valueType="INTEGER">1</MsgSeqNumber>
+         <Offset iib:valueType="INTEGER">0</Offset>
+         <MsgFlags iib:valueType="INTEGER">0</MsgFlags>
+         <OriginalLength iib:valueType="INTEGER">-1</OriginalLength>
+      </MQMD>
+      <XMLNSC iib:parser="xmlnsc">
+         <XmlDeclaration iib:elementType="0x01000400">
+            <Version iib:elementType="0x03000100" iib:valueType="CHARACTER">1.0</Version>
+            <Encoding iib:elementType="0x03000100" iib:valueType="CHARACTER">UTF-8</Encoding>
+         </XmlDeclaration>
+         <NCL_CruiseAccountingBatchUpdateRQ xmlns="http://nclapi/schemas">
+            <iib:AltLangID iib:elementType="0x03000100" iib:valueType="CHARACTER"/>
+            <iib:PrimaryLangID iib:elementType="0x03000100" iib:valueType="CHARACTER">EN</iib:PrimaryLangID>
+            <iib:RetransmissionIndicator iib:elementType="0x03000100" iib:valueType="CHARACTER">false</iib:RetransmissionIndicator>
+            <iib:SequenceNmbr iib:elementType="0x03000100" iib:valueType="CHARACTER">0</iib:SequenceNmbr>
+            <iib:Target iib:elementType="0x03000100" iib:valueType="CHARACTER">Production</iib:Target>
+            <iib:TimeStamp iib:elementType="0x03000100" iib:valueType="CHARACTER">2022-06-22T15:39:09</iib:TimeStamp>
+            <iib:TransactionActionCode iib:elementType="0x03000100" iib:valueType="CHARACTER">Book</iib:TransactionActionCode>
+            <iib:TransactionIdentifier iib:elementType="0x03000100" iib:valueType="CHARACTER">1234</iib:TransactionIdentifier>
+            <iib:TransactionStatusCode iib:elementType="0x03000100" iib:valueType="CHARACTER">Start</iib:TransactionStatusCode>
+            <iib:Version iib:elementType="0x03000100" iib:valueType="CHARACTER">0</iib:Version>
+            <POS>
+               <Source>
+                  <RequestorID>
+                     <iib:ID iib:elementType="0x03000100" iib:valueType="CHARACTER">574623</iib:ID>
+                  </RequestorID>
+                  <BookingChannel>
+                     <iib:Type iib:elementType="0x03000100" iib:valueType="CHARACTER">1</iib:Type>
+                  </BookingChannel>
+               </Source>
+            </POS>
+            <BatchHeader>
+               <FormOfTrans iib:valueType="CHARACTER">CCREC</FormOfTrans>
+               <BatchAmount iib:valueType="CHARACTER">36629.57</BatchAmount>
+               <TransAmount iib:valueType="CHARACTER">36629.57</TransAmount>
+               <Currency iib:valueType="CHARACTER">BRL</Currency>
+               <Comments iib:valueType="CHARACTER">CREDIT CARD SALES-003</Comments>
+               <SourceCode iib:valueType="CHARACTER">IN HOUSE</SourceCode>
+            </BatchHeader>
+            <Transactions>
+               <Transaction>
+                  <AgencyID iib:valueType="CHARACTER">523297</AgencyID>
+                  <DestinationEntity>
+                     <ResID iib:valueType="CHARACTER">45694374</ResID>
+                  </DestinationEntity>
+                  <Status/>
+                  <Currency iib:valueType="CHARACTER">BRL</Currency>
+                  <Amount iib:valueType="CHARACTER">4035.91</Amount>
+                  <ExternalIdentifier iib:valueType="CHARACTER">EL10|740111|6516533094</ExternalIdentifier>
+                  <Comments iib:valueType="CHARACTER">111111-PAGTUR</Comments>
+               </Transaction>
+               <Transaction>
+                  <AgencyID iib:valueType="CHARACTER">523297</AgencyID>
+                  <DestinationEntity>
+                     <ResID iib:valueType="CHARACTER">45795390</ResID>
+                  </DestinationEntity>
+                  <Status/>
+                  <Currency iib:valueType="CHARACTER">BRL</Currency>
+                  <Amount iib:valueType="CHARACTER">19056.26</Amount>
+                  <ExternalIdentifier iib:valueType="CHARACTER">EL10|740222|6516533094</ExternalIdentifier>
+                  <Comments iib:valueType="CHARACTER">111112-PAGTUR</Comments>
+               </Transaction>
+               <Transaction>
+                  <AgencyID iib:valueType="CHARACTER">523297</AgencyID>
+                  <DestinationEntity>
+                     <ResID iib:valueType="CHARACTER">47661999</ResID>
+                  </DestinationEntity>
+                  <Status/>
+                  <Currency iib:valueType="CHARACTER">BRL</Currency>
+                  <Amount iib:valueType="CHARACTER">13537.40</Amount>
+                  <ExternalIdentifier iib:valueType="CHARACTER">EL10|740333|651653*****3094</ExternalIdentifier>
+                  <Comments iib:valueType="CHARACTER">111113-PAGTUR</Comments>
+               </Transaction>
+            </Transactions>
+         </NCL_CruiseAccountingBatchUpdateRQ>
+      </XMLNSC>
+   </message>
+</MessageAssembly>

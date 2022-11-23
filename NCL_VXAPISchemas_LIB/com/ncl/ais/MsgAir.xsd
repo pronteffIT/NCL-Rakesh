@@ -1,0 +1,759 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:element name="AirConversionItems">
+		<xs:annotation>
+			<xs:documentation>Internally used during conversion to prepare RetrievePNR request</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Item" minOccurs="0" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="RecLoc" type="RecLoc"/>
+							<xs:element name="Guests" type="RecordIDList"/>
+							<xs:element name="AirBookingID" type="AirBookingID" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Added after Air actual header is created</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ACSConnectionConfig">
+		<xs:annotation>
+			<xs:documentation>Alternative connection setup with different parameter values per offcie code.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Connections" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Connection" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="OfficeCode" type="OfficeCode" maxOccurs="unbounded"/>
+										<xs:element name="URL" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If not set - the value is taken from the 'AirSyncURL' setting</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="collapse"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="Username" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If not set - the value is taken from the 'AirSyncUsername' setting</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="collapse"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="Password" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If not set - the value is taken from the 'AirSyncPassword' setting</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="collapse"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="CustomerID" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>CustomerID to be sent to Amadeus</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="collapse"/>
+													<xs:minLength value="1"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirFlightSearch_IN">
+		<xs:annotation>
+			<xs:documentation>Performs flight search</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_IN">
+					<xs:choice>
+						<xs:sequence>
+							<xs:element name="SearchParams" type="AirSearchParams"/>
+							<xs:choice minOccurs="0">
+								<xs:element name="ACSOptions" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Amadeus Context Search options</xs:documentation>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="MaxRows" type="xs:positiveInteger" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Max number of itineraries in the response</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="UsePreviousBookings" type="Boolean" default="N" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>(Not implemented!)
+'Y' indicates that intention of the search is to modify previously booked air. 'N' means completely new search, which may result in multiple air bookings for the same guests for the same dates.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="AutoDelete" type="Boolean" default="Y" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>If 'Y' (default) - the results of this search will be deleted from the internal cache when the next search is executed for the same user session.
+If 'N' - the search results should be explicitly deleted from the internal cache when they are no longer needed using AirFlightSearch_IN.Remove. They will also be deleted automatically if that cache becomes too big, but it is better to avoid keeping the results for too long because of negative performance impact.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="Async" type="Boolean" default="N" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Flight search will be processed in a separate thread; its identifier will be returned in response</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="RightRezOptions" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>RightRez Options</xs:documentation>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="SearchMode" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>See annotations on enumeration values.</xs:documentation>
+												</xs:annotation>
+												<xs:simpleType>
+													<xs:restriction base="xs:string">
+														<xs:enumeration value="BestSchedule">
+															<xs:annotation>
+																<xs:documentation>Fewest connections first</xs:documentation>
+															</xs:annotation>
+														</xs:enumeration>
+														<xs:enumeration value="LowestPrice">
+															<xs:annotation>
+																<xs:documentation>Lowest Price first</xs:documentation>
+															</xs:annotation>
+														</xs:enumeration>
+														<xs:enumeration value="SameCarrier">
+															<xs:annotation>
+																<xs:documentation>Same carrier on round trip and fewest connections first</xs:documentation>
+															</xs:annotation>
+														</xs:enumeration>
+													</xs:restriction>
+												</xs:simpleType>
+											</xs:element>
+											<xs:element name="ReturnURL" type="xs:string" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Return URL for their page with search results.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:choice>
+						</xs:sequence>
+						<xs:sequence>
+							<xs:annotation>
+								<xs:documentation>This is used to request additional response nodes for a previously executed search operation.</xs:documentation>
+							</xs:annotation>
+							<xs:element name="SearchReference" type="SearchReference">
+								<xs:annotation>
+									<xs:documentation>Should be equal to SearchReference from a previous AirFlightSearch_OUT response.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="MaxRows" type="xs:positiveInteger" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Max number of itineraries in the response</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Async" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Flight search will be processed in a separate thread; its identifier will be returned in response</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+						<xs:element name="Remove">
+							<xs:annotation>
+								<xs:documentation>Removes results of the previous search from the internal cache. See ACSOption.AutoDelete.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="SearchReference" type="SearchReference" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Should be equal to SearchReference from a previous AirFlightSearch_OUT response.
+If not set - results of all previous searches will be removed from the cache.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="AsyncJobID" type="xs:string"/>
+					</xs:choice>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirFlightSearch_OUT">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_OUT">
+					<xs:choice minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>The response can be empty in case of errors only.</xs:documentation>
+						</xs:annotation>
+						<xs:sequence>
+							<xs:element name="SearchReference" type="SearchReference">
+								<xs:annotation>
+									<xs:documentation>Generated code of an Air Search operation, which can be used to request additional response rows.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Itineraries" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Itinerary" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="ActualAirDataPriced">
+														<xs:sequence>
+															<xs:element name="ItineraryReference" type="ItineraryReference">
+																<xs:annotation>
+																	<xs:documentation>Itinerary reference to be used in subsequent AirSelect_IN call.</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="AffinityId" type="xs:int" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Relate ItineraryOptions that have same price, airlines but different itinerary combination.</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="IsPreferred" type="Boolean" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Indicates that this Itinerary option is a preferred option</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="ValidationError" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Validation message prevents  choosing the item</xs:documentation>
+																</xs:annotation>
+																<xs:complexType>
+																	<xs:sequence>
+																		<xs:element name="MessageID" type="RecordID" minOccurs="0">
+																			<xs:annotation>
+																				<xs:documentation>The ID of the validation message</xs:documentation>
+																			</xs:annotation>
+																		</xs:element>
+																		<xs:element name="MessageText">
+																			<xs:simpleType>
+																				<xs:restriction base="xs:string">
+																					<xs:whiteSpace value="preserve"/>
+																				</xs:restriction>
+																			</xs:simpleType>
+																		</xs:element>
+																	</xs:sequence>
+																</xs:complexType>
+															</xs:element>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:element name="URL" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>In case of RightRez, the URL to redirect the browser to with the search results.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="AsyncJobID" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>Identifier of the separate thread created for parallel execution of AirFlightSearch</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirSelect_IN">
+		<xs:annotation>
+			<xs:documentation>Selects one of air itineraries returned by AirFlightSearch_OUT. For temporary bookings the actual Book Air call will happen within the StoreBooking call.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_IN">
+					<xs:sequence>
+						<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Options to control content of ResShell to be returned.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="SearchReference" type="SearchReference">
+							<xs:annotation>
+								<xs:documentation>Should be equal to SearchReference from a previous AirFlightSearch_OUT response.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ItineraryReference" type="ItineraryReference">
+							<xs:annotation>
+								<xs:documentation>Should be equal to one of ItineraryReference from a previous AirFlightSearch_OUT response.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirSelect_OUT">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_OUT">
+					<xs:sequence>
+						<xs:element name="ResShell" type="ResShell" minOccurs="0"/>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirUpdate_IN">
+		<xs:annotation>
+			<xs:documentation>Performs updates of actual air record, which do not require search to be executed first.
+For temporary bookings actual commucation with the Air system will be performed during Res Store.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_IN">
+					<xs:sequence>
+						<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Options to control content of ResShell to be returned.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:choice>
+							<xs:element name="RetrieveByResID">
+								<xs:annotation>
+									<xs:documentation>Retrieves latest actual air information from the Air system related to given Seaware booking.
+Actual Air Header records, which are no longer known to the Air system, will be marked as Cancelled.
+Performs Edit - Store operation on that booking, so the booking should not be in temp storage or be locked by some other process.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="ResID" type="RecordID"/>
+										<xs:element name="Unlock" type="Boolean" default="Y" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If 'N' the booking will remain locked after completion of the operation.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="RemoveGuests">
+								<xs:annotation>
+									<xs:documentation>Remove some guests from given Air Booking. (Not supported for RightRez)</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="AirBookingID" type="AirBookingID"/>
+										<xs:choice>
+											<xs:element name="PaxRefs" type="PaxRefs"/>
+											<xs:element name="GuestIDs" type="RecordIDList"/>
+											<xs:element name="ClientIDs" type="RecordIDList"/>
+										</xs:choice>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Cancel">
+								<xs:complexType>
+									<xs:choice>
+										<xs:element name="AirBookingID" type="AirBookingID">
+											<xs:annotation>
+												<xs:documentation>Cancel given Air Booking completely.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ResID" type="RecordID">
+											<xs:annotation>
+												<xs:documentation>Cancel all Air Bookings for given Seaware booking.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:choice>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Discard">
+								<xs:annotation>
+									<xs:documentation>Discard temporary air booking created as a result of the AirSelect call.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="ResID" type="RecordID"/>
+										<xs:element name="AirBookingID" type="AirBookingID"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="SetPaid">
+								<xs:annotation>
+									<xs:documentation>Sets value of the IsPaid flag for given Air Booking.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="AirBookingID" type="AirBookingID"/>
+										<xs:element name="IsPaid" type="Boolean"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="ProcessAsyncRequest">
+								<xs:annotation>
+									<xs:documentation>Used internally to process requests in the table AMADEUS_ASYNC_REQUEST</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="RequestID" type="RecordID"/>
+										<xs:element name="ForceReprocess" type="Boolean" default="N" minOccurs="0"/>
+										<xs:element name="AutoStoreMode" type="Boolean" default="Y" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If Y then auto-store validation rules will be processed during reservations store</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="SendTicketAuth">
+								<xs:annotation>
+									<xs:documentation>Send Ticket authorization to Amadeus</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="ResID" type="RecordID"/>
+										<xs:element name="AirBookingID" type="AirBookingID" minOccurs="0"/>
+										<xs:element name="SendImmediately" type="Boolean" default="N" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Send will be done without authorization date calculation</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="RetrievePNR">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="ResID" type="RecordID"/>
+										<xs:element name="RecLoc" type="RecLoc"/>
+										<xs:element name="Guests">
+											<xs:simpleType>
+												<xs:list itemType="GuestSeqN"/>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="IsBundled" type="Boolean" default="N" minOccurs="0"/>
+										<xs:element name="InfantsWithSeats" minOccurs="0">
+											<xs:simpleType>
+												<xs:list itemType="GuestSeqN"/>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="AdultsWithExtraSeats" minOccurs="0">
+											<xs:simpleType>
+												<xs:list itemType="GuestSeqN"/>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="Parents" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Parents for Infants on lap</xs:documentation>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="InfantParent" minOccurs="0" maxOccurs="unbounded">
+														<xs:complexType>
+															<xs:sequence>
+																<xs:element name="Infant" type="GuestSeqN"/>
+																<xs:element name="Parent" type="GuestSeqN"/>
+															</xs:sequence>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Unlock" type="Boolean" default="Y" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If 'N' the booking will remain locked after completion of the operation.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="SetEffDate">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="AirBookingID" type="AirBookingID"/>
+										<xs:element name="EffDate" type="xs:dateTime"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:choice>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirUpdate_OUT">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_OUT">
+					<xs:sequence>
+						<xs:element name="ResShell" type="ResShell" minOccurs="0"/>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:simpleType name="AirExtCostTransID">
+		<xs:annotation>
+			<xs:documentation>Cost Transaction ID in the external system</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:element name="AirCostUpload_IN">
+		<xs:annotation>
+			<xs:documentation>Adds or updates air cost data</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_IN">
+					<xs:sequence>
+						<xs:element name="Options" minOccurs="0">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="AllowUpdates" type="Boolean" default="N" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If N - existing records will not be updated. The External Transaction ID is used as record key.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="AsSingleTransaction" type="Boolean" default="Y" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If Y - all rows are processed in a single database transaction. If it fails on any record, the whole transaction will be rolled back.
+If N - each row is processed separately. If it fails on any record, only that record will be skipped.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="RejectMissingTickets" type="Boolean" default="N" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If N - records with ticket numbers unknown to Seaware will be accepted but placed into an internal queue in which they "wait" for these ticket to appear.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Currency code of all rows. If empty, BaseCurrency will be used</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Rows" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence minOccurs="0">
+									<xs:element name="Row" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="ExtTransID" type="AirExtCostTransID">
+													<xs:annotation>
+														<xs:documentation>Unique transaction ID in the external system.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="TicketNo" type="AirTicketNo">
+													<xs:annotation>
+														<xs:documentation>Ticket Number</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="TransDate" type="xs:dateTime">
+													<xs:annotation>
+														<xs:documentation>Transaction Date</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="TransType" type="LongCode">
+													<xs:annotation>
+														<xs:documentation>Transaction type. Valid transaction tyeps are defined in the AIR_COST_TRANS_TYPE table in Seaware (DbSearch.AirCostTransType). Examples: NORMAL SALE, FULL REFUND, REFUND, VOID.
+The calling program should use the XREF feature (DbSearch.XREF...) to convert external codes into Seaware's.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="PaxRefID" type="RecordID" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Seaware Passenger ID</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="RecLoc" type="RecLoc" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Record Locator</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="Total" type="Money">
+													<xs:annotation>
+														<xs:documentation>Total amount of the transaction.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="CostItems" minOccurs="0">
+													<xs:complexType>
+														<xs:sequence>
+															<xs:element name="Item" minOccurs="0" maxOccurs="unbounded">
+																<xs:complexType>
+																	<xs:sequence>
+																		<xs:element name="Type" type="LongCode">
+																			<xs:annotation>
+																				<xs:documentation>Cost Item type. Valid item types are defined in the AIR_COST_ITEM_TYPE table in Seaware (DbSearch.AirCostItemType).
+Examples: TOTAL, TAX, PENALTY.</xs:documentation>
+																			</xs:annotation>
+																		</xs:element>
+																		<xs:element name="Amount" type="Money"/>
+																	</xs:sequence>
+																</xs:complexType>
+															</xs:element>
+														</xs:sequence>
+													</xs:complexType>
+												</xs:element>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirCostUpload_OUT">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_OUT">
+					<xs:sequence>
+						<xs:element name="Counts">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Success" type="xs:int" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation># of rows without errors or warnings</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="NoTicket" type="xs:int" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation># of rows where ticket number was invalid (not found in Seaware).</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Rejected" type="xs:int" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation># of rejected rows due to wrong vaules of input fields or with wrong ticket numbers if RejectMissingTickets=Y.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Warning" type="xs:int" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation># of rows with warnings other than invalid ticket number.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Written" type="xs:int" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation># of rows written into the database. Note that if AsSingleTransaction=Y, it can be equal to 0, even if Success count is greater than 0, in case of errors.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirFlightInfo_IN">
+		<xs:annotation>
+			<xs:documentation>Requests flight information (timetable)</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_IN">
+					<xs:sequence>
+						<xs:element name="Airline" type="Airline"/>
+						<xs:element name="FlightNo" type="FlightNo">
+							<xs:annotation>
+								<xs:documentation>Mandatory for Amadeus</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="DepartureAirport" type="AirportCode">
+							<xs:annotation>
+								<xs:documentation>Mandatory for Amadeus</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="DepartureDateTime" type="xs:dateTime" minOccurs="0"/>
+						<xs:element name="ArrivalAirport" type="AirportCode" minOccurs="0"/>
+						<xs:element name="ArrivalDateTime" type="xs:dateTime" minOccurs="0"/>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AirFlightInfo_OUT">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="AbstractMessage_OUT">
+					<xs:sequence minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>The response can be empty in case of errors only.</xs:documentation>
+						</xs:annotation>
+						<xs:element name="Flights" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Flight" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="Airline" type="Airline"/>
+												<xs:element name="OperatedByAirline" type="Airline" minOccurs="0"/>
+												<xs:element name="FlightNo" type="FlightNo"/>
+												<xs:element name="Aircraft" type="Aircraft" minOccurs="0"/>
+												<xs:element name="DepartureDateTime" type="xs:dateTime"/>
+												<xs:element name="DepartureAirport" type="AirportCode"/>
+												<xs:element name="ArrivalDateTime" type="xs:dateTime"/>
+												<xs:element name="ArrivalAirport" type="AirportCode"/>
+												<xs:element name="NumberOfStops" type="xs:nonNegativeInteger" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Number of stops in the flight</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="FlyingTime" type="xs:duration" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>The amount of flying time of the leg</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="FlightMealCode" type="FlightMealCode" minOccurs="0"/>
+												<xs:element name="CheckInTerminal" type="xs:string" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Descrfiption for the local terminal at departure airport</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="ArrivalTerminal" type="xs:string" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Description of the local terminal at arrival airport</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

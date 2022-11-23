@@ -1,0 +1,189 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE CacheConfigService EXTERNAL CHARACTER '';
+DECLARE AgencyMap EXTERNAL CHARACTER '';
+DECLARE SessionMap EXTERNAL CHARACTER '';
+DECLARE SessionConfigService EXTERNAL CHARACTER '';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseExtendSessionExpirationTime
+ * MODULE NAME       :     CheckAgency
+ * Description       :     This module is used for checking the response from the validate agency and decide the path of flow to execute.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseExtendSessionExpirationTime_CheckAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cQuery CHARACTER '';
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Extend session expiration time input request...', 'xml', rEnv);
+		END IF;
+		-- Uncomment the below block after GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',
+												'',
+												'',
+											 	rEnv);
+		
+		SET rEnv.XMLNSC.GUID = InputRoot.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ.*:SessionId.*:SessionToken;
+		
+--		DECLARE rLoadAgencyIn REFERENCE TO OutputRoot.XMLNSC.LoadAgency_IN;
+--		CREATE FIELD OutputRoot.XMLNSC.LoadAgency_IN AS rLoadAgencyIn;
+--		SET rLoadAgencyIn.MsgHeader.Version = VersonixAPIVersion ;
+--		SET rLoadAgencyIn.MsgHeader.SessionGUID = InputRoot.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ.*:SessionId.*:SessionToken;
+--		SET rLoadAgencyIn.MsgHeader.Language = 'ENG';
+--		SET rLoadAgencyIn.AgencyID = COALESCE(FIELDVALUE(InputRoot.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),NULL);
+		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRS;
+		
+		DECLARE cRequestorId CHARACTER COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, '0');
+		DECLARE cPCC CHARACTER COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '');
+		DECLARE cSystemName CHARACTER COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'SABRE');
+		DECLARE cSessionGUID CHARACTER COALESCE(rIn.*:SessionId.*:SessionToken, '');	
+		SET rEnv.XMLNSC.QUID = cSessionGUID;
+		SET rEnv.XMLNSC.ChannelName = cSystemName;
+		
+		CALL com.ncl.ais.utils.LookupAgencyInfo(cRequestorId, cPCC, cSystemName, AgencyMap, CacheConfigService, rEnv);
+		
+		IF EXISTS(rEnv.Temp.AgencyInfoError[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;				
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY NCL_CruiseExtendSessionExpirationTimeRS;
+			SET rOut.*:Warnings.*:Warning = rEnv.Temp.AgencyInfoError.*:agencyNotFound;
+			PROPAGATE TO TERMINAL 'Out2';
+		ELSEIF EXISTS(InputRoot.XMLNSC.LoadAgency_OUT.Errors.Error.ErrorMessage[]) THEN
+			--Send the respose of agency Error to final output
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS;
+			CREATE FIELD OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.ns6:Success;
+			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)ShortText = InputRoot.XMLNSC.LoadAgency_OUT.Errors.Error.ErrorMessage; 
+			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Type = '3';
+
+			PROPAGATE TO TERMINAL 'out2';
+		ELSE
+			RETURN TRUE;
+		END IF;
+		
+--		DECLARE rEnv REFERENCE TO Environment.Variables;
+--		CREATE FIELD Environment.Variables AS rEnv;
+--		SET OutputRoot.MQMD = rEnv.MQMD;
+--		--SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+--		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+--		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ;
+--		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ AS rIn;
+--		-- Based on the condition the code will decide which path it needs to navigate.
+--		
+--		CASE
+--			
+--		WHEN EXISTS(InputRoot.XMLNSC.LoadAgency_OUT.Errors.Error.ErrorMessage[]) THEN
+--			--Send the respose of agency Error to final output
+--			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS;
+--			CREATE FIELD OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS AS rOut;
+--			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+--			CREATE FIELD rOut.ns6:Success;
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Code = '12228';
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)ShortText = InputRoot.XMLNSC.LoadAgency_OUT.Errors.Error.ErrorMessage; 
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Type = '3';
+--
+--			PROPAGATE TO TERMINAL 'out2';
+--			RETURN FALSE;
+--		WHEN EXISTS(InputExceptionList.RecoverableException[]) THEN
+--			-- Send the response of LoginError to final output
+--			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS;
+--			CREATE FIELD OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS AS rOut;
+--			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+--			CREATE FIELD rOut.ns6:Success;
+--			DECLARE cErrorText CHARACTER;
+--			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, InputExceptionList);
+--			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+--			SET rOut.ns6:Warnings.ns6:Warning = cErrorText;
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Code = '12228';
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)ShortText = 'Login Error'; 
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Type = '3';
+--
+--			PROPAGATE TO TERMINAL 'out2';
+--			RETURN FALSE;
+--		WHEN EXISTS(InputRoot.XMLNSC.LoadAgency_OUT.Agency.AgencyHeader.AgencyID[]) THEN
+--			
+--			--Check more conditions inside to pass on to the success path
+--			-- /body/loadAgencyResponse/LoadAgency_OUT/Agency/AgencyHeader/IsActive = 'Y'
+--			IF InputRoot.XMLNSC.LoadAgency_OUT.Agency.AgencyHeader.IsActive = 'Y' THEN
+----				IF EXISTS(rIn.*:ExtensionTime[]) THEN	
+----					-- Load time xslt prepare and send to login passed node
+----					SET rEnv.XMLNSC.Time = rIn.*:ExtensionTime;
+----					PROPAGATE TO TERMINAL 'out1';
+----					RETURN FALSE;
+----				ELSE
+--					-- Get time xslt prepare
+--					DECLARE rSessionIn REFERENCE TO OutputRoot.XMLNSC.ShowSessionDetail_IN;
+--					CREATE FIELD OutputRoot.XMLNSC.ShowSessionDetail_IN AS rSessionIn; 
+--					SET rSessionIn.MsgHeader.Version = VersonixAPIVersion;
+--					SET rSessionIn.MsgHeader.SessionGUID = rEnv.XMLNSC.GUID; 
+--					SET rSessionIn.MsgHeader.Language = 'ENG';
+--					-- Propagate to the Show session service invoke
+--					--PROPAGATE TO TERMINAL 'out';
+--					RETURN TRUE;
+--			--	END IF;
+--			ELSE 
+--				-- Agency not active prepare
+--			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS;
+--			CREATE FIELD OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS AS rOut;	
+--			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+--			CREATE FIELD rOut.ns6:Success;
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Code = '12805';
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)ShortText = 'Agency not Active'; 
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Type = '3';
+--			-- Propagate to the final output
+--			PROPAGATE TO TERMINAL 'out2';
+--			RETURN FALSE;
+--			END IF;
+--			
+--		ELSE
+--			-- if none of the above condition matches then it means that the agency is not found and send to final output
+--			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS;
+--			CREATE FIELD OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS AS rOut;
+--			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+--			CREATE FIELD rOut.ns6:Success;
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Code = '12805';
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)ShortText = 'Agency Not Found'; 
+--			SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Type = '3';
+--
+--			PROPAGATE TO TERMINAL 'out2';
+--			RETURN FALSE;
+--		END CASE;
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+CREATE PROCEDURE GetDataFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	

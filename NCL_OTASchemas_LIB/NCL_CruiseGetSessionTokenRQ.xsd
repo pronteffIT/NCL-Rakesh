@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="3.2" id="OTA2006A">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseGetSessionTokenRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Get Session token Request message requests a session token to initiate a stateful transaction for the following three messages
+-NCL_CruisePriceBookingRQ
+-NCL_CruiseCreateBookingRQ
+-NCL_CruiseUpdateBookingRQ
+The token is valid until the NCL_CruiseClearSessionTokenRQ is called or till the default inactivity timeout period which is usually pre-configured (for example 30 minutes)
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="3.0">
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA specification are made available according to the terms defined by the OTA License Agreement at http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseOnlineCheckInClientRS">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Returns the information from NCL_ONLINE_CHECKIN_CLIENT table</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice>
+				<xs:sequence>
+					<xs:choice>
+						<xs:element name="Success" type="SuccessType" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Standard way to indicate successful 
+processing of an OTA message. Returning an empty element of this type indicates 
+success.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Warnings" type="WarningsType" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Standard way to indicate successful 
+processing of an OTA message, but one in which warnings are 
+generated.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+					<xs:element name="Client" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="ClientID" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Client ID </xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="WebLoginName" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>WebLoginName</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="FirstName" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>First Name</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="LastName" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Last Name</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="MiddleName" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Middle Name</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="Title" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Title</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="BirthDay" type="xs:date" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Birth Day</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="CountryOfBirth" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Country Of Birth</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="Citizenship" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Citizenship</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="LanguageCode" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Language Code</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="Email" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Email Address</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="ClientType" type="xs:string" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Client Type</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="Sex" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Sex</xs:documentation>
+									</xs:annotation>
+									<xs:simpleType>
+										<xs:restriction base="xs:string">
+											<xs:enumeration value="M"/>
+											<xs:enumeration value="F"/>
+										</xs:restriction>
+									</xs:simpleType>
+								</xs:element>
+								<xs:element name="Address" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Address Information</xs:documentation>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Line1" type="xs:string"/>
+											<xs:element name="Line2" type="xs:string" minOccurs="0"/>
+											<xs:element name="Line3" type="xs:string" minOccurs="0"/>
+											<xs:element name="Line4" type="xs:string" minOccurs="0"/>
+											<xs:element name="State" type="xs:string" minOccurs="0"/>
+											<xs:element name="City" type="xs:string" minOccurs="0"/>
+											<xs:element name="Zip" type="xs:string" minOccurs="0"/>
+											<xs:element name="Country" type="xs:string" minOccurs="0"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Phone" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Phone Information</xs:documentation>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Primary" type="xs:string"/>
+											<xs:element name="Secondary" type="xs:string"/>
+										</xs:sequence>
+										<xs:attributeGroup ref="TelephoneTypeAttributesGroup"/>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="Errors" type="ErrorsType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">A collection of errors that occurred during 
+the processing of a message.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+			<xs:attributeGroup ref="ResponseGroup"/>
+		</xs:complexType>
+	</xs:element>
+	<xs:attributeGroup name="TelephoneTypeAttributesGroup">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Provides telephone information details.</xs:documentation>
+		</xs:annotation>
+		<xs:attribute name="PhoneLocationType">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Phone Type 
+		</xs:documentation>
+			</xs:annotation>
+			<xs:simpleType>
+				<xs:restriction base="xs:string">
+					<xs:enumeration value="Home"/>
+					<xs:enumeration value="Office"/>
+					<xs:enumeration value="Mobile"/>
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:attribute>
+	</xs:attributeGroup>
+</xs:schema>

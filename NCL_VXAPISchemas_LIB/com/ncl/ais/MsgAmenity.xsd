@@ -1,0 +1,1295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:include schemaLocation="MsgAccounting.xsd"/>
+	<!--=============================================== Amenity Maintenance: data types-->
+	<xs:complexType name="AmenityOrder">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AmOrderHeader" type="AmOrderHeader">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmOrderItems" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AmOrderItem" type="AmOrderItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AmInvoiceItems" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AmInvoiceItem" type="AmInvoiceItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AmPromoItems" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AmPromoItem" type="AmPromoItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AmOrderHeader">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="OrderID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OrderDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OrderStatus" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OrderDescription" type="LongComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequesterType" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequesterID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequesterName" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequesterPhone" type="PhoneNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RecipientType" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RecipientID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RecipientStatus" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OrderValid" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GiftCardTo" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GiftCardMessage" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ComplimentsOf" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DispatchedDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DispatchedOk" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TerminationCompleted" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CancelRefundDone" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoiceValid" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ShowOrderItems" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FromAddon" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FromCoupon" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FreeOfCharge" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupDisributionOk" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AmOrderItem">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AmOrderID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmenityOrderItemID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmCategory" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmenityType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string"/>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AmenityCode" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmenityName" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmenitySubcode" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OnBoardCredit" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>The node appears if on-board credit coupon cretion is allowed for the Amenity Type</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="CreditAmount" type="Money">
+							<xs:annotation>
+								<xs:documentation>Used to define coupon's amount</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="CouponClass" type="CouponClass" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Used to define coupon's class. Output only</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Coupon" type="CouponShell" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Output only</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:double">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmPlaceCode" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmDeliveryType" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DayDeliveryBasis" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ItemDeliveryDay" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ItemDeliveryTime" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GuestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FullName" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AmInvoiceItem">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AmenityCode" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmInvoiceItemType" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmInvoiceItemSubtype" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PromoCode" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ItemTotal" type="xs:double">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:double">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ItemValid" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IncludedInShopping" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AmPromoItem">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="PromoCode" type="xs:string">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsActive" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsManual" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsExcluded" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!--=============================================== Amenity Maintenance: Requests -->
+	<xs:element name="GetListOfAmenityOrders_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ExcludeAddonOrders" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Y: Amenity Orders created from reservation's add-ons will be excluded from result</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>To Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:choice>
+					<xs:element name="ResID" type="RecordID">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="GroupID" type="RecordID">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetListOfAmenityOrders_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrders" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Lock" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="OrderID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UnlockAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OrderID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UnlockAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="CancelAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Store" type="Boolean" default="Y" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>N: Amenity Order stays in editing mode; cancel process will be completed after StoreAmenityOrder message</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="OrderID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="CancelAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ReinstateAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Store" type="Boolean" default="Y" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>N: Amenity Order stays in editing mode; reinstate process will be completed after StoreAmenityOrder message</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="OrderID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ReinstateAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="StoreAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OrderID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="StoreAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>To be Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Store" type="Boolean" default="N" minOccurs="0"/>
+							<xs:element name="Validate" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Y: All result of user definable validation rules will be shown</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAmenityOrder_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OrderID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAmenityOrder_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetAvailAmenityCodes_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice>
+					<xs:element name="OrderID" type="RecordID">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="AmenityOrder" type="AmenityOrder">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetAvailAmenityCodes_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AvailAmenityCodes" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="AvailAmenityCode" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="AmCategory" type="xs:string" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="AmenityType" type="xs:string" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="AmenityCode" type="xs:string">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="AmenityName" type="xs:string" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ProviderCode" type="xs:string" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Comments" type="LongComment" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Price" type="xs:double">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ShoppingPrice" type="xs:double">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Currency" type="CurrencyCode">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="IsSuggested" type="Boolean">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="IsMandatory" type="Boolean">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageOnboardCreditCoupon_IN">
+		<xs:annotation>
+			<xs:documentation>Create or Delete on-board credit coupon associated with Amenity order item</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Action">
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:maxLength value="10"/>
+							<xs:whiteSpace value="collapse"/>
+							<xs:enumeration value="Create"/>
+							<xs:enumeration value="Delete"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="AmenityOrderItemID"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageOnboardCreditCoupon_OUT">
+		<xs:annotation>
+			<xs:documentation>Respoinse message for ManageOnboardCreditCoupon_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AmenityOrder" type="AmenityOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

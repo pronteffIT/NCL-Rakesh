@@ -1,0 +1,15 @@
+<?xml version="1.1" encoding="UTF-8" standalone="yes"?>
+<policies>
+  <policy policyType="UserDefined" policyName="CacheServerConnection">
+    <AGENCY.LUT_TTL>21600</AGENCY.LUT_TTL>
+    <BasicAuth>Basic SUlCVXNlcjpJSUJAVXNlcg==</BasicAuth>
+    <ConnectionTimeout>10000</ConnectionTimeout>
+    <EXTERNAL_ERROR_CODE.LUT_TTL>86400</EXTERNAL_ERROR_CODE.LUT_TTL>
+    <PACKAGES.LUT_TTL>86400</PACKAGES.LUT_TTL>
+    <PORT_INFO.LUT_TTL>432000</PORT_INFO.LUT_TTL>
+    <SESSION.LAT_TTL>3600</SESSION.LAT_TTL>
+    <SESSION.LUT_TTL>3600</SESSION.LUT_TTL>
+    <ServerUrl>http://167.118.112.201:18081/resources/datacaches/IIBCache_Grid_QA/</ServerUrl>
+    <VXUSERINFO.LUT_TTL>604800</VXUSERINFO.LUT_TTL>
+  </policy>
+</policies>

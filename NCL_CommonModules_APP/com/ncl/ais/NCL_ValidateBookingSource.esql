@@ -1,0 +1,303 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE UserMap EXTERNAL CHARACTER '';
+DECLARE AgencyMap EXTERNAL CHARACTER '';
+DECLARE CacheConfigService EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_ValidateBookingSource_LoginRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyRequest;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE cChannel CHARACTER rIn.*:source.*:BookingChannel.*:CompanyName.Code;
+		DECLARE cUserinfo, cCacheVal CHARACTER '';
+		DECLARE cErrorMsg CHARACTER 'System error from back end. Please try again later';
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		--SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:source.*:RequestorID.ID, COALESCE(rIn.*:source.PseudoCityCode, '')),
+												cChannel,
+												'',
+												'',
+												'',
+											 	rEnv);
+		
+		SET rEnv.Temp.source = rIn.*:source;
+		
+		-- continue handler to continue with cache errors
+		BEGIN
+			DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN END;
+		END;
+		
+		-- lookup username and pwd from cache using channel
+		SET cUserinfo = GetUserInfoFromCache(cChannel, UserMap, CacheConfigService);
+		
+		IF COALESCE(cUserinfo, '') = '' OR STARTSWITH(cUserinfo, 'ERROR') THEN
+			-- audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UserInfo lookup from cache failed ...' || cUserinfo, rEnv);
+			
+			PROPAGATE TO LABEL 'GET_USERINFO';
+			
+			SET cUserinfo = ExtractUserInfo(cChannel, rEnv);
+			
+			IF COALESCE(cUserinfo, ',') <> ',' THEN
+				SET cCacheVal = SaveUserInfoFromCache(cChannel, cUserinfo, '-1', UserMap, CacheConfigService);
+				
+				--PROPAGATE TO LABEL 'TRIGGER_CACHELOAD';
+			END IF;
+		ELSE
+			-- audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UserInfo lookup from cache successful ...' || cUserinfo, rEnv);
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking VX login service ...', rEnv);
+
+		IF COALESCE(cUserinfo, ',') = ',' THEN
+			SET OutputRoot.XMLNSC.VerifyAgencyResponse.loginError.(XMLNSC.Attribute)Code = '12805';
+			SET OutputRoot.XMLNSC.VerifyAgencyResponse.loginError.(XMLNSC.Attribute)ShortText = LEFT(cErrorMsg, 64);
+			SET OutputRoot.XMLNSC.VerifyAgencyResponse.loginError.(XMLNSC.Attribute)Type = '3';
+			SET OutputRoot.XMLNSC.VerifyAgencyResponse.loginError = 'Specified channel not on file';
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			-- added api version
+			SET  OutputRoot.XMLNSC.Login_IN.Version = com.ncl.ais.utils.GetVersonixAPIVersion();		
+			SET OutputRoot.XMLNSC.Login_IN.UserInfo.Internal.Username = SUBSTRING(cUserinfo BEFORE ',');
+			SET OutputRoot.XMLNSC.Login_IN.UserInfo.Internal.Password = SUBSTRING(cUserinfo AFTER ',');
+			SET OutputRoot.XMLNSC.Login_IN.ExtSystemInfo.SourceCode = cChannel;
+			
+			RETURN TRUE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+
+	CREATE FUNCTION ExtractUserInfo(IN cChannel CHARACTER, INOUT rEnv REFERENCE) RETURNS CHARACTER
+	BEGIN
+		DECLARE cUserInfo CHARACTER '';
+		
+		SET rEnv.Temp.UserInfo[] = SELECT U.UserName, U.Password FROM rEnv.Temp.VXUserList.User[] AS U WHERE U.Channel = cChannel;
+		
+		SET cUserInfo = COALESCE(rEnv.Temp.UserInfo.UserName, '') || ',' || COALESCE(rEnv.Temp.UserInfo.Password, '');
+		
+		RETURN cUserInfo;
+	END;
+
+	CREATE PROCEDURE SaveUserInfoFromCache(IN cChannel CHARACTER, IN cUserInfo CHARACTER, IN cacheExpiry CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+	CREATE PROCEDURE GetUserInfoFromCache(IN cChannel CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_ValidateBookingSource_SaveUserInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		SET rEnv.Temp.VXUserList = InputRoot.XMLNSC.VXUserList;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup userInfo from file ...', rEnv);
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_ValidateBookingSource_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyResponse AS rResp;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET rResp.runtimeError.(XMLNSC.Attribute)Code = '9999';
+		SET rResp.runtimeError.(XMLNSC.Attribute)ShortText = RIGHT(cErrorText, 64);
+		SET rResp.runtimeError.(XMLNSC.Attribute)Type = '3';
+		SET rResp.runtimeError = cErrorText;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_ValidateBookingSource_CheckAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rLogin REFERENCE TO InputRoot.XMLNSC.Login_OUT;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cRequestorId CHARACTER COALESCE(rEnv.Temp.*:source.*:RequestorID.ID, '0');
+		DECLARE cPCC CHARACTER COALESCE(rEnv.Temp.*:source.PseudoCityCode, '');
+		DECLARE cSystemName CHARACTER COALESCE(rEnv.Temp.*:source.*:BookingChannel.*:CompanyName.Code, 'SABRE');
+		DECLARE cQuery, retVal, cacheVal CHARACTER '';
+		
+		IF EXISTS(rLogin.Errors.Error.ErrorMessage[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Login failure, service returned error ...', rEnv);
+
+			CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyResponse AS rResp;
+			-- create warming response
+			SET rResp.loginError.(XMLNSC.Attribute)Code = rLogin.Errors.Error.ErrorCode;
+			SET rResp.loginError.(XMLNSC.Attribute)ShortText = rLogin.Errors.Error.ErrorMessage;
+			SET rResp.loginError.(XMLNSC.Attribute)Type = '3';
+			 
+			RETURN TRUE;
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Login successful ...', rEnv);
+			
+			-- continue handler to continue with cache errors
+			BEGIN
+				DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN END;
+			END;
+
+			IF cRequestorId <> '0' THEN
+				-- get agency details from cache
+				SET retVal = GetAgencyInfoFromCache(cRequestorId, AgencyMap, CacheConfigService);
+				
+				-- if cache get failed
+				IF STARTSWITH(retVal, 'ERROR') OR COALESCE(retVal, '') = '' THEN
+					SET cQuery = 'SELECT A.AGENCY_ID, A.AGENCY_NAME, A.DEFAULT_CURRENCY, A.OFFICE_CODE' || 
+									' FROM SEA.AGENCY A' || 
+									' WHERE A.AGENCY_ID = ? AND A.IS_ACTIVE = ''Y''';
+	
+					SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(cRequestorId));
+					
+					-- save agency details in cache
+					SET cacheVal = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS CHARACTER) || '#1#' || rEnv.Temp.AgencyInfo.AGENCY_NAME || '#2#' || 
+									COALESCE(rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY, '') || '#3#' || COALESCE(rEnv.Temp.AgencyInfo.OFFICE_CODE, '');
+					SET retVal = SaveAgencyInfoInCache(cRequestorId, cacheVal, '', AgencyMap, CacheConfigService);
+				ELSE
+					-- parse the cache value
+					SET rEnv.Temp.AgencyInfo.AGENCY_ID = SUBSTRING(retVal BEFORE '#1#');
+					SET rEnv.Temp.AgencyInfo.AGENCY_NAME = SUBSTRING(SUBSTRING(retVal BEFORE '#2#') AFTER '#1#');
+					SET rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY = SUBSTRING(SUBSTRING(retVal BEFORE '#3#') AFTER '#2#');
+					SET rEnv.Temp.AgencyInfo.OFFICE_CODE = SUBSTRING(retVal AFTER '#3#');
+				END IF;
+			ELSE
+				IF cPCC <> '' THEN				
+					-- get agency details from cache
+					SET retVal = GetAgencyInfoFromCache(cPCC || '_' || cSystemName, AgencyMap, CacheConfigService);
+					
+					-- if cache get failed
+					IF STARTSWITH(retVal, 'ERROR') OR COALESCE(retVal, '') = '' THEN
+						SET cQuery = 'SELECT B.DEFAULT_CURRENCY, B.AGENCY_ID, B.AGENCY_NAME, B.OFFICE_CODE FROM SEA.AGENCY_EXTERNAL A, SEA.AGENCY B' ||
+										' WHERE A.AGENCY_ID = B.AGENCY_ID AND B.IS_ACTIVE = ''Y'' AND A.PSEUDO_CITY_CODE = ? AND A.EXTERNAL_NAMES_ID = ' ||
+										'(SELECT EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES WHERE EXTERNAL_NAME = ?)';
+	
+						SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(cPCC, cSystemName));
+						
+						-- save agency details in cache
+						SET cacheVal = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS CHARACTER) || '#1#' || rEnv.Temp.AgencyInfo.AGENCY_NAME || '#2#' || 
+										COALESCE(rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY, '') || '#3#' || COALESCE(rEnv.Temp.AgencyInfo.OFFICE_CODE, '');
+						SET retVal = SaveAgencyInfoInCache(cPCC || '_' || cSystemName, cacheVal, '', AgencyMap, CacheConfigService);
+					ELSE
+						-- parse the cache value
+						SET rEnv.Temp.AgencyInfo.AGENCY_ID = SUBSTRING(retVal BEFORE '#1#');
+						SET rEnv.Temp.AgencyInfo.AGENCY_NAME = SUBSTRING(SUBSTRING(retVal BEFORE '#2#') AFTER '#1#');
+						SET rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY = SUBSTRING(SUBSTRING(retVal BEFORE '#3#') AFTER '#2#');
+						SET rEnv.Temp.AgencyInfo.OFFICE_CODE = SUBSTRING(retVal AFTER '#3#');
+					END IF;
+				END IF;
+			END IF;
+			
+			-- verify agency info retrieved
+			IF SQLCODE = 0 THEN
+				IF EXISTS(rEnv.Temp.AgencyInfo[]) THEN
+					CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyResponse AS rResp;
+					
+					SET rResp.sessionGUID = rLogin.MsgHeader.SessionGUID;
+					SET rResp.InactivityTimeout = rLogin.SessionInfo.TimeOut.Inactivity;
+					SET rResp.agencyID = rEnv.Temp.AgencyInfo.AGENCY_ID;
+					SET rResp.agencyName = rEnv.Temp.AgencyInfo.AGENCY_NAME;
+					SET rResp.officeCode = rEnv.Temp.AgencyInfo.OFFICE_CODE;
+					SET rResp.agencyCurrency = rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY;
+					SET rResp.endpoint =  COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+				ELSE
+					-- add audit trail
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed, logging out ...', rEnv);
+					
+					-- when login is successful, but agency lookup fails, do the logout to avoid unnecessary open sessions
+					SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+					SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rLogin.MsgHeader.SessionGUID;
+					PROPAGATE TO LABEL 'LOGOUT';
+					
+					-- create repsonse message
+					CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyResponse AS rResp;
+					
+					SET rResp.agencyNotFound.(XMLNSC.Attribute)Code = '12805';
+					SET rResp.agencyNotFound.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file'; 
+					SET rResp.agencyNotFound.(XMLNSC.Attribute)Type = '3';
+				END IF;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed, logging out ...', rEnv);
+
+				-- when login is successful, but agency lookup fails, logout from session to avoid unnecessary open sessions
+				SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rLogin.MsgHeader.SessionGUID;
+				PROPAGATE TO LABEL 'LOGOUT';
+				
+				-- create repsonse message
+				CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyResponse AS rResp;
+				
+				SET rResp.runtimeError.(XMLNSC.Attribute)Code = '9999';
+				SET rResp.runtimeError.(XMLNSC.Attribute)ShortText = LEFT(SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]'), 64);
+				SET rResp.runtimeError.(XMLNSC.Attribute)Type = '3';
+				SET rResp.runtimeError = SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]');
+			END IF;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE SaveAgencyInfoInCache(IN key CHARACTER, IN val CHARACTER, IN cacheExpiry CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+	CREATE PROCEDURE GetAgencyInfoFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_ValidateBookingSource_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

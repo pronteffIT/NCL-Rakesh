@@ -1,0 +1,74 @@
+BROKER SCHEMA com.ncl.cvs
+
+DECLARE cQuery_SAILINGS CHARACTER 'select 
+    to_char(sh.sail_id) AS SAIL_ID ,
+    TO_CHAR(sh.sail_date_from,''YYYYMMDD'') AS SAIL_DATE_FROM,
+    sh.PORT_FROM   
+from 
+    sail_header sh,
+    port p,
+    ship s
+where sail_date_from>=(trunc(sysdate)+?) and sail_date_from < (trunc(sysdate) + ?)
+and sh.port_from=p.port_code
+and sh.is_active=''Y''
+and sh.is_fake=''N''
+and country_code in (''US'')
+and sh.ship_code=s.ship_code
+';
+DECLARE DAYS_TO_SAILING EXTERNAL INTEGER 35;
+DECLARE DAYS_FROM_SAILING EXTERNAL INTEGER 0;
+DECLARE COVID_PROVIDER_PORT EXTERNAL CHARACTER '';
+DECLARE SAIL_CONFIG SHARED ROW; 
+
+CREATE COMPUTE MODULE GeneratePassengerManifest_GenerateManifest_Request
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		DECLARE cProviderCode CHARACTER;
+		SET rEnv.Temp.SAIL_ID[] = PASSTHRU(cQuery_SAILINGS,DAYS_FROM_SAILING,DAYS_TO_SAILING);
+		FOR rSaildID AS rEnv.Temp.SAIL_ID[]
+		DO
+			SET cProviderCode = COALESCE(GetTestingProviderCode(rSaildID.PORT_FROM,rSaildID.SAIL_DATE_FROM),'NOT FOUND');
+			IF cProviderCode <> 'NOT FOUND' THEN
+				SET OutputRoot.XMLNSC.SAIL.SAIL_ID  = rSaildID.SAIL_ID;
+				SET OutputRoot.XMLNSC.SAIL.PROVIDER_NAME = cProviderCode;
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		END FOR;		
+		RETURN TRUE;
+	END;	
+END MODULE;
+
+CREATE FUNCTION GetTestingProviderCode (PortCode CHARACTER,IN SailDateFrom CHARACTER) RETURNS CHARACTER
+BEGIN
+	IF NOT EXISTS(SAIL_CONFIG.Fields[]) THEN
+			DECLARE INDEX,Pos,OldPos,MaxLength INTEGER 1;
+			DECLARE cSplit,cProvidertxt CHARACTER ;			
+			SET Pos = POSITION('#' IN COVID_PROVIDER_PORT);
+			SET MaxLength = LENGTH(COVID_PROVIDER_PORT);		
+			X : WHILE Pos >0 
+			DO			
+				SET cProvidertxt=SUBSTRING(COVID_PROVIDER_PORT FROM OldPos FOR  (Pos -OldPos)  );
+				SET SAIL_CONFIG.Fields[INDEX].PORT=SUBSTRING(cProvidertxt BEFORE ':' );
+				SET SAIL_CONFIG.Fields[INDEX].SAIL_FROM = SUBSTRING ( SUBSTRING(cProvidertxt AFTER ':'  ) BEFORE ':');
+				SET SAIL_CONFIG.Fields[INDEX].SAIL_TO = SUBSTRING ( SUBSTRING( SUBSTRING(cProvidertxt AFTER ':'  ) AFTER ':') BEFORE ':');		
+				SET SAIL_CONFIG.Fields[INDEX].PROVIDER = SUBSTRING ( SUBSTRING( SUBSTRING(cProvidertxt AFTER ':'  ) AFTER ':') AFTER ':');	 
+					 
+				SET OldPos = Pos +1 ;		
+				SET Pos = POSITION('#' IN COVID_PROVIDER_PORT FROM Pos+1);			
+				SET INDEX = INDEX + 1;
+				IF INDEX > MaxLength THEN
+					LEAVE X;
+				END IF;							
+			END WHILE X;
+		END IF;
+		FOR r AS SAIL_CONFIG.Fields[] 
+		DO
+			IF r.PORT = PortCode AND SailDateFrom >=r.SAIL_FROM AND SailDateFrom < r.SAIL_TO 
+			THEN
+				RETURN r.PROVIDER;
+			END IF;				
+		END FOR;
+		RETURN NULL;
+END;

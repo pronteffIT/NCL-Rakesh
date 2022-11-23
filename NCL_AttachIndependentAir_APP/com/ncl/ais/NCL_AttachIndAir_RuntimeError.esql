@@ -1,0 +1,43 @@
+BROKER SCHEMA com.ncl.ais
+CREATE COMPUTE MODULE NCL_AttachIndAir_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutAttachAir REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT.Errors;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rEnvIn REFERENCE TO rEnv.InputMsg.XMLNSC.*:NCL_CruiseAttachIndependentAirRQ;
+		
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+		-- Set the MQMD header details from the Environment
+		SET OutputRoot.MQMD = Environment.MQMD;
+		-- Set Message expiry
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;	
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseBookingPaymentRS AS rOutAttachAir;
+		
+		-- if errors exist in response then propagate to the generic warning node to handle the error.
+--   		SET OutputRoot.XMLNSC.Body.Code = rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+--   		SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseAttachIndependentAirRS';	
+		IF EXISTS(InputExceptionList.RecoverableException[])  THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking Attach Indpendent air', rEnv);
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+				SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');				
+				CALL com.ncl.ais.utils.CopyAttributes(rEnvIn,rOutAttachAir);		
+				SET rOutAttachAir.*:Errors.*:Error = cErrorText;
+				SET rOutAttachAir.*:Errors.*:Error.(XMLNSC.Attribute)Code = '12228';
+				SET rOutAttachAir.*:Errors.*:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+				SET rOutAttachAir.*:Errors.*:Error.(XMLNSC.Attribute)Type = '3';					
+		END IF;		   		
+
+		RETURN TRUE;
+	END;
+END MODULE;

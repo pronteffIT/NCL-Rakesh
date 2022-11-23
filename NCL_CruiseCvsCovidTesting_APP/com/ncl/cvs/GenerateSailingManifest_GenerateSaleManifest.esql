@@ -1,0 +1,66 @@
+BROKER SCHEMA com.ncl.cvs
+DECLARE cQuery_US_PORTS CHARACTER 'select 
+    to_char(sh.sail_id) AS SAIL_ID,
+    sh.SHIP_CODE, 
+    to_char(SAIL_DATE_FROM,''YYYYMMDD'') AS SAIL_DATE,
+    to_char(SAIL_DATE_TO,''YYYYMMDD'') AS RETURN_DATE,
+    PORT_FROM AS EMBARK_PORT,
+    PORT_TO AS DEBARK_PORT,
+    (select to_char(nvl(sum(res_guest_count),0)) from  res_header rh  
+	    where sh.ship_code=rh.ship_code 
+    	and sh.sail_date_from=rh.sail_date_from 
+    	and rh.res_status=''BK''
+    	) AS MAX_NO_PASSENGER
+    from 
+    sail_header sh,
+    port p,
+    ship s
+where sail_date_from>=(trunc(sysdate)+?) and sail_date_from < (sysdate + ?)
+and sh.port_from=p.port_code
+and sh.is_active=''Y''
+and sh.is_fake=''N''
+and country_code in (''US'')
+and sh.ship_code=s.ship_code';
+
+DECLARE SAIL_MANIFEST_DAYS EXTERNAL INTEGER 365;
+
+DECLARE SAIL_FILE_NAME_TEMPLATE EXTERNAL CHARACTER '' ;
+CREATE COMPUTE MODULE GenerateSailingManifest_GenerateSaleManifest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		SET rEnv.Temp.PassengerManifest[] = PASSTHRU(cQuery_US_PORTS,0,SAIL_MANIFEST_DAYS);
+		DECLARE rOut,rHeader,rRecord REFERENCE TO OutputRoot;
+		DECLARE cErrorMsg CHARACTER;
+		IF NOT EXISTS(rEnv.Temp.PassengerManifest[]) THEN
+			RETURN FALSE;
+		END IF;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('DFDL') NAME 'DFDL';
+		MOVE rOut TO OutputRoot.DFDL;						
+		CREATE LASTCHILD OF rOut.CVS_SAILING_REF AS rHeader NAME 'header';
+		DECLARE rs REFERENCE TO rEnv.Temp.PassengerManifest[1];
+		WHILE LASTMOVE(rs) = TRUE
+		DO
+			CREATE LASTCHILD OF rOut.CVS_SAILING_REF AS rRecord NAME 'record';
+			SET rRecord.COMPANY_CODE = COMPANY_CODE;
+			SET rRecord.CLIENT_CO_NAME = CLIENT_CO_NAME;
+			SET rRecord.SAIL_ID = rs.SAIL_ID;
+			SET rRecord.SHIP_BRAND = 'NCL';
+			SET rRecord.SHIP_NAME = rs.SHIP_CODE;
+			SET rRecord.SAIL_DATE = rs.SAIL_DATE;
+			SET rRecord.RETURN_DATE = rs.RETURN_DATE;
+			SET rRecord.EMBARK_PORT = rs.EMBARK_PORT;
+			SET rRecord.DEBARK_PORT = rs.DEBARK_PORT;
+			SET rRecord.MAX_NO_PASSENGER = rs.MAX_NO_PASSENGER;
+			MOVE rs NEXTSIBLING;	
+		END WHILE;
+		
+		SET rEnv.Temp = NULL;
+		DECLARE YYYYMMDDHHMM CHARACTER  CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmm');
+		DECLARE cFileName CHARACTER;		
+		SET cFileName = REPLACE(SAIL_FILE_NAME_TEMPLATE,'#TIMESTAMP#',YYYYMMDDHHMM);
+		set OutputLocalEnvironment.Destination.File.Name = cFileName;
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,168 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+CREATE PROCEDURE SaveAgencyInfoInCache(IN key CHARACTER, IN val CHARACTER, IN cacheExpiry CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+
+CREATE PROCEDURE GetAgencyInfoFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";
+
+CREATE PROCEDURE ConvertToCamelCase (IN strValue CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE tempStr, upperPref CHARACTER '';
+	
+	IF strValue = '' OR LENGTH(strValue) < 2 THEN
+		RETURN strValue;
+	ELSE
+		SET tempStr = LOWER(SUBSTRING(strValue FROM 2));
+		SET upperPref = UPPER(SUBSTRING(strValue FROM 1 FOR 1));
+		RETURN upperPref || tempStr;		
+	END IF;	
+END;
+
+-- procedure to get cabin category comments
+CREATE PROCEDURE LookupCabinCategory(IN cShipCode CHARACTER, IN cCategoryCode CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cCategoryCodeInfo CHARACTER '';
+	DECLARE DB ROW;
+	--DECLARE cCodePrefix CHARACTER 'CATSHIP_'; 
+	--DECLARE cTableName CHARACTER cCodePrefix || cShipCode;
+	
+	SET cQuery = 'select CCGL.CABIN_CATEGORY, CCGL.CABIN_CATEGORY_GENERIC from SEA.cabin_Category_generic ccg,' ||
+				' SEA.cabin_Cat_gen_lnk_cabin_cat ccgl where ccgl.cabin_category_generic = ccg.cabin_category_generic' ||
+				' and ccgl.ship_code=? and CCGL.CABIN_CATEGORY=?';
+	
+	-- While doing lookup in DB we use only the shipcode.
+	SET DB.CatCode[] = PASSTHRU(cQuery VALUES(cShipCode, cCategoryCode));
+	
+	IF EXISTS(DB.CatCode[]) THEN
+		IF NOT com.ncl.ais.utils.isEmpty(DB.CatCode.CABIN_CATEGORY_GENERIC) THEN
+			IF SUBSTRING(DB.CatCode.CABIN_CATEGORY_GENERIC FROM LENGTH(DB.CatCode.CABIN_CATEGORY_GENERIC) -1) = '.' THEN
+				SET cCategoryCodeInfo = SUBSTRING(DB.CatCode.CABIN_CATEGORY_GENERIC FROM 1 FOR LENGTH(DB.CatCode.CABIN_CATEGORY_GENERIC) -1)  ;
+			ELSE
+				SET cCategoryCodeInfo = DB.CatCode.CABIN_CATEGORY_GENERIC;
+			END IF;	
+			
+			SET cCategoryCodeInfo = com.ncl.ais.utils.ConvertToCamelCase(cCategoryCodeInfo);
+		END IF;
+	END IF;
+	
+	RETURN cCategoryCodeInfo;
+END;
+
+
+-- procedure to get cabin category comments
+CREATE PROCEDURE LookupCategory(IN cShipCode CHARACTER, IN cCategoryCode CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cCategoryCodeInfo CHARACTER '';
+	DECLARE DB ROW;
+	--DECLARE cCodePrefix CHARACTER 'CATSHIP_'; 
+	--DECLARE cTableName CHARACTER cCodePrefix || cShipCode;
+	
+	SET cQuery = 'select ccc.comments from cabin_Category_comments ccc where ccc.ship_code=? AND ccc.CABIN_CATEGORY=?';
+	
+	-- While doing lookup in DB we use only the shipcode.
+	SET DB.CatCode[] = PASSTHRU(cQuery VALUES(cShipCode, cCategoryCode));
+	
+	IF EXISTS(DB.CatCode[]) THEN
+		DECLARE rCatCode REFERENCE TO DB;
+		MOVE rCatCode LASTCHILD;
+		--SET cCategoryCodeInfo = COALESCE(DB.CatCode.COMMENTS, '') ;
+		SET cCategoryCodeInfo = COALESCE(rCatCode.COMMENTS, '') ;
+	END IF;
+	
+	RETURN cCategoryCodeInfo;
+END;
+
+
+-- procedure to get cabin category comments
+CREATE PROCEDURE LookupMaxOccupancy(IN cShipCode CHARACTER, IN cCategoryCode CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cCategoryCodeInfo CHARACTER '2';
+	DECLARE DB ROW;
+	--DECLARE cCodePrefix CHARACTER 'CATSHIP_'; 
+	--DECLARE cTableName CHARACTER cCodePrefix || cShipCode;
+	
+	SET cQuery = 'select MAX(CABIN_CAPACITY) as CABIN_CAPACITY from SHIP_CABIN_CTG_LINK where ship_code=? and CABIN_CATEGORY IN (?) and EFF_SAIL_TO > ?';
+	
+	-- While doing lookup in DB we use only the shipcode.
+	SET DB.CatCode[] = PASSTHRU(cQuery VALUES(cShipCode, cCategoryCode, CURRENT_DATE));
+	
+	IF EXISTS(DB.CatCode[]) THEN
+		SET cCategoryCodeInfo = COALESCE(CAST(CAST(DB.CatCode.CABIN_CAPACITY AS INTEGER) AS CHARACTER), '2') ;
+	END IF;
+	
+	RETURN cCategoryCodeInfo;
+END;
+
+-- procedure lookup agency
+CREATE PROCEDURE LookupAgencyInfo(IN requestorId CHARACTER, IN pcc CHARACTER, IN systemName CHARACTER, IN AgencyMap CHARACTER, IN CacheConfigService CHARACTER, INOUT rEnv REFERENCE)
+BEGIN
+	DECLARE retVal, cQuery, cacheVal CHARACTER '';
+	
+	-- continue handler to continue with cache errors
+	BEGIN
+		DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN END;
+	END;
+	
+	IF  requestorId <> '0' THEN
+		-- get agency details from cache
+		SET retVal = GetAgencyInfoFromCache(requestorId, AgencyMap, CacheConfigService);
+		
+		-- if cache get failed
+		IF STARTSWITH(retVal, 'ERROR') OR COALESCE(retVal, '') = '' THEN
+			SET cQuery = 'SELECT A.AGENCY_ID, A.AGENCY_NAME, A.DEFAULT_CURRENCY, A.OFFICE_CODE' || 
+							' FROM SEA.AGENCY A' || 
+							' WHERE A.AGENCY_ID = ? AND A.IS_ACTIVE = ''Y''';
+	
+			SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES( requestorId));
+			
+			IF EXISTS(rEnv.Temp.AgencyInfo[]) THEN
+				-- save agency details in cache
+				SET cacheVal = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS CHARACTER) || '#1#' || rEnv.Temp.AgencyInfo.AGENCY_NAME || '#2#' || 
+								COALESCE(rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY, '') || '#3#' || COALESCE(rEnv.Temp.AgencyInfo.OFFICE_CODE, '');
+				SET retVal = SaveAgencyInfoInCache(requestorId, cacheVal, '', AgencyMap, CacheConfigService);
+			END IF;
+		ELSE
+			-- parse the cache value
+			SET rEnv.Temp.AgencyInfo.AGENCY_ID = SUBSTRING(retVal BEFORE '#1#');
+			SET rEnv.Temp.AgencyInfo.AGENCY_NAME = SUBSTRING(SUBSTRING(retVal BEFORE '#2#') AFTER '#1#');
+			SET rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY = SUBSTRING(SUBSTRING(retVal BEFORE '#3#') AFTER '#2#');
+			SET rEnv.Temp.AgencyInfo.OFFICE_CODE = SUBSTRING(retVal AFTER '#3#');
+		END IF;
+	ELSE
+		IF pcc <> '' THEN				
+			-- get agency details from cache
+			SET retVal = GetAgencyInfoFromCache(pcc || '_' || systemName, AgencyMap, CacheConfigService);
+			
+			-- if cache get failed
+			IF STARTSWITH(retVal, 'ERROR') OR COALESCE(retVal, '') = '' THEN
+				SET cQuery = 'SELECT B.DEFAULT_CURRENCY, B.AGENCY_ID, B.AGENCY_NAME, B.OFFICE_CODE FROM SEA.AGENCY_EXTERNAL A, SEA.AGENCY B' ||
+								' WHERE A.AGENCY_ID = B.AGENCY_ID AND B.IS_ACTIVE = ''Y'' AND A.PSEUDO_CITY_CODE = ? AND A.EXTERNAL_NAMES_ID = ' ||
+								'(SELECT EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES WHERE EXTERNAL_NAME = ?)';
+	
+				SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(pcc, systemName));
+				
+				IF EXISTS(rEnv.Temp.AgencyInfo[]) THEN
+					-- save agency details in cache
+					SET cacheVal = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS CHARACTER) || '#1#' || rEnv.Temp.AgencyInfo.AGENCY_NAME || '#2#' || 
+									COALESCE(rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY, '') || '#3#' || COALESCE(rEnv.Temp.AgencyInfo.OFFICE_CODE, '');
+					SET retVal = SaveAgencyInfoInCache(pcc || '_' || systemName, cacheVal, '', AgencyMap, CacheConfigService);
+				END IF;
+			ELSE
+				-- parse the cache value
+				SET rEnv.Temp.AgencyInfo.AGENCY_ID = SUBSTRING(retVal BEFORE '#1#');
+				SET rEnv.Temp.AgencyInfo.AGENCY_NAME = SUBSTRING(SUBSTRING(retVal BEFORE '#2#') AFTER '#1#');
+				SET rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY = SUBSTRING(SUBSTRING(retVal BEFORE '#3#') AFTER '#2#');
+				SET rEnv.Temp.AgencyInfo.OFFICE_CODE = SUBSTRING(retVal AFTER '#3#');
+			END IF;
+		END IF;
+	END IF;
+	
+	IF NOT EXISTS(rEnv.Temp.AgencyInfo[]) THEN
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'AgencyInfoError';
+		
+		SET rEnv.Temp.AgencyInfoError.agencyNotFound.(XMLNSC.Attribute)Code = '12805';
+		SET rEnv.Temp.AgencyInfoError.agencyNotFound.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file'; 
+		SET rEnv.Temp.AgencyInfoError.agencyNotFound.(XMLNSC.Attribute)Type = '3';
+	END IF;
+END;

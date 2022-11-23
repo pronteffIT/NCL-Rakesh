@@ -1,0 +1,2 @@
+editor1 password1
+editor2 password2

@@ -1,0 +1,595 @@
+BROKER SCHEMA com.ncl.ais
+-- Declaring the UDPs and NameSpaces
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_FARE_AVAIL_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE ParamCode EXTERNAL CHARACTER '';
+DECLARE CacheValidity EXTERNAL INTEGER 21600; -- 6 hrs
+DECLARE R_PARAMS SHARED ROW;
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_LogIN
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rlogIn REFERENCE TO OutputRoot.XMLNSC.VerifyAgencyRequest;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseFareAvailRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+		'','',rEnv);
+
+		SET rEnv.ReservationID = rIn.*:SearchQualifiers.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET rEnv.CallerInfo=rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFareAvailRQ Request', 'xml', rEnv);
+		END IF;
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseFareAvailRQ = rIn;
+
+		DECLARE resVoyageID CHARACTER;
+		CALL getVoyageID(rIn.*:SearchQualifiers.*:ReservationID.(XMLNSC.Attribute)ID, rIn.*:IncludeGroupPromos, rIn.*:IncludeFSGroupPromos, resVoyageID) INTO resVoyageID; 
+		SET rEnv.VoyageID = COALESCE(resVoyageID, rIn.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+		--SET rEnv.VoyageID = resVoyageID;
+
+		CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyRequest AS rlogIn;
+
+		SET rlogIn.source = rIn.*:POS.*:Source;
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Verify Agency ...', rEnv);
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+
+	CREATE FUNCTION getVoyageID(IN resID CHARACTER, IN includeGroup CHARACTER, IN includeFSGroup CHARACTER, OUT voyageID CHARACTER) RETURNS CHARACTER
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE sVoyageID CHARACTER;
+		DECLARE voyageID INTEGER;
+		DECLARE bIncludeFSGrp, bIncludeGrp BOOLEAN;
+		SET bIncludeFSGrp = CAST(includeFSGroup as BOOLEAN);
+		SET bIncludeGrp = CAST(includeGroup as BOOLEAN);
+		
+		IF bIncludeGrp OR bIncludeFSGrp THEN
+			DECLARE SQLQuery CHARACTER;
+			SET SQLQuery = 'select PACKAGE_ID from res_package rp where rp.res_id = ? and rownum = 1 ';
+			SET rEnv.Temp.Results[]= PASSTHRU (SQLQuery, CAST(resID AS INTEGER));
+			FOR envRef AS rEnv.Temp.Results[] DO
+				SET sVoyageID = envRef.PACKAGE_ID;
+				SET voyageID = CAST(sVoyageID as INTEGER);
+			END FOR;
+		END IF;
+		SET rEnv.Temp.FSGroup = bIncludeFSGrp;
+		SET rEnv.Temp.Group = bIncludeGrp;
+		SET rEnv.Temp.sVoyage = sVoyageID;
+		RETURN sVoyageID;
+	END;
+		
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_GetSession
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rResPackage REFERENCE TO Environment.Variables;
+		DECLARE rVAIn,rResGuest REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE RefInReq,rOut,rTempRef REFERENCE TO rEnv.Temp.Message.NCL_CruiseFareAvailRQ;
+		DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss';
+		DECLARE guestRefs CHARACTER ' ';
+		DECLARE guestCnt, guestSeqNum INTEGER 0;
+		
+		IF EXISTS(rVAIn.*:sessionGUID[] ) THEN
+			SET rEnv.SessionGUID = COALESCE(rVAIn.*:sessionGUID);
+			SET rEnv.agencyID = rVAIn.*:agencyID;
+			SET rEnv.agencyCurrency = rVAIn.*:agencyCurrency;
+			SET rEnv.Endpoint = COALESCE(rVAIn.*:endpoint,'');
+			
+			IF COALESCE(NULLIF(RefInReq.*:SearchQualifiers.*:ReservationID.(XMLNSC.Attribute)ID,''),'') <>'' THEN
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+			END IF;
+			-- Success
+
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rOut;
+
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			-- SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+			SET rOut.MsgHeader.ValidateMode = 'Y';
+			SET rOut.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResTransportations ResShipRequests SpecialRequests';
+			-- SET rOut.ResID = rEnv.ReservationID ;
+			SET rOut.ResShell.ResHeader.AgencyID = rEnv.agencyID;
+
+			DECLARE guestID INTEGER 1;
+
+			IF EXISTS(RefInReq.*:Guest[]) THEN -- When Client ID(s) is passed in request
+				FOR rInGuest AS RefInReq.*:Guest[] DO
+
+					CREATE LASTCHILD OF rOut.ResShell.ResGuests AS rResGuest NAME 'ResGuest';
+
+					SET rResGuest.GuestSeqN = COALESCE(rInGuest.(XMLNSC.Attribute)GuestRefNumber, guestID);
+					IF com.ncl.ais.utils.IsEmpty(rInGuest.(XMLNSC.Attribute)LoyaltyMembershipID) THEN
+						SET rResGuest.GuestID = -guestID;
+					END IF;
+
+					SET rResGuest.ClientID = FIELDVALUE(rInGuest.(XMLNSC.Attribute)LoyaltyMembershipID);
+
+					IF rInGuest.*:GuestTransportation.(XMLNSC.Attribute)Mode = '14' THEN
+						-- Add the Air Bundles to the Guest
+						SET rResGuest.DynamicFields.Field.Name = 'GTWOUT';
+						SET rResGuest.DynamicFields.Field.StrVal = FIELDVALUE(rInGuest.*:GuestTransportation.*:GatewayCity.(XMLNSC.Attribute)LocationCode);
+
+						CREATE LASTCHILD OF rResGuest.DynamicFields AS rTempRef NAME 'Field';
+						SET rTempRef.Name = 'GTWRET';
+						SET rTempRef.StrVal = FIELDVALUE(rInGuest.*:GuestTransportation.*:GatewayCityRet.(XMLNSC.Attribute)LocationCode);
+					END IF;
+					DECLARE cGuestRef CHARACTER COALESCE(rInGuest.(XMLNSC.Attribute)GuestRefNumber, guestID);
+					SET guestRefs = guestRefs ||' '|| cGuestRef ;
+					SET guestID = guestID+1;
+				END FOR;
+			ELSE -- When Client Id is not passed in reqeust.
+				DECLARE rGstIndex INTEGER 1;
+				DECLARE rGstQty INTEGER FIELDVALUE(RefInReq.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Quantity);
+				WHILE (rGstIndex <= rGstQty) DO
+					SET rOut.ResShell.ResGuests.ResGuest[rGstIndex].GuestSeqN = rGstIndex;
+					SET rOut.ResShell.ResGuests.ResGuest[rGstIndex].Insurance = 'NO';
+					SET guestRefs = guestRefs ||' '|| CAST(rGstIndex AS CHARACTER) ;
+					SET rGstIndex = rGstIndex + 1;
+				END WHILE;
+			END IF;
+
+			CREATE LASTCHILD OF rOut.ResShell.ResPackages AS rResPackage NAME 'ResPackage';
+
+			IF EXISTS(RefInReq.*:Guest[]) THEN
+				SET rResPackage.PackageID = rEnv.VoyageID;
+			ELSE --Guest not available in request
+				SET rResPackage.PackageID = FIELDVALUE(RefInReq.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+			END IF;
+
+			SET rResPackage.GuestRefs = TRIM(guestRefs);
+			SET rResPackage.PackageClass = 'VOYAGE';
+			SET rResPackage.PriceCategory = RefInReq.*:Category;
+			SET rResPackage.EffectiveDate = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT FormatZ);
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling UpdateBooking service ...', rEnv);
+
+			RETURN TRUE;
+		ELSE
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseFareAvailRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq, rOutResp);
+			-- Construct The Error Response from Verify Agecncy Response
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rVAIn, rOutResp);
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Or Warning not returned From Verify Agency...', rEnv);
+
+			PROPAGATE TO TERMINAL 'out1';
+
+		END IF;
+		RETURN FALSE;
+
+
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_AvailPromo_Request
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rInUpdBking REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE RefInReq,rOut,rTempRef REFERENCE TO rEnv.Temp.Message.NCL_CruiseFareAvailRQ;
+		DECLARE rUpdtBkgRes REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		--DECLARE rOutRoot REFERENCE TO OutputRoot;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.GetAvailPromotions_IN AS rOut;
+
+
+		DECLARE bPayload BLOB;
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api response', 'xml', rEnv);
+		END IF;
+
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--		SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--		SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		SET rOut.MsgHeader.Language = 'ENG';
+		SET rOut.MsgHeader.CallerInfo.UserInfo.Internal.Username = rEnv.CallerInfo;
+		IF RefInReq.*:IncludeCompatiblePromos = 'true' THEN
+			SET rOut.SearchOptions.IncludeCompatibilityInfo = 'Y';
+		ELSE
+			SET rOut.SearchOptions.IncludeCompatibilityInfo = 'N';
+		END IF;
+		SET rOut.ResShellRef = COALESCE(rInUpdBking.ResShell.ResHeader.ResID, rEnv.ReservationID);
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling GetAvailPromos api for Available Promotions ...', rEnv);
+
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'GetAvailPromotions request for Available Promos', 'xml', rEnv);
+		END IF;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rGuest,rDBOut,rCstmDBOut,rFareCodeOption,rFareCodes REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:GetAvailPromotions_OUT;
+		DECLARE RefInReq,rTempRef,rFareOptions REFERENCE TO rEnv.Temp.Message.NCL_CruiseFareAvailRQ;
+		DECLARE bPayload BLOB;
+
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'GetAvailPromotions Promos api response..', 'xml', rEnv);
+		END IF;
+
+		IF EXISTS(rIn.*:Warnings[]) THEN
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(RefInReq, rOut);
+			SET rOut.Warnings = rIn.*:Warnings;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Warnings recieved from  GetAvailPromos service ...', rEnv);
+		ELSEIF EXISTS(rIn.*:Errors[]) THEN
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(RefInReq, rOut);
+			SET rOut.Errors = rIn.*:Errors;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Errors recieved from  GetAvailPromos service ...', rEnv);
+
+		ELSE
+			-- Call DB search If the "IncludeGroupPromos" value is true
+			IF RefInReq.*:IncludeGroupPromos = 'true' THEN
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDBOut;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rDBOut);
+--          	SET rDBOut.MsgHeader.Version = VersonixAPIVersion;
+--				SET rDBOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+				SET rDBOut.MsgHeader.ValidateMode = 'Y';
+				SET rDBOut.Groups.AgencyID = rEnv.agencyID;
+				SET rDBOut.Groups.GroupStatuses = 'BK OF SH';
+				SET rDBOut.Groups.PackageID = rEnv.VoyageID;
+				SET Environment.Variables.DBSearch = 'DBSearch';
+				PROPAGATE TO LABEL 'InvokeDBSearch';
+
+			END IF;
+			-- Call CustomDB search If the "IncludeFSGroupPromos" value is true
+			IF RefInReq.*:IncludeFSGroupPromos = 'true' THEN
+
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				CREATE FIELD OutputRoot.XMLNSC.CustomDbSearch_IN AS rCstmDBOut;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rCstmDBOut);
+--				SET rCstmDBOut.MsgHeader.Version = VersonixAPIVersion;
+--				SET rCstmDBOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+				SET rCstmDBOut.MsgHeader.ValidateMode = 'Y';
+				SET rCstmDBOut.MsgHeader.CallerInfo.UserInfo.Internal.Username = rEnv.CallerInfo;
+
+				SET rCstmDBOut.ResRequests.AgencyID = rEnv.agencyID;
+				SET rCstmDBOut.ResRequests.PackageIDs = rEnv.VoyageID;
+				SET rCstmDBOut.ResRequests.ResLockInfo = 'UNLOCKED';
+
+				PROPAGATE TO LABEL 'CustomDbSearch';
+
+				IF EXISTS(rEnv.*:CstmDBResp.*:ResRequests.*:ResRequest[]) THEN
+					IF (COALESCE(R_PARAMS.{ParamCode}.ParamValue, '') = '') OR 
+					   (CAST((CURRENT_TIMESTAMP - CAST(R_PARAMS.{ParamCode}.Time AS TIMESTAMP)) SECOND AS INTEGER) >= CacheValidity)
+					THEN
+						SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+						CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDBOut;
+						CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rDBOut);
+--						SET rDBOut.MsgHeader.Version = VersonixAPIVersion;
+--						SET rDBOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+						--SET rDBOut.MsgHeader.CallerInfo.UserInfo.Internal.Username = '';
+						--SET rDBOut.MsgHeader.CallerInfo.UserInfo.Internal.Password = '';
+						SET rDBOut.MsgHeader.ValidateMode = 'Y';
+						SET rDBOut.Settings.SectionName = 'WEB';
+						--SET rDBOut.Settings.ParameterCode = 'ExternalCollectionIdPrefix';
+						SET rDBOut.Settings.ParameterCode = ParamCode;
+						SET Environment.Variables.DBSearch = 'ParamValue';
+						PROPAGATE TO LABEL 'InvokeDBSearch';
+					END IF;
+				END IF;
+
+			END IF;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(RefInReq, rOut);
+
+			CREATE FIELD rOut.ns:Success;
+			SET rOut.ns:SailingInfo = rEnv.Temp.Message.NCL_CruiseFareAvailRQ.*:SailingInfo;
+			
+			DECLARE refLoyalityNumIndex INTEGER;
+			DECLARE resID CHARACTER;
+			SET resID = rEnv.ReservationID;
+			DECLARE GuestInfoQuery CHARACTER;
+			SET GuestInfoQuery = 'select gi.guest_seqn, gi.client_id from res_guest gi where gi.res_Id= ?';
+			SET rEnv.GuestInfo.GuestInfoResults[]= PASSTHRU (GuestInfoQuery, CAST(resID AS INTEGER));
+								
+			FOR rPromos AS rIn.*:AvailPromos.*:AvailPromo[] DO
+					FOR rCompRef AS rPromos.*:Components.*:ComponentReference[] DO
+						DECLARE gCnt CHAR TRIM(rCompRef.*:GuestRefs)||' ';
+						CREATE FIELD rEnv.Temp.gCnt;
+						CREATE FIELD rEnv.TrackGuest;
+						WHILE COALESCE(gCnt,'')<>'' DO
+							CREATE LASTCHILD OF rEnv.Temp.gCnt NAME 'guestNo' VALUE SUBSTRING(gCnt BEFORE ' ');
+							SET gCnt=NULLIF(LTRIM(SUBSTRING(gCnt AFTER ' ')),'');
+						END WHILE;
+						DECLARE guestCnt INT COALESCE(rOut.TrackGuest.*[<].ref,0);
+						FOR guestRef AS rEnv.Temp.gCnt.guestNo[] DO
+							IF NOT(EXISTS(rOut.TrackGuest.{'Guest'||FIELDVALUE(guestRef)}[])) THEN
+								CREATE LASTCHILD OF rOut.Guests AS rGuest NAME 'Guest';
+								SET rGuest.(XMLNSC.Attribute)GuestRefNumber=FIELDVALUE(guestRef);
+								SET refLoyalityNumIndex = FIELDVALUE(guestRef); 
+								FOR ClientRef AS rEnv.GuestInfo.GuestInfoResults[] DO 
+									IF (refLoyalityNumIndex=ClientRef.GUEST_SEQN) THEN 
+										SET rGuest.(XMLNSC.Attribute)LoyaltyMembershipID = ClientRef.CLIENT_ID;
+									END IF; 
+								END FOR;
+								CREATE LASTCHILD OF rGuest AS rFareOptions NAME 'FareCodeOptions'; 
+								SET guestCnt=guestCnt+1;
+								SET rOut.TrackGuest.{'Guest'||FIELDVALUE(guestRef)}.ref=guestCnt;
+							ELSE
+								MOVE rFareOptions TO rOut.Guests.Guest[rOut.TrackGuest.{'Guest'||FIELDVALUE(guestRef)}.ref].FareCodeOptions;
+							END IF;
+
+							CREATE LASTCHILD OF rFareOptions AS rFareCodeOption NAME 'FareCodeOption';
+							SET rFareCodeOption.(XMLNSC.Attribute)Status = 36;
+							SET rFareCodeOption.(XMLNSC.Attribute)FareDescription = FIELDVALUE(rPromos.*:PromoName);
+							SET rFareCodeOption.(XMLNSC.Attribute)FareCode = FIELDVALUE(rPromos.*:PromoCode);
+							SET rFareCodeOption.FareRemark = COALESCE(rPromos.*:Comments,'');
+
+							FOR rPromoCode AS rCompRef.*:CompatiblePromos.*:PromoCode[] DO
+								CREATE LASTCHILD OF rFareCodeOption.CompatibleFareCodes.FareCodes AS rFareCodes NAME 'FareCodes';
+								SET rFareCodes.FareCode = rPromoCode;
+							END FOR;
+
+							FOR rPromoCode AS rPromos.*:CompatiblePromos.*:PromoCode[] DO
+								CREATE LASTCHILD OF rFareCodeOption/*rOut.FareCodeOptions[rOut.TrackGuest.{'Guest'||FIELDVALUE(rPromos.:Components.:ComponentReference.:GuestRefs)}.ref]*/.CompatibleFareCodes.FareCodes AS rFareCodes NAME 'FareCodes';
+								SET rFareCodes.FareCode = rPromoCode;
+							END FOR;
+						END FOR;
+						SET rEnv.Temp.gCnt=NULL;
+					END FOR;
+				END FOR;
+				
+				DECLARE outGst INTEGER CARDINALITY(rOut.Guests.Guest[]);
+				DECLARE Index INTEGER 1;
+				
+				WHILE Index <= outGst DO
+					CREATE FIRSTCHILD OF rOut.Guests.Guest[Index].FareCodeOptions AS rFareCodeOption NAME 'FareCodeOption';
+					SET rFareCodeOption.(XMLNSC.Attribute)Status = 36;
+					SET rFareCodeOption.(XMLNSC.Attribute)FareDescription = 'BEST_FARE';
+					SET rFareCodeOption.(XMLNSC.Attribute)FareCode = 'BESTFARE';
+					SET rFareCodeOption.FareRemark = '';
+					
+					DECLARE iIndex INTEGER 1;
+					--DBSearch
+					IF EXISTS(Environment.Variables.*:DBResp.*:Groups.*:Group[]) THEN
+						FOR rDBresp AS Environment.Variables.*:DBResp.*:Groups.*:Group[] DO
+							SET Environment.GroupID[] = SELECT * FROM Environment.FSFareCodes[] AS A WHERE A.FareCode = FIELDVALUE(rDBresp.*:GroupID);
+							
+							IF NOT EXISTS(Environment.GroupID[]) THEN
+								CREATE LASTCHILD OF rOut.Guests.Guest[Index].FareCodeOptions AS rFareCodeOption NAME 'FareCodeOption';
+								SET rFareCodeOption.(XMLNSC.Attribute)Status = 36;
+								SET rFareCodeOption.(XMLNSC.Attribute)FareDescription = FIELDVALUE(rDBresp.*:GroupName);
+								SET rFareCodeOption.(XMLNSC.Attribute)FareCode = FIELDVALUE(rDBresp.*:GroupID);
+								SET rFareCodeOption.FareRemark = COALESCE(rDBresp.*:GroupName,'');
+								
+								SET Environment.FSFareCodes[iIndex].FareCode = FIELDVALUE(rDBresp.*:GroupID);
+								SET iIndex = iIndex + 1;
+							END IF; 							
+
+						END FOR;
+						SET Environment.GroupID = NULL;
+						SET Environment.FSFareCodes = NULL;
+						
+					END IF;
+					--Custm DBSearch
+					
+					SET iIndex = 1;
+					IF EXISTS(Environment.Variables.*:CstmDBResp.*:ResRequests.*:ResRequest[]) THEN
+						FOR rCustDBresp AS Environment.Variables.*:CstmDBResp.*:ResRequests.*:ResRequest[] DO
+							SET Environment.CollectionID[] = SELECT A.FareCode FROM Environment.FareCodes[] AS A WHERE A.FareCode = FIELDVALUE(rCustDBresp.*:CollectionID);
+							
+							IF NOT EXISTS(Environment.CollectionID[]) THEN
+								CREATE LASTCHILD OF rOut.Guests.Guest[Index].FareCodeOptions AS rFareCodeOption NAME 'FareCodeOption';
+								SET rFareCodeOption.(XMLNSC.Attribute)Status = 36;
+								SET rFareCodeOption.(XMLNSC.Attribute)FareDescription = FIELDVALUE(rCustDBresp.*:CollectionName);
+								
+								SET rFareCodeOption.(XMLNSC.Attribute)FareCode = COALESCE(R_PARAMS.{ParamCode}.ParamValue, '') || FIELDVALUE(rCustDBresp.*:CollectionID);
+								SET rFareCodeOption.(XMLNSC.Attribute)GroupCode = COALESCE(R_PARAMS.{ParamCode}.ParamValue, '') || FIELDVALUE(rCustDBresp.*:CollectionID);
+								SET rFareCodeOption.FareRemark = COALESCE(rCustDBresp.*:CollectionName,'');
+
+								SET Environment.FareCodes[iIndex].FareCode = FIELDVALUE(rCustDBresp.*:CollectionID);
+								SET iIndex = iIndex + 1;
+							END IF;
+						END FOR;
+						
+						SET Environment.CollectionID = NULL;
+						SET Environment.FareCodes = NULL;
+					END IF;					
+					SET Index = Index+1;
+			END WHILE;
+
+			SET rOut.TrackGuest=NULL;
+			
+
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise FareAvail Response', 'xml', rEnv);
+			END IF;
+			-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+			SET OutputRoot.XMLNSC = NULL;
+
+			SET OutputRoot.BLOB.BLOB = bPayload;			
+		END IF;
+	
+		PROPAGATE TO TERMINAL 'out';
+
+		-- Calling the Logout
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		PROPAGATE TO TERMINAL 'out1';
+		
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Endpoint;
+		IF EXISTS(InputRoot.BLOB[]) THEN
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+			IF (LogPayLoad) THEN
+				--creating IIB Log Event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise FareAvail Request', 'xml', rEnv);
+			END IF;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseFareAvailRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.Temp.Message.NCL_CruiseFareAvailRQ[])
+			THEN
+			DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseFareAvailRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '14';
+
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailRS;
+
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.Temp.Headers.MQMD.ReplyToQ;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailRS AS runTimeErr;
+
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+
+END MODULE;

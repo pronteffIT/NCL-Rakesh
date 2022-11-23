@@ -1,0 +1,152 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_CLEARSESSION_TOKEN_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseClearSessionToken
+* MODULE NAME : LogOut
+* Description : This module clears the session
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseClearSessionToken_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cErrorCode, cErrorMsg CHARACTER ' ';
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, uuid);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseClearSessionTokenRQ;
+
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseClearSessionTokenRQ;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, 'X ''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		---add metadataset
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '','','',rEnv);
+		---add payload
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise ClearSession request message', 'xml', rEnv);
+	END IF;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rIn.*:SessionToken;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseClearSessionToken
+* MODULE NAME : Response
+* Description : This module generates response of clear session
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseClearSessionToken_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+        DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rInEnv REFERENCE TO rEnv.XMLNSC;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:Logout_OUT;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseClearSessionTokenRS;
+		
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseClearSessionTokenRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rInEnv,rOut);
+		DECLARE Warnings REFERENCE TO rOut.Warnings;
+        -- Checking for errors
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			FOR Error AS rIn.Errors.Error[] DO
+				CREATE LASTCHILD OF Warnings AS Warnings NAME 'Warnings';
+				SET Warnings.Warning.(XMLNSC.Attribute)Code = rIn.*:Errors.*:Error.*:ErrorCode;
+				SET Warnings.Warning.(XMLNSC.Attribute)ShortText = rIn.*:Errors.*:Error.*:ErrorMessage;
+				SET Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+			END FOR;
+		ELSE
+			SET rOut.Success = '';
+		END IF;
+		-- add response msg to log event
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise clear session response message', 'xml', rEnv);
+	END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseClearSessionToken
+* MODULE NAME : Exception
+* Description : This module handles exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseClearSessionToken_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise clear session request message', 'xml', rEnv);
+		END IF;
+
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+		RETURN TRUE;
+	END;
+END MODULE;

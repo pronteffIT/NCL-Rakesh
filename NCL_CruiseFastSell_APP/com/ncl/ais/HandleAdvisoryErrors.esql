@@ -1,0 +1,102 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE HandleAdvisoryErrors_ErrorCheck
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		--DECLARE channel CHARACTER 'SABREXML';
+		DECLARE rIn REFERENCE TO InputRoot.SOAP.Body.*:processAmadeusResponse;
+		DECLARE rSubResp REFERENCE TO rIn.*:*[1];
+		MOVE rSubResp NEXTSIBLING;
+		DECLARE rAdvMsgDetails REFERENCE TO rSubResp.advisoryMessage.advisoryMessageDetails;
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Advisory Error when calling FastSell service', rEnv);
+		
+		IF LENGTH(rAdvMsgDetails.messageDescription)>0
+		THEN
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			CREATE LASTCHILD OF rOut IDENTITY ns:Success;
+			
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAdvMsgDetails.advisoryMessageNbr;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rAdvMsgDetails.messageDescription FROM 1 FOR 64);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			-- This should always be null because a message with messageDescription will never come to this block
+			SET rOut.ns:Warnings.ns:Warning = rAdvMsgDetails.messageDescription;		
+			
+		ELSEIF EXISTS(rAdvMsgDetails.advisoryMessageNbr[])
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Build Error Lookup', rEnv);
+			
+			DECLARE defAdvCode CHARACTER '12228';
+			DECLARE defErrorMsg CHARACTER 'System error from backend Try Later';
+			DECLARE cLookupCode,cAdvCode,cErrorMsg CHARACTER '';
+			
+			SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+			
+			-- get external error code from cache
+			SET cLookupCode = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannel || '#' || AdvCodeType, rAdvMsgDetails.advisoryMessageNbr, XC10CacheMap, XC10ConnectionConfig);
+					
+			IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+				SET cLookupCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannel, rAdvMsgDetails.advisoryMessageNbr, AdvCodeType);
+				
+				-- trigger cache loader
+				IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, AdvCodeType) AND LENGTH(cLookupCode) > 0 THEN
+					CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+					SET rOut.XMLNSC.CacheMetadata.Channel = DefaultChannel;
+					SET rOut.XMLNSC.CacheMetadata.ErrorCodeType = AdvCodeType;
+					
+					SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || AdvCodeType || '#';
+					
+					-- PROPAGATE TO LABEL 'CACHE_LOAD';
+				END IF;
+			END IF;
+						
+			SET cAdvCode = COALESCE(NULLIF(SUBSTRING(cLookupCode BEFORE '#1#'),''),rAdvMsgDetails.advisoryMessageNbr);
+			SET cErrorMsg = COALESCE(NULLIF(SUBSTRING(SUBSTRING(cLookupCode AFTER '#1#') BEFORE '#2#'),''),defErrorMsg);
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			CREATE LASTCHILD OF rOut IDENTITY ns:Success;
+			
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = cAdvCode;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = cErrorMsg;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+						
+		ELSE
+			-- Prepare warning message and dispatch
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			CREATE LASTCHILD OF rOut IDENTITY ns:Success;
+			
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = cErrorText;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			-- This should always be null because a message with messageDescription will never come to this block
+			SET rOut.ns:Warnings.ns:Warning = SUBSTRING(rAdvMsgDetails.messageDescription FROM 1 FOR 64);
+		
+		END IF;
+	
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;

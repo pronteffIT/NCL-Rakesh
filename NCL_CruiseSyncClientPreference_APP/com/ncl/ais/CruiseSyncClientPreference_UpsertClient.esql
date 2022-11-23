@@ -1,0 +1,126 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_SYNC_CLIENT_PREFERENCE_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE CruiseSyncClientPreference_UpsertClient
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSyncClientPreferenceRQ;
+		DECLARE SQLQry CHARACTER;
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),'', '','',rEnv);
+		
+		IF (LogPayLoad) THEN
+			--creating IIB Log Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Sync Client Preference Request', 'xml', rEnv);
+		END IF;
+
+		DECLARE ClientID,Classification,PromotionSelection,ROW_TYPE,FIELD_NAME,p_ErrorMsg CHARACTER;
+
+		SET ClientID 			= rIn.*:ClientID;
+		SET Classification 		= rIn.*:Classification;
+		SET PromotionSelection 	= rIn.*:PromotionSelection;
+		SET ROW_TYPE 			= 'CLIENT';
+		SET FIELD_NAME 			= 'U_PROMOTION';
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSyncClientPreferenceRS AS rOut;
+		-- call the procedure to copy attributes
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);		
+
+
+			-- Calling store proc for available coupons
+			CALL UpdateClient(ClientID,Classification,PromotionSelection,ROW_TYPE,FIELD_NAME,p_ErrorMsg);
+			
+			IF com.ncl.ais.utils.IsEmpty(p_ErrorMsg) THEN
+				CREATE FIELD rOut.ns:Success;
+			ELSE 
+				SET rOut.ns:Warnings.ns:Warning = p_ErrorMsg;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = p_ErrorMsg;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+	END;
+	
+	CREATE PROCEDURE UpdateClient(IN ClientID CHARACTER,IN Classification CHARACTER,IN PromotionSelection CHARACTER,
+															IN ROW_TYPE CHARACTER,IN FIELD_NAME CHARACTER,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_SYNC_CLIENT_PREFERENCE";
+	
+END MODULE;
+
+
+
+
+
+
+CREATE COMPUTE MODULE CruiseSyncClientPreference_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSyncClientPreferenceRQ;
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseSyncClientPreferenceRS;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Sync Client Preference request message', 'xml', rEnv);
+		END IF ;
+	END IF;
+
+	IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+		THEN
+		SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+	END IF;
+
+	IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+		---call logging Procedure
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception ', rEnv);
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		---Build Response for RuntimeError
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseSyncClientPreferenceRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System backend error , please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	RETURN TRUE;
+
+END;
+END MODULE;
+

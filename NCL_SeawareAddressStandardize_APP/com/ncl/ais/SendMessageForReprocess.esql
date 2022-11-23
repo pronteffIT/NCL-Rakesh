@@ -1,0 +1,40 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE SendMessageForReprocess_SetErrorInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEv REFERENCE TO Environment.Variables;
+		DECLARE rEvErr REFERENCE TO rEv.ErrorSummary;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		IF NOT EXISTS(rEv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEv, rExcp);
+			
+			MOVE rEvErr TO rEv.ErrorSummary;
+		END IF;
+		
+		IF rEvErr.ExceptionType IN('SocketException', 'SocketTimeoutException', 'DatabaseException') THEN
+			SET OutputRoot = InputRoot;
+			
+			SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+			SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+			
+			IF NOT EXISTS(InputRoot.MQRFH2[]) THEN
+				CREATE NEXTSIBLING OF OutputRoot.MQMD DOMAIN('MQRFH2') NAME 'MQRFH2';
+			END IF;
+						
+			SET OutputRoot.MQRFH2.(MQRFH2.Field)Version = 2;
+			SET OutputRoot.MQRFH2.usr.SourceQueue = InputRoot.MQMD.SourceQueue;
+			SET OutputRoot.MQRFH2.usr.ExceptionType = rEvErr.ExceptionType;
+			SET OutputRoot.MQRFH2.usr.ErrorText = rEvErr.ErrorText;
+			SET OutputRoot.MQRFH2.usr.RetryCount = CAST(COALESCE(InputRoot.MQRFH2.usr.RetryCount, 0) AS INTEGER) + 1;
+			
+			DELETE FIELD OutputRoot.MQRFH2.mcd;
+			
+			PROPAGATE FINALIZE NONE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

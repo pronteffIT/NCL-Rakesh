@@ -1,0 +1,42 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+/*DECLARE CacheBaseUrl EXTERNAL CHARACTER '';
+DECLARE CacheGrid EXTERNAL CHARACTER '';
+DECLARE CacheMap EXTERNAL CHARACTER '';
+DECLARE CacheUser EXTERNAL CHARACTER '';
+DECLARE CachePwd EXTERNAL CHARACTER '';*/
+
+CREATE COMPUTE MODULE SaveDataInCache_Rest_CacheRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.PutSessionIn;
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = CacheBaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rEnv.Temp.CachePut.Key;
+		
+		SET OutputRoot.HTTPRequestHeader.Authorization = 'Basic ' || BASE64ENCODE(CacheUser || ':' || CachePwd);
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'application/xml';
+		SET OutputRoot.BLOB.BLOB = CAST(rEnv.Temp.CachePut.Value AS BLOB CCSID 1208);
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE SaveDataInCache_Rest_SaveCacheResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET rEnv.Temp.CacheReturn.Value = 'ERROR: ' || COALESCE(rEnv.ErrorSummary.ErrorText, 'ERROR:');
+		ELSE
+			SET rEnv.Temp.CacheReturn.Value = CAST(InputRoot.BLOB.BLOB AS CHARACTER CCSID 1208 ENCODING 546);
+		END IF;
+						
+		RETURN TRUE;
+	END;
+END MODULE;
+

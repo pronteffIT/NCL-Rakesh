@@ -1,0 +1,77 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseOnlineAccessibleBooking_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseNextCouponsRS;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CALL CopyMessageHeaders();
+		-- If Reply Q not defined then take take default reply Q from Env.
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN 
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+				--creating IIB Log Event
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise OnlineAccessibleBooking Request', 'xml', rEnv);
+			END IF;
+		END IF;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			---Build Response for RuntimeError
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseOnlineAccessibleBookingRS AS rOut;
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.*:Errors.*:Error = cErrorText;
+			SET rOut.*:Errors.*:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.*:Errors.*:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOut.*:Errors.*:Error.(XMLNSC.Attribute)Type = '3';
+			  	   
+			--DECLARE ptrException REFERENCE TO InputExceptionList.*[1];
+			--DECLARE messageNumber, messageText CHAR;
+   	    	-- keep looping while the moves to the child of exception list work 
+			--WHILE lastmove(ptrException) DO
+				-- store the current values for the error number and text
+				--IF ptrException.Number is not null THEN
+        			--SET messageNumber = ptrException.Number;
+        			--SET messageText = ptrException.Text;
+        			--SET rOut.*:Warnings.*:Warning = cErrorText;
+        			--SET rOut.*:Warnings.*:Warning.(XMLNSC.Attribute)Code = messageNumber;
+					--SET rOut.*:Warnings.*:Warning.(XMLNSC.Attribute)ShortText = messageText;
+					--SET rOut.*:Warnings.*:Warning.(XMLNSC.Attribute)Type = '3';
+        			
+  				--END IF;
+  				-- now move to the last child which should be the next exceptionlist
+				--MOVE ptrException lastchild;
+			--END WHILE; 
+		END IF;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

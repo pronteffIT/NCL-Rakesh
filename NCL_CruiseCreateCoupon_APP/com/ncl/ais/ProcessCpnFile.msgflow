@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="com/ncl/ais/ProcessCpnFile.msgflow" nsPrefix="com_ncl_ais_ProcessCpnFile.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.ERROR_ONLY" name="ERROR_ONLY" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_TO" name="EMAIL_TO" defaultValueLiteral="rdasari@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_SMTP" name="EMAIL_SMTP" defaultValueLiteral="forwarder.ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_SUBJECT" name="EMAIL_SUBJECT" defaultValueLiteral="Salesforce Coupon Upload Response">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_CC" name="EMAIL_CC">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_FROM" name="EMAIL_FROM" defaultValueLiteral="nclapi_swqa@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_BODY" name="EMAIL_BODY" defaultValueLiteral="Please find attached the errors">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_ATTACH_NAME" name="EMAIL_ATTACH_NAME" defaultValueLiteral="SF_CPN_ERRORS.csv">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_TO_ERROR" name="EMAIL_TO_ERROR" defaultValueLiteral="rdasari@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="ProcessCpnFile" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseCreateCoupon_APP/icons/full/obj16/ProcessCpnFile.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseCreateCoupon_APP/icons/full/obj30/ProcessCpnFile.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="211,105" queueName="NCL_CREATE_CPN_SF_IN" messageDomainProperty="DFDL" messageTypeProperty="{}:SFCouponImport" transactionMode="no" logicalOrder="false">
+        <translation xmi:type="utility:ConstantString" string="MQ Input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="310,178" dataSource="NCLSEAT" transaction="commit" computeExpression="esql://routine/com.ncl.ais#ProcessCpnFile_ProcessImportFile.Main" computeMode="all">
+        <translation xmi:type="utility:ConstantString" string="ProcessImportFile"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_6" location="704,168" queueName="NCL_EMAILNOTIFICATION_IN">
+        <translation xmi:type="utility:ConstantString" string="EmailNotificationIn"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="419,62" computeExpression="esql://routine/com.ncl.ais#ProcessCpnFile_HandleError.Main">
+        <translation xmi:type="utility:ConstantString" string="HandleError"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_4" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.ERROR_ONLY">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.ERROR_ONLY" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_TO">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_TO" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_SMTP">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_SMTP" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_SUBJECT">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_SUBJECT" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_CC">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_CC" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+                <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_FROM">
+                  <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_FROM" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+                  <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_BODY">
+                    <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_BODY" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+                    <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_ATTACH_NAME">
+                      <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_ATTACH_NAME" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+                      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_TO_ERROR">
+                        <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_TO_ERROR" bundleName="com/ncl/ais/ProcessCpnFile" pluginId="NCL_CruiseCreateCoupon_APP"/>
+                      </propertyDescriptor>
+                    </propertyDescriptor>
+                  </propertyDescriptor>
+                </propertyDescriptor>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

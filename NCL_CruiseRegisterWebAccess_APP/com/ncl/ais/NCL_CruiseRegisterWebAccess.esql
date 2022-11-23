@@ -1,0 +1,156 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseRegisterWebAccess_EncryptResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		DECLARE ReqMsg REFERENCE TO rEnv.Temp.Message.*:NCL_CruiseRegisterWebAccessRQ;
+		--DECLARE rIn REFERENCE TO InputRoot.SOAP.*:Body.*:processEncryptDecryptResponse;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRegisterWebAccessRS AS rOut;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier = ReqMsg.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOut.(XMLNSC.Attribute)Target = ReqMsg.(XMLNSC.Attribute)Target;
+		CREATE FIELD rOut.Success;
+	--	CREATE FIELD rOut.Warnings;
+		
+		SET rEnv.CrAgntComplete = 'N';
+		
+		IF EXISTS(InputExceptionList.*[]) THEN
+			-- 9916
+			CALL com.ncl.ais.MapWarnings(rOut,'9916','Seaware not available.  Please try later');
+			RETURN TRUE;
+
+		END IF;
+		
+		
+		DECLARE GivenName,Surname,UserName,Email,PhoneNbr,ErrorCd,ErrorMsg,AgencyId,Password CHARACTER;
+
+		SET GivenName = COALESCE(ReqMsg.*:AgentInfo.*:PersonName.*:GivenName,'');
+		SET Surname = COALESCE(ReqMsg.*:AgentInfo.*:PersonName.*:Surname,'');
+		SET UserName = COALESCE(ReqMsg.*:UserLogin.(XMLNSC.Attribute)UserLoginName,'');
+		SET Email = COALESCE(ReqMsg.*:AgentInfo.*:Email,'');
+		SET Password = COALESCE(ReqMsg.*:UserLogin.(XMLNSC.Attribute)Password,'');
+		SET PhoneNbr = COALESCE(ReqMsg.*:AgencyLookup.*:Telephone.(XMLNSC.Attribute)Password,'');
+		SET AgencyId =  CAST(rEnv.AgencyId AS CHARACTER);
+		SET rEnv.EncryptString = createHash(Password);
+		--Create_Agent
+		CALL CreateAgent('A',CAST(rEnv.AgencyId AS CHARACTER),'',GivenName,Surname,'',UserName,rEnv.EncryptString,'ADMINISTRATOR',Email,PhoneNbr,'','','Y',ErrorCd,ErrorMsg);
+			
+		SET rEnv.CrAgntComplete = 'Y';
+		-- Map the Error Section if ErrorCd returned from CreateAgent Proc.
+		IF ErrorMsg IS NOT NULL AND ErrorCd IS NOT NULL THEN
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = ErrorCd;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = ErrorMsg;
+		END IF;
+		
+		SET rOut.UserLogin.(XMLNSC.Attribute)Password = rEnv.DecryptString;
+		SET rOut.UserLogin.(XMLNSC.Attribute)UserLoginName = UserName;
+		
+	
+	DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+	IF (LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Register WebAccess Response', 'xml', rEnv);
+	END IF;	
+	-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+	SET OutputRoot.XMLNSC = NULL;
+	SET OutputRoot.BLOB.BLOB = bPayload;
+	
+	RETURN TRUE;
+END;
+
+CREATE PROCEDURE CreateAgent(IN Action CHARACTER, IN AgencyId CHARACTER, IN AgentId CHARACTER, IN AgentFirstName CHARACTER, IN AgentLastName CHARACTER,
+								IN Sex CHARACTER, IN UserName CHARACTER, IN Password CHARACTER,IN Role CHARACTER, IN Email CHARACTER,IN phone CHARACTER,
+								IN ContacPref CHARACTER,IN AgentLoc CHARACTER,IN CanAccess CHARACTER, OUT ErrorCode CHARACTER,OUT ErrorMsg CHARACTER)
+LANGUAGE DATABASE
+
+EXTERNAL NAME "NCLSEA.Ncl_WEsb_Create_Agent" ;
+
+CREATE PROCEDURE createHash(IN cPassword CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.PasswordHash.createHash";
+
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRegisterWebAccess_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		CALL CopyMessageHeaders();
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;		
+
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			
+			IF (LogPayLoad) THEN
+				--creating IIB Log Event
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Register WebAccess Request', 'xml', rEnv);
+			END IF;	
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRegisterWebAccessRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.InReq.*:NCL_CruiseRegisterWebAccessRQ[])
+			THEN
+			DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseRegisterWebAccessRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';			
+		
+		IF (LogPayLoad) THEN
+			-- Add response msg to log event
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Register WebAccess Response message', 'xml', rEnv);
+		END IF;
+		
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;				
+
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	
+END MODULE;

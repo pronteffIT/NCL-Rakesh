@@ -1,0 +1,74 @@
+BROKER SCHEMA com.ncl.ais
+
+-- Returns the packageTypeCode
+CREATE PROCEDURE getPackageTypeCode(IN rEnv REFERENCE, IN rPackage REFERENCE) RETURNS CHARACTER
+	BEGIN
+		SET rEnv.DBResult = NULL;
+		DECLARE ProductType,Description,PackageTypeCode CHARACTER ;
+		SET ProductType = rPackage.ProductType;
+		
+		SET rEnv.PkgTypeCd_Query = 'SELECT DETAILS.EXTERNAL_CODE FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+								    INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+								    INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+	    							TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE= ? 
+	    							AND UPPER(DETAILS.DESCRIPTION) = UPPER(?)';
+	    CASE							
+	    WHEN ProductType = 'SPA' OR ProductType = 'ENTERTAINMENT' OR ProductType ='DINING' OR ProductType ='SHORE EXCURSION'    THEN
+	    	SET Description = 'ShoreEx';
+	    	
+	    WHEN ProductType = 'BUS PROGRAM' THEN
+	    	SET Description = rPackage.PrePostMode||' Bus';
+	    WHEN ProductType<> 'BUS PROGRAM' and ProductType <> 'SPA' and ProductType <> 'ENTERTAINMENT' and ProductType<>'DINING' or ProductType <>'SHORE EXCURSION'
+	    THEN
+	    	IF CARDINALITY(rPackage.Components.Component[]) = 1 THEN
+	    		IF rPackage.Components.Component = 'TRANSFER' THEN
+	    			SET Description = rPackage.PrePostMode||' Transfer';
+	    		END IF;
+	    	ELSEIF  CARDINALITY(rPackage.Components.Component[]) > 1 THEN
+	    		SET Description = rPackage.PrePostMode||' Package';
+	    	END IF;	
+	    ELSE
+	    	SET Description = rPackage.PrePostMode||' Package';
+	    END CASE;		
+		
+		SET rEnv.DBResult[] = PASSTHRU(rEnv.PkgTypeCd_Query,rEnv.BkingChnlCompCd,'CPK',Description);
+		
+		SET PackageTypeCode = rEnv.DBResult.EXTERNAL_CODE;
+		RETURN PackageTypeCode;
+		
+END;
+
+
+
+-- return PortName
+
+CREATE PROCEDURE XrefGetPortName(IN cPortCode CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) RETURNS CHARACTER
+BEGIN	
+	DECLARE cPortName CHARACTER '';
+	
+	
+	--SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+	
+	-- get external error code from cache
+	IF COALESCE(cPortCode, '') <> '' THEN
+		
+		SET cPortName = com.ncl.ais.utils.GetPortInfoFromCache(cPortCode, cCacheMap, XC10ConnectionConfig);
+	END IF;
+	
+	SET cPortName = TRIM(SUBSTRING(cPortName BEFORE '#'));
+	
+	IF COALESCE(cPortName, '') = '' OR STARTSWITH(cPortName, 'ERROR') THEN
+		
+		SET cPortName = THE(SELECT ITEM A.PORT_NAME From Database.port AS A where A.PORT_CODE = cPortCode);
+		
+		-- trigger cache loader
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			
+			SET rOutRoot.XMLNSC.LoadPortInfo = '';
+			
+			PROPAGATE TO LABEL 'LOAD_PORTINFO';
+		
+	END IF;
+	RETURN cPortName;
+END;
+

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?><wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" name="CategoryInfoService" targetNamespace="http://com.ibm.ncl/CategoryInfoService/" xmlns:bons1="http://com.ibm.ncl.category" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://com.ibm.ncl/CategoryInfoService/" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <wsdl:documentation>
+    <wsdl:appinfo source="WMQI_APPINFO">
+      <MRWSDLAppInfo imported="true">
+        <generatedXSD location="CategoryInfoService_InlineSchema1.xsd"/>
+        <binding hasEncoding="false" imported="true" name="CategoryInfoServiceSOAP" originalBindingStyle="document"/>
+      </MRWSDLAppInfo>
+    </wsdl:appinfo>
+  </wsdl:documentation>
+  <wsdl:types>
+    
+          <xsd:schema targetNamespace="http://com.ibm.ncl/CategoryInfoService/" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+<xsd:import namespace="http://com.ibm.ncl.category" schemaLocation="CabinCategoryInfoResponse.xsd"/>
+<xsd:import namespace="http://com.ibm.ncl.category" schemaLocation="CabinCategoryInfoRequest.xsd"/>
+<xsd:include schemaLocation="CategoryInfoService_InlineSchema1.xsd"/>
+    </xsd:schema>
+    </wsdl:types>
+  <wsdl:message name="getAllCategoryRequest">
+    <wsdl:part element="tns:getAllCategory" name="parameters"/>
+  </wsdl:message>
+  <wsdl:message name="getAllCategoryResponse">
+    <wsdl:part element="tns:getAllCategoryResponse" name="parameters"/>
+  </wsdl:message>
+  <wsdl:portType name="CategoryInfoService">
+    <wsdl:operation name="getAllCategory">
+      <wsdl:input message="tns:getAllCategoryRequest"/>
+      <wsdl:output message="tns:getAllCategoryResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="CategoryInfoServiceSOAP" type="tns:CategoryInfoService">
+
+
+  	<soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+  	<wsdl:operation name="getAllCategory">
+  		<soap:operation soapAction="http://com.ibm.ncl/CategoryInfoService/getAllCategory"/>
+  		<wsdl:input>
+  			<soap:body use="literal"/>
+  		</wsdl:input>
+  		<wsdl:output>
+  			<soap:body use="literal"/>
+  		</wsdl:output>
+  	</wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="CategoryInfoService">
+    <wsdl:port binding="tns:CategoryInfoServiceSOAP" name="CategoryInfoServiceSOAP">
+      <soap:address location="http://com.ibm.ncl.category"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

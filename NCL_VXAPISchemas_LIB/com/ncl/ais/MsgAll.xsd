@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="MsgAvail.xsd"/>
+	<xs:include schemaLocation="MsgDbSearch.xsd"/>
+	<xs:include schemaLocation="MsgSession.xsd"/>
+	<xs:include schemaLocation="MsgBooking.xsd"/>
+	<xs:include schemaLocation="MsgAir.xsd"/>
+	<xs:include schemaLocation="MsgMaster.xsd"/>
+	<xs:include schemaLocation="MsgAccounting.xsd"/>
+	<xs:include schemaLocation="MsgPrintDocs.xsd"/>
+	<xs:include schemaLocation="MsgInsurance.xsd"/>
+	<xs:include schemaLocation="MsgAmenity.xsd"/>
+	<xs:include schemaLocation="AgencyProgram.xsd"/>
+	<xs:include schemaLocation="MsgStatistic.xsd"/>
+</xs:schema>

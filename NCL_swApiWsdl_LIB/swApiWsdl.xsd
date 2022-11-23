@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?><schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://versonix.com/api/definitions" xmlns:sch="http://versonix.com/api/schemas" xmlns:tns="http://versonix.com/api/definitions">
+  <import namespace="http://versonix.com/api/schemas" schemaLocation="swApiWsdl_InlineSchema1.xsd"/>
+
+<!-- BEGIN Global group petaining to all wsdl:message definitions -->
+<!-- END Global group -->
+
+
+<!-- BEGIN Message Definitions for the wsdl:operations  -->
+<!-- END Message Definitions -->
+
+
+</schema>

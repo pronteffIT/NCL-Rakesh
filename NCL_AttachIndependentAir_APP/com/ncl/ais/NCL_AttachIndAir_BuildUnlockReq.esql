@@ -1,0 +1,21 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_AttachIndAir_BuildUnlockReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		DECLARE rEnvIn REFERENCE TO rEnv.InputMsg.XMLNSC.*:NCL_CruiseAttachIndependentAirRQ;
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	    CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY UnlockBooking_IN;
+	    CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionID,rOutResp);
+--	    SET rOutResp.MsgHeader.Version = VersonixAPIVersion;
+--	    SET rOutResp.MsgHeader.SessionGUID = rEnv.SessionID;
+	    SET rOutResp.ResID = rEnvIn.*:ReservationId;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;

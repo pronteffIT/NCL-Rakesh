@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="3.0">
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA specification are made available according to the terms defined by the OTA License Agreement at http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseTicketContractsRS">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Returns the information from TICKET_CONTRACTS table</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice>
+				<xs:sequence>
+					<xs:choice>
+						<xs:element name="Success" type="SuccessType" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Standard way to indicate successful 
+processing of an OTA message. Returning an empty element of this type indicates 
+success.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Warnings" type="WarningsType" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Standard way to indicate successful 
+processing of an OTA message, but one in which warnings are 
+generated.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+					<xs:element name="Records" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Record" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="ID" type="xs:nonNegativeInteger" minOccurs="0"/>
+											<xs:element name="Version" type="xs:string" minOccurs="0"/>
+											<xs:element name="Locale" type="xs:string" minOccurs="0"/>
+											<xs:element name="EditedBy" type="xs:string" minOccurs="0"/>
+											<xs:element name="CreatedAt" type="xs:string" minOccurs="0"/>
+											<xs:element name="UpdatedAt" type="xs:string" minOccurs="0"/>
+											<xs:element name="Content" type="xs:string" minOccurs="0"/>
+											<xs:element name="ContentAsHTML" type="xs:string" minOccurs="0"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="Errors" type="ErrorsType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">A collection of errors that occurred during 
+the processing of a message.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+			<xs:attributeGroup ref="ResponseGroup"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

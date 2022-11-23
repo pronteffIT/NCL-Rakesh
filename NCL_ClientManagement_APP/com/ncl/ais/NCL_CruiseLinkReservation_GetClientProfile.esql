@@ -1,0 +1,357 @@
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseLinkReservation
+* MODULE NAME : GetClientProfile
+* Description : This module retrieves Client details from Seaware database
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseLinkReservation_GetClientProfile
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CALL CopyMessageHeaders();
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE p_ResID ,p_TransId INTEGER;
+		DECLARE p_ClientID INTEGER 0;
+		DECLARE p_LastName ,p_FirstName,p_Option CHARACTER;
+		DECLARE p_WebUserName,p_ShipCode,p_SailingDate,p_DateofBirth,p_Zipcode,p_Email,LoyaltyMembershipId CHARACTER '';
+		DECLARE ref REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseLinkReservationRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS;
+
+		CREATE FIELD Environment.Variables as rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET rEnv.LogId = uuid;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseLinkReservationRQ;
+		DECLARE cRecordId, cErrorCode, cErrorMsg CHARACTER '';
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rEnv.XMLNSC.*:ReservationID.(XMLNSC.Attribute)ID,''),
+		'',
+		'',
+		rEnv);
+		-- create IIB log event
+
+		IF (LogPayLoad) THEN
+			DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'Link Reservation message', 'xml', rEnv);
+		END IF;
+		-- Prepare parameters to call Client Profile Stored procedure
+		SET p_FirstName = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:GivenName;
+		SET p_LastName = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:Surname;
+		SET p_Option = 'BOOKING_INFO_ONLY';
+		SET p_ResID =CAST( rEnv.XMLNSC.*:ReservationID.ID AS INTEGER);
+		SET LoyaltyMembershipId = CAST(rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID AS INTEGER);
+		--calling stored procedure
+		CALL get_client_profile(p_Option,p_WebUserName,p_ResID,p_LastName,p_FirstName,p_ShipCode,
+		p_SailingDate,p_ClientID,p_DateofBirth,p_Zipcode,p_Email,rEnv.ClientProfileResultSet[]);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc  msg successful', rEnv);
+		-- Build Response Message from Environment and dispatch
+		--case :when loyalty membershipid equals to clientid
+		IF EXISTS(rEnv.ClientProfileResultSet[]) THEN
+			IF LoyaltyMembershipId = rEnv.ClientProfileResultSet.CLIENT_ID THEN
+				CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS AS rOut;
+				SET rOut.(XMLNSC.Attribute)TransactionIdentifier=ref.(XMLNSC.Attribute)TransactionIdentifier;
+				SET rOut.sc:Success = '';
+				SET rOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)Code='9916';
+				SET rOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)ShortText='Can not link to self';
+				-- add response msg to log event
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				IF(LogPayLoad) THEN
+
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Link Reservation response message', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		-- Build Response Message from Environment and dispatch
+		--case:when no data is found for reservation
+	ELSE
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS AS rOut;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier=ref.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOut.sc:Success = '';
+		SET rOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)Code='9917';
+		SET rOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)ShortText='Reservation Not Found';
+		-- add response msg to log event
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF(LogPayLoad) THEN
+
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Link Reservation response message', 'xml', rEnv);
+	END IF;
+	SET OutputRoot.XMLNSC = NULL;
+	SET OutputRoot.BLOB.BLOB = bPayload;
+
+	PROPAGATE TO TERMINAL 'out1';
+	RETURN FALSE;
+END IF;
+
+END;
+CREATE PROCEDURE get_client_profile(INOUT p_option CHAR ,IN webid CHAR,IN reservationId INT,IN lname CHAR,IN fname CHAR,IN shipcode CHAR,IN saldate CHAR,IN clientid INT,IN dob CHAR,IN zipcode CHAR,IN email CHAR )
+LANGUAGE DATABASE
+DYNAMIC RESULT SETS 1
+EXTERNAL NAME "NCLSEA.Ncl_WEsb_Get_Client_Profile";
+
+CREATE PROCEDURE CopyMessageHeaders() BEGIN
+	DECLARE I INTEGER 1;
+	DECLARE J INTEGER;
+	SET J = CARDINALITY(InputRoot.*[]);
+	WHILE I < J DO
+		SET OutputRoot.*[I] = InputRoot.*[I];
+		SET I = I + 1;
+	END WHILE;
+END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseLinkReservation
+* MODULE NAME : GetClientInfo_UpdateClientInfo
+* Description : This module retrieves Client details from Seaware database
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseLinkReservation_GetClientInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CALL CopyMessageHeaders();
+		--Prepare parameters
+		DECLARE parameter CHAR ;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC;
+		DECLARE num INTEGER;
+		DECLARE var,householdId ROW ;
+		----Prepare parameters for Select and Update statement
+		SET rEnv.parameter =ref.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+		SET rEnv.clientid1 = rEnv.ClientProfileResultSet.CLIENT_ID;
+		SET rEnv.sex1 = rEnv.ClientProfileResultSet.SEX;
+		SET rEnv.title1 = rEnv.ClientProfileResultSet.TITLE;
+		SET rEnv.address1= rEnv.ClientProfileResultSet.ADDRESS_LINE1;
+		--invoking select satement
+		SET rEnv.resultSet[] = PASSTHRU('SELECT c.CLIENT_ID,c.TITLE,c.SEX,h.ADDRESS_LINE1 FROM client c,household_address h WHERE c.client_id = (?)
+		AND h.household_id = c.household_id AND
+		h.address_type IN (''HOME ADDRESS'',''PRIMARY'') and rownum = 1',rEnv.clientid1);
+		-- PROPOGATE To merge client
+		IF FIELDVALUE(rEnv.resultSet.ADDRESS_LINE1) IS NOT NULL
+			THEN
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		--invoking select satement
+		SET householdId = PASSTHRU('SELECT  c.household_id FROM client  c WHERE c.client_id = (?)',rEnv.clientid1);
+		SET num = householdId.HOUSEHOLD_ID;
+		--invoking select satement
+		SET var=PASSTHRU('SELECT   A.SEQ_NUMBER, A.ADDRESS_TYPE , A.ADDRESS_LINE1 , A.ADDRESS_LINE2 , A.ADDRESS_CITY ,
+		A.STATE_CODE ,A.ZIP , A.COUNTRY_CODE , A.IS_ADDRESS_MAILING ,A.IS_ADDRESS_SHIPPING , A.DATE_FROM , A.DATE_TO ,A.ARE_DATES_EVERY_YEAR ,
+		A.COMMENTS , A.ADDRESS_LINE3 ,A.ADDRESS_LINE4 FROM household_address A WHERE A.HOUSEHOLD_ID IN((?))
+		AND A.address_type IN (''HOME ADDRESS'',''PRIMARY'') and rownum = 1',num);
+		--Update database table
+		IF EXISTS(rEnv.resultSet[]) THEN
+			PASSTHRU('UPDATE household_address  P
+			SET SEQ_NUMBER =(?),
+			ADDRESS_TYPE = (?),
+			ADDRESS_LINE1= (?),
+			ADDRESS_LINE2= (?) ,
+			ADDRESS_CITY =(?) , STATE_CODE=(?) ,ZIP =(?) ,
+			COUNTRY_CODE =(?) , IS_ADDRESS_MAILING =(?) ,
+			IS_ADDRESS_SHIPPING =(?),DATE_FROM =(?), DATE_TO =(?) ,
+			ARE_DATES_EVERY_YEAR =(?), COMMENTS =(?),
+			ADDRESS_LINE3 = (?), ADDRESS_LINE4=(?) WHERE P.household_id =(?)',var.SEQ_NUMBER,var.ADDRESS_TYPE
+			,var.ADDRESS_LINE1,var.ADDRESS_LINE2,var.ADDRESS_CITY,var.STATE_CODE,var.ZIP,var.COUNTRY_CODE,var.IS_ADDRESS_MAILING,
+			var.IS_ADDRESS_SHIPPING,var.DATE_FROM,var.DATE_TO,var.ARE_DATES_EVERY_YEAR,var.COMMENTS,var.ADDRESS_LINE3,var.ADDRESS_LINE4,num);
+		END IF;
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseLinkReservation
+* MODULE NAME : dbFailError
+* Description : This module build response when Error during database execution
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseLinkReservation_dbFailError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		--Prepare parameters for Response
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS;
+		-- Build Response Message from Environment and dispatch
+		--case:when Error during database execution
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS AS rOut;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier = ref.(XMLNSC.Attribute)TransactionIdentifier;
+		CREATE FIELD rOut.Success NAMESPACE sc NAME 'Success';
+		SET rOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)Code='9915';
+		SET rOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)ShortText= 'Error during database execution';
+		-- add response msg to log event
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Link Reservation response message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : MergeClientError
+* Description : This module build response message when MergeClientError occurs
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* 1.2
+*
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseLinkReservation_MergeClientError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		--Prepare parameters for Response
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE refOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseLinkReservationRS;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC;
+		-- Build Response Message from Environment and dispatch
+		--case:when Error in Merge
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS AS refOut;
+		SET refOut.(XMLNSC.Attribute)TransactionIdentifier=ref.(XMLNSC.Attribute)TransactionIdentifier;
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS.Success NAMESPACE sc NAME 'Success';
+		SET refOut.sc:Success =ref.LogId;
+		SET refOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)Code='9919';
+		SET refOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)ShortText='Error in Merge';
+		SET refOut.sc:Warnings.sc:warning.(XMLNSC.Attribute)Type='3';
+		-- add response msg to log event
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Link Reservation response message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : Response
+* Description : This module build response message
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* 1.2
+*
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseLinkReservation_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		--Prepare parameters for Response
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS ;
+		--updateclientInfo
+		CASE
+		WHEN (LENGTH(rEnv.resultSet.sex2) < 1 AND LENGTH( rEnv.resultSet.title2) > 0 AND LENGTH(rEnv.sex1) > 0) OR (LENGTH(rEnv.resultSet.sex2) < 1 AND LENGTH(rEnv.resultSet.title2) < 1 AND LENGTH(rEnv.sex1) > 0 AND LENGTH( rEnv.title1) < 1)
+			THEN
+			PASSTHRU('UPDATE client CL SET SEX =(?) ,TITLE = (?) WHERE CL.CLIENT_ID =  (?)',rEnv.sex1,rEnv.resultSet.title2,rEnv.clientid1);
+			WHEN( LENGTH(rEnv.resultSet.sex2) > 0 AND LENGTH( rEnv.resultSet.title2) < 1 AND LENGTH( rEnv.title1) > 0) OR (LENGTH(rEnv.resultSet.sex2) < 1 AND LENGTH( rEnv.resultSet.title2) < 1 AND LENGTH(rEnv.sex1) < 1 AND LENGTH( rEnv.title1) > 0)
+			THEN
+			PASSTHRU('UPDATE client CL SET SEX =(?) ,TITLE = (?) where CL.CLIENT_ID = (?) ',rEnv.resultSet.sex2,rEnv.title1,rEnv.clientid1);
+		WHEN LENGTH(rEnv.resultSet.sex2) < 1 AND LENGTH(rEnv.resultSet.title2) < 1 AND LENGTH(rEnv.sex1) > 0 AND LENGTH( rEnv.title1) > 0
+			THEN
+			PASSTHRU('UPDATE client CL SET SEX = (?),TITLE = (?) where CL.CLIENT_ID = (?) ',rEnv.sex1,rEnv.title1,rEnv.clientid1);
+		ELSE
+		END CASE;
+		-- Build Response Message from Environment and dispatch
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseLinkReservationRS AS rOut;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier = ref.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOut.sc:Success = '';
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			-- add response msg to log event
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Link Reservation response message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+	END;
+
+END MODULE;

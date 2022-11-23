@@ -1,0 +1,19 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE GetSession_LoginReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling login service ...', rEnv);
+		
+		-- create login request
+		SET OutputRoot.XMLNSC.Login_IN.UserInfo.Internal.Username = rEnv.Temp.UserInfo.UserName;
+		SET OutputRoot.XMLNSC.Login_IN.UserInfo.Internal.Password = rEnv.Temp.UserInfo.Password;
+		SET OutputRoot.XMLNSC.Login_IN.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

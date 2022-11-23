@@ -1,0 +1,165 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE Load_UpdateBooking_PrepareLoadBkng
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB;
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Load booking ...', rEnv);
+		
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+				
+		CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--		SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--		SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		SET rOut.MsgHeader.Language = 'ENG';
+		SET rOut.ResID = rEnv.ReservationID;
+
+--		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Load booking api response', 'xml', rEnv);
+		END IF;
+	
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE Load_UpdateBooking_UpdateBookingRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+			DECLARE rEnv,rOut,rResHdr,rTempRef REFERENCE TO Environment.Variables;
+			DECLARE rLoadBkgRes REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+			
+			DECLARE bPayload BLOB;
+				
+	--		-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Load booking api response', 'xml', rEnv);
+			END IF;
+			
+			IF EXISTS(rLoadBkgRes.Errors.Error[]) THEN
+				
+				
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Load booking returned errors ...', rEnv);
+				
+				-- Genereate Warning
+				SET OutputRoot.XMLNSC.Body.Errors = rLoadBkgRes.Errors;
+				SET OutputRoot.XMLNSC.Body.Code= rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+				SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetAvailShorexPackagesRS';
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+						
+			ELSE	
+	
+				
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling update booking without reservation id ...', rEnv);
+				
+				-- set the endpoint of the VX server
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+
+				CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rOut; 
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut); 
+--				SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--				SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+				SET rOut.MsgHeader.Language = 'ENG';
+				SET rOut.Options.CloneMode = 'N';
+				
+	        	CREATE FIELD rOut.ResShell.ResHeader AS rResHdr;
+	        	SET rResHdr.AgencyID =  rLoadBkgRes.ResShell.ResHeader.AgencyID;
+	        	SET rResHdr.Currency =  rLoadBkgRes.ResShell.ResHeader.Currency;
+	        	SET rResHdr.SourceCode =  rLoadBkgRes.ResShell.ResHeader.SourceCode;
+	        	SET rResHdr.OfficeCode =  rLoadBkgRes.ResShell.ResHeader.OfficeCode;
+			
+				SET rOut.ResShell.ResGuests = rLoadBkgRes.ResShell.ResGuests;
+			
+				SET rOut.ResShell.ResPackages.ResPackage[] = SELECT A FROM rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE' OR A.PackageClass = 'SHOREX';
+			--	SET rOut.ResShell.ResPromotions = rLoadBkgRes.ResShell.ResPromotions;
+			--	SET rOut.ResShell.ResShipRequests = rLoadBkgRes.ResShell.ResShipRequests; 
+				
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api Request', 'xml', rEnv);
+				END IF;
+				RETURN TRUE;
+				
+			END IF;
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE Load_UpdateBooking_UpdateBookingResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			DECLARE rEnv,rOut,RefOutShorex REFERENCE TO Environment.Variables;
+			DECLARE rUpdtBkgRes REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+			SET rEnv.TempResID = rUpdtBkgRes.ResShell.ResHeader.ResID;
+			DECLARE bPayload BLOB;
+			
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+			
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api response', 'xml', rEnv);
+			END IF;
+		
+		/*	IF EXISTS(rUpdtBkgRes.Errors.Error[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Update booking returned errors ...', rEnv);
+				
+				-- Genereate Warning
+				SET OutputRoot.XMLNSC.Body.Errors = rUpdtBkgRes.Errors;
+				SET OutputRoot.XMLNSC.Body.Code= rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+				SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetAvailShorexPackagesRS';
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			*/			
+		--	ELSE	
+			
+				CREATE FIELD OutputRoot.XMLNSC.GetAvailShorex_IN AS RefOutShorex;
+				
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,RefOutShorex);
+				SET RefOutShorex.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+				SET RefOutShorex.SearchParams.PackageStartRange.From = FIELDVALUE(rEnv.InpReq.*:PackageDateRange.*:PackageStartDate);
+				SET RefOutShorex.SearchParams.PackageStartRange.To = FIELDVALUE(rEnv.InpReq.*:PackageDateRange.*:PackageEndDate);
+				SET RefOutShorex.SearchParams.PackageTypes.PackageType = FIELDVALUE(rEnv.InpReq.*:ShorexPackage);
+				SET RefOutShorex.SearchParams.ComponentTypes.ComponentType = FIELDVALUE(rEnv.InpReq.*:PackageType);
+				
+				IF FIELDVALUE(rEnv.InpReq.*:CalculatePrice) <> '' THEN
+					
+					SET RefOutShorex.SearchOptions.CalcPrices = FIELDVALUE(rEnv.InpReq.*:CalculatePrice);
+					
+				ELSE
+					SET RefOutShorex.SearchOptions.CalcPrices = 'N';
+					
+				END IF;
+				
+				SET RefOutShorex.ResShellRef = rEnv.TempResID;
+				RETURN TRUE;
+		--	END IF;	
+		
+	--	RETURN FALSE;
+	END;
+
+END MODULE;

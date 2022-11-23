@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:simpleType name="TwType">
+		<xs:annotation>
+			<xs:documentation>Travel-With type</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="InternalTwType">
+		<xs:annotation>
+			<xs:documentation>Defines list of internal (hard-coded) Travel-With types</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="SHARE CABIN"/>
+			<xs:enumeration value="CABIN"/>
+			<xs:enumeration value="HOTEL"/>
+			<xs:enumeration value="DINING"/>
+			<xs:enumeration value="AIR"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="TwInfo">
+		<xs:annotation>
+			<xs:documentation>Travel-With information for the certain Booking (its links to other bookings via Travel-With headers)</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Booking" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="TwID" type="RecordID">
+							<xs:annotation>
+								<xs:documentation>Travel with header record ID</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="TwType" type="TwType">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="TimeRange" type="DateTimeRange" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ResID" type="RecordID">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="IsMatched" type="Boolean">
+							<xs:annotation>
+								<xs:documentation>"Y" if both bookings satisfy TW requirements. Output only</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Comments" type="ShortComment" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TwShell">
+		<xs:annotation>
+			<xs:documentation>Travel-With definition</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="TwHeader">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="TwID" type="RecordID" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Type" type="TwType">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="DateTimeRange" type="DateTimeRange" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="IsMatched" type="Boolean" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>output only</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ResponsibleClient" type="RecordID"  minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Responsible Client ID for the travel-with</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Comments" type="ShortComment" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TwDetails" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="TwDetail" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="ResID" type="RecordID">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="IsMatched" type="Boolean" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>output only</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Comments" type="ShortComment" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+</xs:schema>

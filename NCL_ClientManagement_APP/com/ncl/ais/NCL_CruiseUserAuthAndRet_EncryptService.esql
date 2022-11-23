@@ -1,0 +1,175 @@
+BROKER SCHEMA com.ncl.ais
+
+
+DECLARE ns1 NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE ns2 NAMESPACE 'http://nclapi/schemas';
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseUserAuthenticationAndRetrieve
+ * MODULE NAME       :     EncryptService
+ * Description       :     This module calls the encrypt decrypt service and copies the request in the environment
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseUserAuthAndRet_EncryptService
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rInAuthRet REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseUserAuthenticationAndRetrieveRQ;
+		DECLARE formattedlogId CHARACTER;
+		
+		
+		-- Declare Variables for the Logging framework.
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- Calling the Logging framework to log the initial request with the payload.
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		IF (LogPayLoad) THEN
+			
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'LogRequest';
+			SET rEnv.LogRequest.Message = InputRoot.XMLNSC;
+			SET rEnv.LogRequest.Message.*:NCL_CruiseUserAuthenticationAndRetrieveRQ.*:UserLogin.(XMLNSC.Attribute)Password = 'XXXXXXXX';
+			DECLARE bPayload BLOB ASBITSTREAM(rEnv.LogRequest.Message CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'User Authentication and retrieve request message', 'xml', rEnv);
+			
+		END IF;
+		
+		-- Uncomment below block once GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rInAuthRet.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rInAuthRet.*:POS.*:Source.PseudoCityCode, '')),
+            COALESCE(rInAuthRet.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+            '',
+            '',
+            '',
+             rEnv);
+		SET rEnv.cLocalTranId = cLocalTranId;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.passwordLength = LENGTH(rInAuthRet.*:UserLogin.Password);
+		SET rEnv.DecryptString = rInAuthRet.*:UserLogin.Password;
+		
+		
+--		SET formattedlogId = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmmssSS');
+--		SET formattedlogId = formattedlogId || 'UATCLIREQ' || InputRoot.XMLNSC.*:NCL_CruiseUserAuthenticationAndRetrieveRQ.TransactionIdentifier || '123456789012345678901234567890';
+--		SET rEnv.logId = SUBSTRING(formattedlogId FROM 0 FOR 50);		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+		 SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		-- Form a soap request to call encrypt_decrypt service
+		
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Encrypt Decrypt Service...', rEnv);
+  		
+		DECLARE encryptSoapReq REFERENCE TO OutputRoot.SOAP.Body.ns1:processEncryptDecryptRequest.ns1:Encrypt_Decrypt;
+		CREATE FIELD OutputRoot.SOAP.Body.ns1:processEncryptDecryptRequest.ns1:Encrypt_Decrypt AS encryptSoapReq;
+		SET encryptSoapReq.ns1:Action = 'ENCRYPT';
+		SET encryptSoapReq.ns1:EncryptString = 'abc123';
+		SET encryptSoapReq.ns1:DecryptString = rEnv.DecryptString;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseUserAuthenticationAndRetrieve
+ * MODULE NAME       :     Exception
+ * Description       :     This module is used for error handeling and message logging.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseUserAuthAndRet_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'User Authentication and Retrieve input request message', 'xml', rEnv);
+			END IF;
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseUserAuthenticationAndRetrieve_mf_HandleExceptionResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUserAuthenticationAndRetrieveRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUserAuthenticationAndRetrieveRS AS runTimeErr;
+		
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+

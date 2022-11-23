@@ -1,0 +1,58 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE timeOutSeconds EXTERNAL CHAR '60';
+DECLARE deadLetterExpiry EXTERNAL INT 86400;
+
+
+CREATE COMPUTE MODULE NCL_CruiseBookingComponentPayment_Scheduler_CheckMessagesPresent
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+	   	CREATE FIELD Environment.Variables;
+	   	DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET rEnv.MsgPresent = TRUE;
+		
+			WHILE  rEnv.MsgPresent DO	
+				PROPAGATE TO TERMINAL 'out1';
+			END WHILE; 
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseBookingComponentPayment_Scheduler_NoMessagesHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET Environment.Variables.MsgPresent = FALSE; 
+		
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseBookingComponentPayment_Scheduler_DiffTimeInterval
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE IntvTime INTERVAL CAST(timeOutSeconds AS INTERVAL SECOND);		
+		
+		--SET OutputRoot=InputRoot;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseBookingComponentPaymentRQ AS rOut;
+		SET rOut = InputRoot.XMLNSC.*:NCL_CruiseBookingComponentPaymentRQ;
+		
+		IF COALESCE(InputRoot.XMLNSC.*:NCL_CruiseBookingComponentPaymentRQ.*:OriginalPutTime,'')='' THEN
+			
+			SET rOut.ns:OriginalPutTime =  InputRoot.Properties.CreationTime;
+			PROPAGATE TO TERMINAL 'out';
+		ELSE
+			IF (CURRENT_TIMESTAMP- CAST(OutputRoot.XMLNSC.ns:NCL_CruiseBookingComponentPaymentRQ.ns:OriginalPutTime AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss.SSS')) SECOND < IntvTime THEN
+				PROPAGATE TO TERMINAL 'out';
+			ELSE
+				SET OutputRoot.MQMD.Expiry =  deadLetterExpiry*10;
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;	
+		END IF;
+		RETURN FALSE;
+	
+	END;
+END MODULE;

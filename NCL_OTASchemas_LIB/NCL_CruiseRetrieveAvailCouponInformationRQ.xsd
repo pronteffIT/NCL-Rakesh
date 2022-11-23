@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" id="OTA2005B" targetNamespace="http://nclapi/schemas" version="3.0" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseRetrieveAvailCouponInformationRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">The RetrieveAvail Coupon Information message retrieves all the coupons available for the Client ID</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="GuestInfo">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element maxOccurs="8" minOccurs="1" name="Guest">
+								<xs:annotation>
+									<xs:documentation>Specifies Guest information and in this message it is Client ID</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:attributeGroup ref="LoyaltyInfoGroup"/>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

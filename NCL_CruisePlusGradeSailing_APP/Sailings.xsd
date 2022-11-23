@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:csv="http://www.ibm.com/dfdl/CommaSeparatedFormat" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+
+
+    <xsd:import namespace="http://www.ibm.com/dfdl/CommaSeparatedFormat" schemaLocation="IBMdefined/CommaSeparatedFormat.xsd"/>
+    <xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format documentFinalTerminatorCanBeMissing="yes" encoding="{$dfdl:encoding}" escapeSchemeRef="csv:CSVEscapeScheme" ref="csv:CommaSeparatedFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+
+	<xsd:element ibmSchExtn:docRoot="true" name="Sailings">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="">
+				<xsd:element dfdl:terminator="%CR;%LF;%WSP*;" name="header">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value1" name="SAIL_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value2" name="SHIP_CODE" type="xsd:string"/>							
+							<xsd:element name="SAIL_DATE_FROM" type="xsd:string"/>							
+                            <xsd:element name="SAIL_DATE_TO" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value5" name="SAIL_DAYS" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value6" name="PORT_FROM" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value7" name="PORT_TO" type="xsd:string"/>
+                                                        <xsd:element ibmDfdlExtn:sampleValue="DEP_TIME" name="DEP_TIME" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="DEP_TIME_UTC_OFFSET" name="DEP_TIME_UTC_OFFSET" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value8" name="DESCRIPTION" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>			
+				<xsd:element dfdl:occursCountKind="implicit" dfdl:terminator="%CR;%LF;%WSP*;" maxOccurs="unbounded" minOccurs="0" name="record">
+					<xsd:complexType>
+						<xsd:sequence> 
+							<xsd:element ibmDfdlExtn:sampleValue="value1" name="SAIL_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value2" name="SHIP_CODE" type="xsd:string"/>
+							<xsd:element name="SAIL_DATE_FROM" type="xsd:date"/>
+                            <xsd:element name="SAIL_DATE_TO" type="xsd:date"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value5" name="SAIL_DAYS" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value6" name="PORT_FROM" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value7" name="PORT_TO" type="xsd:string"/>
+                                                                                    <xsd:element ibmDfdlExtn:sampleValue="18:00" name="DEP_TIME" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="-300" name="DEP_TIME_UTC_OFFSET" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value8" name="DESCRIPTION" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>				
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+
+
+
+</xsd:schema>

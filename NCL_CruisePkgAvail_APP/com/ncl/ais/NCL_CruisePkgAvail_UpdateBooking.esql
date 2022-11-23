@@ -1,0 +1,70 @@
+
+
+
+
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruisePkgAvail_UpdateBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+
+		DECLARE i,j,k INTEGER 1;
+		DECLARE rOutResp, rEnv REFERENCE to Environment.Variables;
+
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY UpdateBooking_IN;
+		
+		DECLARE dbOut REFERENCE TO rEnv.Temp.Message.DBSearchResponse;
+		DECLARE rOutAgency REFERENCE TO Environment.Variables.Temp.Message.VerifyAgencyResponse;
+		DECLARE rInReq REFERENCE TO rEnv.Temp.Message.NCL_CruisePkgAvailRQ;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rOutResp);
+
+		SET rOutResp.MsgHeader.ValidateMode='Y';
+		SET rOutResp.ResShellOptions.IncludeElements='ResHeader ResGuests ResPackages ResPromotions ResAirActuals ResShipRequests SpecialRequests';
+		SET rOutResp.ResShell.ResHeader.AgencyID=rOutAgency.agencyID;
+		DECLARE guestcount INTEGER rEnv.Temp.Message.NCL_CruisePkgAvailRQ.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Quantity;
+		WHILE i<=guestcount DO
+			SET rOutResp.ResShell.ResGuests.ResGuest[i].GuestSeqN=i;
+			SET rOutResp.ResShell.ResGuests.ResGuest[i].GuestID='-'||CAST(i AS CHARACTER);
+			SET i=i+1;
+		END WHILE;
+		FOR src AS dbOut.Packages.Package.Components.Component[] DO
+			IF src.Type='SAIL' THEN
+				set rEnv.respakagedetails=src;
+			END IF;
+		END FOR;
+		
+
+		
+		DECLARE a INTEGER 1;
+		DECLARE countguest,c CHARACTER '';
+		WHILE a<=guestcount DO
+			set countguest= c||' '||CAST(a AS CHARACTER);
+		set c=countguest;
+		set a=a+1;	
+		END WHILE;
+		
+		
+		SET rOutResp.ResShell.ResPackages.ResPackage.PackageID=dbOut.Packages.Package.PackageID;
+		SET rOutResp.ResShell.ResPackages.ResPackage.GuestRefs=countguest;
+		SET rOutResp.ResShell.ResPackages.ResPackage.PriceCategory='';
+		SET rOutResp.ResShell.ResPackages.ResPackage.BerthCategory='';
+		set rOutResp.ResShell.ResShipRequests.ResShipRequest.Sail.Ship=rEnv.respakagedetails.Sail.Ship;
+		set rOutResp.ResShell.ResShipRequests.ResShipRequest.Sail.From.Date=SUBSTRING(rEnv.respakagedetails.Sail.From.DateTime BEFORE 'T');
+		set rOutResp.ResShell.ResShipRequests.ResShipRequest.Sail.To.Date=SUBSTRING(rEnv.respakagedetails.Sail.To.DateTime BEFORE 'T');
+		set rOutResp.ResShell.ResShipRequests.ResShipRequest.Category='';
+		set rOutResp.ResShell.ResShipRequests.ResShipRequest.InventoryReqType='GTY ONLY';
+
+		RETURN TRUE;
+	END;
+	
+END MODULE;

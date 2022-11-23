@@ -1,0 +1,433 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_UNLOCK_BOOKING_RESP';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE SessionMap EXTERNAL CHARACTER '';
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_CreateVerifyAgencyReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseUnlockBookingRQ;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET rEnv.Stateful = FALSE;
+
+		SET rEnv.Temp.Protocol = 'MQ';
+		
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[]) THEN
+			SET rEnv.Temp.Protocol = 'CALLABLE';
+			SET rEnv.Stateful = TRUE;
+		END IF;
+	
+					
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.ID, COALESCE(rIn.*:POS.*:Source.PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.Code, ''),
+												COALESCE(rIn.*:ReservationId, ''),
+												'',
+												'',
+											 	rEnv);
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Unlock booking request message', 'xml', rEnv);
+		END IF;
+				
+		/*-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling verify agency ...', rEnv);
+		
+		-- create verify agency request
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;*/
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Manage session ...', rEnv);
+
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ as rOut;
+		SET rOut.*:POS = rIn.*:POS;
+		SET rOut.*:GetOrCreateSession = 'Y';
+		SET rOut.*:ReservationId = rIn.*:ReservationId;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency request message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_PrepareLoadBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rLdBkng REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rSession REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS;
+		
+		DECLARE cQuery, cSessionId, cResId CHARACTER '';
+		DECLARE bPayload BLOB;
+		
+		SET cResId = rOrgMsg.*:ReservationId;
+		--SET rEnv.Temp.Endpoint = COALESCE(rIn.*:endpoint,'');
+		SET rEnv.Temp.Endpoint = COALESCE(rSession.SessionInfo.Endpoint,'');
+       
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rIn.agencyNotFound[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+			
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12805';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+			RETURN TRUE;
+		ELSEIF EXISTS(rIn.runtimeError[]) OR EXISTS(rIn.loginError[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = COALESCE(rIn.runtimeError.(XMLNSC.Attribute)ShortText, rIn.loginError.(XMLNSC.Attribute)ShortText);
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+			IF EXISTS(rIn.runtimeError[]) THEN
+				SET rOut.ns:Errors.ns:Error = FIELDVALUE(rIn.runtimeError);
+			ELSE
+				SET rOut.ns:Errors.ns:Error = FIELDVALUE(rIn.loginError);
+			END IF;
+			
+			RETURN TRUE;
+		ELSE
+			SET cQuery = 'SELECT REPLACE(PARENT_LOCK, ''SESSION.'', '''') AS SESSIONID, USERNAME FROM SEA.RES_LOCK' ||
+							' WHERE TABLE_REC_ID = ? AND LOCK_NAME = ?';
+			
+			SET rEnv.Temp.DB.Session[] = PASSTHRU(cQuery VALUES( cResId, 'RES.' || cResId));
+			
+			SET cSessionId = COALESCE(rEnv.Temp.DB.Session.SESSIONID, '');
+		
+			IF EXISTS(rEnv.Temp.DB.Session[]) AND ( rEnv.Temp.DB.Session.USERNAME <> 'NCLBGEGDS' AND rEnv.Temp.DB.Session.USERNAME <> 'BIZLOGICGDS' ) THEN
+				SET cSessionId = 'OPERATION_NOT_ALLOWED';
+			END IF;
+			
+			IF cSessionId = '' THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Booking is already unlocked ...', rEnv);
+				
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+				
+				CREATE FIELD rOut.ns:Success;
+				
+				SET rOut.ns:ReservationStatusChange.ns:ReservationId = rOrgMsg.*:ReservationId;
+				SET rOut.ns:ReservationStatusChange.ns:PriorStatus = 'Unlocked';
+				SET rOut.ns:ReservationStatusChange.ns:CurrentStatus = 'Unlocked';
+								
+				RETURN TRUE;
+			ELSEIF cSessionId = 'OPERATION_NOT_ALLOWED' THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unlock Booking not allowed ...', rEnv);
+				
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '7877';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Reservation locked by user other than NCLBGEGDS or BIZLOGICGDS ';
+
+				SET rOut.ns:ReservationStatusChange.ns:ReservationId = rOrgMsg.*:ReservationId;
+				SET rOut.ns:ReservationStatusChange.ns:PriorStatus = 'Locked';
+				SET rOut.ns:ReservationStatusChange.ns:CurrentStatus = 'Locked';
+				
+				RETURN TRUE;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling load booking ...', rEnv);
+				
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+				CREATE FIELD  OutputRoot.XMLNSC.LoadBooking_IN AS rLdBkng;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(cSessionId,rLdBkng);
+--				SET rLdBkng.MsgHeader.Version = VersonixAPIVersion;
+--				SET rLdBkng.MsgHeader.SessionGUID = cSessionId;
+				SET rLdBkng.Options.Lock = 'N';
+				SET rLdBkng.ResShellOptions.IncludeElements = 'ResHeader';
+				SET rLdBkng.ResID = CAST(rOrgMsg.*:ReservationId AS INTEGER);
+				
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Load booking api request message', 'xml', rEnv);
+				END IF;
+				
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_PrepareUnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rUnlockBkng REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS;
+
+		DECLARE cChannel CHARACTER COALESCE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		DECLARE cErrorCode CHARACTER rIn.Errors.Error.ErrorCode;
+		DECLARE cExternalCodeInfo CHARACTER '';
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Load booking api response message', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Load booking returned errors ...', rEnv);
+			
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || ExternalCodeType, cErrorCode, XC10CacheMap, XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+				
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+																
+				CALL CreateResponseFromAdvisoryCode('', cChannel, cErrorCode, ExternalCodeType, rOrgMsg, rIn, rOut);
+			ELSE
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+
+				CALL CreateResponseFromAdvisoryCode(cExternalCodeInfo, cChannel, cErrorCode, ExternalCodeType, rOrgMsg, rIn, rOut);
+			END IF;
+						
+			RETURN TRUE;			
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling unlock booking ...', rEnv);
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rUnlockBkng;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.DB.Session.SESSIONID,rUnlockBkng);
+--			SET rUnlockBkng.MsgHeader.Version = VersonixAPIVersion;--rIn.MsgHeader.Version;
+--			SET rUnlockBkng.MsgHeader.SessionGUID = COALESCE(rEnv.Temp.DB.Session.SESSIONID, '');
+			SET rUnlockBkng.ResID = rIn.ResShell.ResHeader.ResID;
+
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Unlock booking api request message', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_CreateResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UnlockBooking_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS;
+
+		DECLARE cChannel CHARACTER COALESCE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		DECLARE cErrorCode CHARACTER rIn.Errors.Error.ErrorCode;
+		DECLARE cExternalCodeInfo CHARACTER '';
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Unlock booking api response message', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unlock booking returned errors ...', rEnv);
+
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || ExternalCodeType, cErrorCode, XC10CacheMap, XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+				
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+				
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+				
+				CALL CreateResponseFromAdvisoryCode('', cChannel, cErrorCode, ExternalCodeType, rOrgMsg, rIn, rOut);
+			ELSE
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+
+				CALL CreateResponseFromAdvisoryCode(cExternalCodeInfo, cChannel, cErrorCode, ExternalCodeType, rOrgMsg, rIn, rOut);
+			END IF;
+			
+			SET rOut.ns:ReservationStatusChange.ns:PriorStatus = 'Locked';
+			SET rOut.ns:ReservationStatusChange.ns:CurrentStatus = 'Locked';
+		ELSE			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unlock booking successful ...', rEnv);
+
+			-- create response message
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			CREATE FIELD rOut.ns:Success;
+			
+			SET rOut.ns:ReservationStatusChange.ns:ReservationId = rOrgMsg.*:ReservationId;
+			SET rOut.ns:ReservationStatusChange.ns:PriorStatus = 'Locked';
+			SET rOut.ns:ReservationStatusChange.ns:CurrentStatus = 'Unlocked';			
+		END IF;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Unlock booking response message', 'xml', rEnv);
+		END IF;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS;
+
+		DECLARE bPayload BLOB;
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUnlockBookingRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System Internal Error';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Unlock booking response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		SET rEnv.Temp.Protocol = 'MQ';
+		
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[]) THEN
+			SET rEnv.Temp.Protocol = 'CALLABLE';
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,202 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_UPDATE_APISINFO_RESP';
+DECLARE MsgExpiry EXTERNAL INTEGER 1500;
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseUpdateAPISInfo
+ * MODULE NAME       :     CruiseUpdateAPISInfo
+ * Description       :     This module takes accepts the requests
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateAPISInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutAPISInfo,rOutWarnings REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rInAPISInfo REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseUpdateAPISInfoRQ;
+			
+		DECLARE cLocalTransId CHARACTER COALESCE(InputRoot.MQMD.MsgId,UUIDASCHAR);
+		SET cLocalTransId = SUBSTRING(REPLACE(cLocalTransId, '''', '') FROM 2);
+		--IIB Log Event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTransId, '', '');
+		-- Add payload logging
+		IF LogPayLoad THEN
+			DECLARE inPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(inPayload, NodeLabel, 'Cruise Update APIS Info Req..', 'xml', rEnv);
+		END IF;
+		
+		DECLARE Requestor,BookingChannel CHARACTER;
+		
+		SET Requestor = COALESCE(FIELDVALUE(rInAPISInfo.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rInAPISInfo.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rInAPISInfo.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,'','','',rEnv);
+		
+		--Adding MQMD Headers to Environment
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		--Saving Input message to Environment
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN 'XMLNSC' NAME 'InpReq';
+		SET rEnv.Temp.InpReq = rInAPISInfo;
+		
+--		DECLARE inXmlStr CHARACTER rInAPISInfo.*:xmlString;
+		
+		CALL UpdateAPISInfo (rInAPISInfo.*:xmlString,rEnv.Temp.status);
+		
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateAPISInfoRS AS rOutAPISInfo;
+
+		IF rEnv.Temp.status <> 'OK' THEN
+			
+			CREATE FIELD rOutAPISInfo.ns:Warnings AS rOutWarnings;
+			SET rOutWarnings.ns:Warning = rEnv.Temp.status;
+			SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Error calling APIS update procedure';
+			SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				
+		ELSE
+			
+			CALL com.ncl.ais.utils.CopyAttributes(rInAPISInfo,rOutAPISInfo);		
+			CREATE FIELD rOutAPISInfo.ns:Success;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			
+			IF LogPayLoad THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Update APISInfo resp..', 'xml', rEnv);
+			END IF;
+			
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+			
+		END IF;
+
+		RETURN TRUE;
+	END;
+	
+	CREATE PROCEDURE UpdateAPISInfo(IN inpStr CHARACTER,OUT pStatus CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_WESB_UPD_APIS";
+	
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseUpdateAPISInfo
+ * MODULE NAME       :     CruiseUpdateAPISInfo_Exception
+ * Description       :     This module takes care of exception handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+ CREATE COMPUTE MODULE NCL_CruiseUpdateAPISInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+--		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		--Adding MQMD Headers to Environment
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseUpdateAPISInfo
+ * MODULE NAME       :     CruiseUpdateAPISInfo_RunTimeException
+ * Description       :     This module takes care of runtime errors
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseUpdateAPISInfo_RunTimeException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutAPISInfo,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rInAPISInfo REFERENCE TO rEnv.InpReq;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.TempHeaders.MQMD.ReplyToQ;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateAPISInfoRS AS rOutAPISInfo;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[])  THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception for Cruise Update APISInfo(OCI)', rEnv);
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+				SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rInAPISInfo,rOutAPISInfo);
+					
+				CREATE FIELD rOutAPISInfo.ns:Errors AS rOutErrors;
+				
+				SET rOutErrors.ns:Error = cErrorText;
+				SET rOutErrors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+				SET rOutErrors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+				SET rOutErrors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		END IF;		
+		RETURN TRUE;
+	END;
+END MODULE;

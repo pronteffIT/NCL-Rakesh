@@ -1,0 +1,152 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MaxRetries EXTERNAL INTEGER 3;
+DECLARE BatchSize EXTERNAL INTEGER 0;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     NCL
+ * PROJECT           :     Casino Data Migration
+ * FLOW NAME         :     Casino_ErrorReprocess
+ * MODULE NAME       :     Read_Messages
+ * Description       :     This module reads error messages using MQGet node in a loop.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               04/03/2017   Prolifics      Initial version
+ * 1.1        
+ * 1.2        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE Read_Messages
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEv REFERENCE TO Environment.Variables;
+		DECLARE index INTEGER 1;
+		
+		CREATE FIELD Environment.Variables AS rEv;
+		
+		SET rEv.AllMessagesRead = 'false';
+		
+		WHILE rEv.AllMessagesRead = 'false' AND index <= BatchSize DO
+			PROPAGATE TO TERMINAL 'out';
+			
+			SET index = index + 1;
+		END WHILE;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     NCL
+ * PROJECT           :     Casino Data Migration
+ * FLOW NAME         :     Casino_ErrorReprocess
+ * MODULE NAME       :     SetDestinationQueue
+ * Description       :     This module sets Queue destination list.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               04/03/2017   Prolifics      Initial version
+ * 1.1        
+ * 1.2        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE SetDestinationQueue
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rRfhUsr REFERENCE TO InputRoot.MQRFH2.usr;
+		
+		SET OutputRoot = InputRoot;
+		SET OutputLocalEnvironment = InputLocalEnvironment;
+
+		SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = rRfhUsr.SourceQueue;
+		
+		DELETE FIELD OutputRoot.MQRFH2.mcd;		
+		PROPAGATE FINALIZE NONE;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     NCL
+ * PROJECT           :     Casino Data Migration
+ * FLOW NAME         :     Casino_ErrorReprocess
+ * MODULE NAME       :     SetFlag
+ * Description       :     This module sets flag to indicate all messages are read.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               04/03/2017   Prolifics      Initial version
+ * 1.1        
+ * 1.2        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE SetFlag
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET Environment.Variables.AllMessagesRead = 'true';
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     NCL
+ * PROJECT           :     Casino Data Migration
+ * FLOW NAME         :     Casino_ErrorReprocess
+ * MODULE NAME       :     ProcessErrors
+ * Description       :     This module logs errors.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               04/03/2017   Prolifics      Initial version
+ * 1.1        
+ * 1.2        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE ProcessErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+

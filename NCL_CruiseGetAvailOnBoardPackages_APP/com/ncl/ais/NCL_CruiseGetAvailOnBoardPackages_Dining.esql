@@ -1,0 +1,203 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailOnBoardPackages_DiningRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseGetAvailOnBoardPackagesRQ;
+		DECLARE ShipCode,GetSWCd_query CHARACTER;
+		-- Adding the Logging Event
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'GetAvailDining Request', rEnv);
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';	
+		CREATE FIELD OutputRoot.XMLNSC.GetAvailDinings_IN AS rOut ;
+		
+		SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		--SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		SET rOut.MsgHeader.CallerInfo.UserInfo.Internal = '';
+		SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(RefInReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+		IF LENGTH(rEnv.ReservationID) >0 THEN
+						
+			SET ShipCode = THE(SELECT ITEM A.ship_code From Database.res_header AS A where A.res_id = rEnv.ReservationID);
+			SET rOut.SearchParams.Ship = ShipCode;
+
+		ELSE
+			
+			SET rOut.SearchParams.Ship = '';   
+		END IF;		
+		
+		DECLARE pattern CHARACTER  'YYYY-MM-DDTHH:mm:ss';
+
+		SET rOut.SearchParams.DateTimeRange.From = CAST(CAST(RefInReq.*:PackageDateRange.*:PackageStartDate AS DATE), TIME '00:00:00' AS TIMESTAMP FORMAT pattern); 
+		SET rOut.SearchParams.DateTimeRange.To = CAST(CAST(RefInReq.*:PackageDateRange.*:PackageEndDate AS DATE), TIME '23:59:59' AS TIMESTAMP FORMAT pattern);
+		
+		IF CARDINALITY(RefInReq.*:PartyCounts.*:PartyCount[]) = 1 THEN
+			
+			SET rOut.SearchParams.PartySize = FIELDVALUE(RefInReq.*:PartyCounts.*:PartyCount.(XMLNSC.Attribute)Quantity);
+		END IF;
+		
+		SET rOut.SearchParams.Restaurants.Code = RefInReq.*:DiningRestaurantName;
+		SET rOut.SearchParams.DiningType = RefInReq.*:DiningType;
+		
+		IF LENGTH(RefInReq.*:CalculatePrice)> 0 THEN
+			
+			SET rEnv.CalcPrice = RefInReq.*:CalculatePrice;
+		ELSE	
+			
+			SET rEnv.CalcPrice = 'N';
+		END IF;	
+		
+		SET rOut.SearchOptions.CalcGuestPrices = rEnv.CalcPrice;
+		SET GetSWCd_query= 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+	    DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+	    INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+	    INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+	    TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.EXTERNAL_CODE = ?';
+	    
+		DECLARE SysName CHARACTER RefInReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		DECLARE CodeType CHARACTER COALESCE(RefInReq.Status,'');
+ 	    SET rEnv.Temp[] = PASSTHRU(GetSWCd_query VALUES(SysName,CodeType,'STS'));
+	 	SET rOut.SearchOptions.AvailabilityMode = rEnv.Temp.SW_CODE;
+		SET rOut.ResShellRef = rEnv.ReservationID;
+		--SET rOut.ResShellRef = rEnv.TempResID;
+		DETACH rEnv.Temp;
+		
+		RETURN TRUE;
+	END;
+	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailOnBoardPackages_DINING_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,refOut,rOutPackage,rOutWarning,rGuest REFERENCE TO Environment.Variables;
+		DECLARE RefInReq,rPackage REFERENCE TO rEnv.InReq.*:NCL_CruiseGetAvailOnBoardPackagesRQ;
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'GetAvailDining Response', rEnv);
+		
+		DECLARE inRefDining REFERENCE TO InputRoot.XMLNSC.*:GetAvailDinings_OUT;
+	--	DECLARE PartyCount_Quantity CHARACTER ''; --RefInReq.*:PartyCounts.*:PartyCount.(XMLNSC.Attribute)Quantity;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetAvailOnBoardPackagesRS AS refOut;
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,refOut);
+		CREATE FIELD refOut.ns:Success;
+		CREATE FIELD refOut.ns:Warnings;
+		-- Gnerates the Error Message
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			DECLARE rExcp REFERENCE TO InputExceptionList;
+			DECLARE cErrorText CHARACTER;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking Backend', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET refOut.ns:Errors.ns:Error = COALESCE(cErrorText,'System error from back end. Please try again later');
+			SET refOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET refOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET refOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+			RETURN TRUE;
+		END IF;	
+			
+		IF EXISTS(inRefDining.Errors[] ) THEN
+			-- This Proc Creates the Warnings Section
+			CALL MapWarnings(inRefDining,rEnv,refOut);
+		ELSE
+			IF (LogPayLoad) THEN
+				-- Add response msg to log event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'GetAvail Dinings message', 'xml', rEnv);
+			END IF;
+			
+			-- Capture the Dining values frm the Request
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Before Dining', rEnv);
+			
+			FOR rPartyCount AS RefInReq.*:PartyCounts.*:PartyCount[] DO
+				CREATE LASTCHILD OF rEnv.PartyCount NAME 'Quantity' VALUE FIELDVALUE(rPartyCount.(XMLNSC.Attribute)Quantity);
+			END FOR;
+			
+			SET rEnv.AvailDinings.AvailDining[] = SELECT A FROM inRefDining.AvailDinings.AvailDining[] AS A  WHERE 
+												  	A.Tables.Total IN(rEnv.PartyCount.Quantity[])OR A.AvailQty IN(rEnv.PartyCount.Quantity[]);
+												  					  
+			CREATE FIELD refOut.ns:Packages;
+			
+			IF EXISTS(rEnv.AvailDinings.AvailDining[]) THEN
+				
+				DECLARE SysName CHARACTER RefInReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+				DECLARE GetExternalCd_query CHARACTER;
+				
+				SET GetExternalCd_query= 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+										    DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+										    INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+										    INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+										    TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.SW_CODE = ?';
+					
+				SET rEnv.Temp[] = PASSTHRU(GetExternalCd_query VALUES(SysName,'STS','AVL'));
+				
+				-- Loop for All the Dinings
+				DECLARE inStr CHARACTER '';
+				
+				FOR rDining AS rEnv.AvailDinings.AvailDining[] DO					
+					SET inStr = inStr || ',' || rDining.SittingCode;
+				END FOR;
+				
+				SET inStr = SUBSTRING(inStr FROM 2);
+				
+				SET rEnv.Temp.Package.Type[] = PASSTHRU('SELECT P.package_id, P.package_type FROM sea.package_definition P WHERE P.package_id IN(' || inStr || ')');
+				
+				FOR rDining AS rEnv.AvailDinings.AvailDining[] DO		
+					CREATE LASTCHILD OF refOut.ns:Packages AS rPackage IDENTITY ns:Package;
+					
+					SET rPackage.(XMLNSC.Attribute)ID = rDining.SittingCode;
+					SET rPackage.Type = 'DINING';
+					SET rPackage.Name = rDining.Restaurant;
+					--SET rPackage.Code = THE(SELECT ITEM A.package_type From Database.package_definition AS A where A.package_id= rDining.SittingCode);
+					SET rPackage.Code = THE(SELECT ITEM P.PACKAGE_TYPE FROM rEnv.Temp.Package.Type[] AS P WHERE P.PACKAGE_ID = rDining.SittingCode);						
+					SET rPackage.DateRange.PackageStartDate = CAST(CAST(rDining.DateTime AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT 'IU');
+					
+					IF rDining.Duration IS NOT NULL THEN
+						DECLARE StartDateTime TIMESTAMP;
+						SET StartDateTime = CAST(rDining.DateTime AS TIMESTAMP FORMAT 'IU');
+						
+						DECLARE EndTime TIMESTAMP StartDateTime + CAST(rDining.Duration AS INTERVAL MINUTE); 
+						SET rPackage.DateRange.PackageEndDate = CAST(EndTime AS CHARACTER FORMAT 'IU');
+					END IF;	
+					
+					FOR rGuestPrc AS rDining.GuestPrices.GuestPrice[] DO
+						CREATE LASTCHILD OF rPackage.Price AS rGuest NAME 'Guest';
+						SET rGuest.GuestRefNumber = rGuestPrc.GuestSeqN;
+						
+						IF rEnv.CalcPrice = 'Y' THEN
+							SET rGuest.PackagePrice.(XMLNSC.Attribute)Amount = COALESCE(CAST(CAST(rGuestPrc.Price AS DECIMAL)*100 AS INTEGER),0);
+						END IF;
+						
+						--SET rGuest.PackagePrice.(XMLNSC.Attribute)CurrencyCode = rEnv.agencyCurrency;
+						SET rGuest.PackagePrice.(XMLNSC.Attribute)CurrencyCode = rEnv.AgencyInfo.DEFAULT_CURRENCY;
+					END FOR;
+					
+					SET rPackage.TableSize = rDining.Tables.Total;		
+					SET rPackage.Status = rEnv.Temp.EXTERNAL_CODE;
+				END FOR;
+				
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'After Dining', rEnv);
+			END IF;	
+		END IF;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GetAvailOnBoardPackages Response_GetDining', 'xml', rEnv);
+			-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		END IF;
+			
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+
+		SET rEnv.AvailDinings = NULL;
+		SET rEnv.Temp.Package = NULL;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

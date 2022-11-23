@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" targetNamespace="http://com.ibm.ncl/CategoryInfoService/" xmlns:bons1="http://com.ibm.ncl.category" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://com.ibm.ncl/CategoryInfoService/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+            <xsd:import namespace="http://com.ibm.ncl.category" schemaLocation="CabinCategoryInfoResponse.xsd"/>
+            <xsd:import namespace="http://com.ibm.ncl.category" schemaLocation="CabinCategoryInfoRequest.xsd"/>
+            <xsd:element ibmSchExtn:docRoot="true" name="getAllCategory">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="req" type="bons1:CabinCategoryInfoRequest"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element ibmSchExtn:docRoot="true" name="getAllCategoryResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="response" type="bons1:CabinCategoryInfoResponse"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>

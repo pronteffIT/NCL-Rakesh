@@ -1,0 +1,78 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+DECLARE SAIL_MANIFEST_DAYS EXTERNAL INTEGER 35;
+DECLARE SAIL_MANIFEST_BEGIN EXTERNAL INTEGER 0;
+DECLARE cQUERY_EURO_SAILINGS CHARACTER 'select 
+    sh.sail_id,
+    to_char(sh.sail_date_from,''yyyy-mm-dd'') as from_date,
+    to_char(sh.sail_date_to,''yyyy-mm-dd'') as to_date
+from 
+    sail_header sh,
+    port p,
+    ship s
+where 
+sail_date_from>(sysdate+?) 
+and sail_date_from < (sysdate + ?)
+and sh.port_from=p.port_code
+and sh.is_active=''Y''
+and sh.is_fake=''N''
+and sh.ship_code=s.ship_code
+and sh.port_from in 
+    (select port_from from NCL_MANIFEST_SHIP_REG_LINK 
+        where country_code=''EUROFINS_EUROPE'' 
+            and sh.sail_date_from between effective_dat_from and effective_dat_to)';
+
+DECLARE cQUERY_GUEST_IDS CHARACTER 'select ex.guest_id 
+from 
+	nclsea.ncl_manifest_exch_log ex,
+	sail_header sh,
+	res_header rh
+where provider_cd=''EUROFINS'' 
+and sh.sail_id=ex.sail_id
+and sh.sail_date_from > sysdate
+and sh.is_active=''Y''
+and sh.is_fake=''N''
+and is_registered_cd=''N''
+and rh.res_id=ex.res_id
+and rh.res_status=''BK''';
+
+
+CREATE COMPUTE MODULE Scheduler_PopulateManifest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		--Run only for specific sail id
+		SET rEnv.Temp.SAIL_IDS[] = PASSTHRU(cQUERY_EURO_SAILINGS,SAIL_MANIFEST_BEGIN,SAIL_MANIFEST_DAYS);
+		DECLARE cErrorMsg CHARACTER;
+		FOR rSAIL_ID AS rEnv.Temp.SAIL_IDS[]
+		DO
+			CALL NCL_INS_MANIFEST_EXCH_LOG(CAST(rSAIL_ID.SAIL_ID AS DECIMAL),'EUROFINS',cErrorMsg);
+			SET OutputRoot = NULL;
+			SET OutputRoot.XMLNSC.root.(XMLNSC.Field)from = rSAIL_ID.FROM_DATE;
+			SET OutputRoot.XMLNSC.root.(XMLNSC.Field)to = rSAIL_ID.TO_DATE;
+			SET OutputRoot.XMLNSC.root.(XMLNSC.Field)full = 'true';
+			PROPAGATE TO TERMINAL 'out1';
+		END FOR;
+		SET rEnv.Temp = NULL;	
+		RETURN TRUE;
+	END;
+
+
+	CREATE PROCEDURE NCL_INS_MANIFEST_EXCH_LOG (
+	    IN p_sail_id    DECIMAL,
+	    IN p_provider_cd  CHARACTER,	    
+	    OUT p_error_txt   CHARACTER
+	)	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_INS_MANIFEST_EXCH_LOG";	
+END MODULE;
+
+CREATE COMPUTE MODULE UpdateGuestRegistration_BySailID
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE sailID CHARACTER CAST(InputRoot.BLOB.BLOB AS CHARACTER CCSID InputRoot.Properties.CodedCharSetId Encoding InputRoot.Properties.Encoding);
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		SET rEnv.SAIL_ID= sailID;
+		IF rEnv.SAIL_ID > 0 THEN
+			RETURN TRUE;
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;

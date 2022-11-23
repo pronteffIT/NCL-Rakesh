@@ -1,0 +1,407 @@
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_CHECK_BOOKING_STATUS_RESP';
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE LogPayload EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     NCL_CruiseCheckBookingStatus
+ * Description       :     This module accepts and creates response for Cruise Check Booking Status
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutBkngSts,rEmail REFERENCE TO Environment.Variables;
+		DECLARE rInBkngSts REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCheckBookingStatusRQ;
+		DECLARE cQuery CHARACTER 'SELECT TABLE_REC_ID RES_ID FROM SEA.RES_LOCK WHERE TABLE_REC_ID = ?';
+		DECLARE resID CHARACTER FIELDVALUE(rInBkngSts.*:ReservationID.(XMLNSC.Attribute)ID);
+		DECLARE cLocalTransId CHARACTER COALESCE(InputRoot.MQMD.MsgId,UUIDASCHAR);
+		SET cLocalTransId = SUBSTRING(REPLACE(cLocalTransId, '''', '') FROM 2);
+		--IIB Log Event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTransId, '', '');
+		
+		-- Add payload logging
+		IF LogPayload THEN
+			DECLARE inPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(inPayload, NodeLabel, 'Cruise Check Booking Status Request', 'xml', rEnv);
+		END IF;
+		
+		DECLARE Requestor,BookingChannel,ReservationId CHARACTER;
+		
+		SET Requestor = COALESCE(FIELDVALUE(rInBkngSts.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rInBkngSts.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rInBkngSts.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		SET ReservationId = COALESCE(FIELDVALUE(rInBkngSts.*:ReservationID.(XMLNSC.Attribute)ID),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,ReservationId,'','',rEnv);
+		
+		--Adding MQMD Headers to Environment
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		--Saving Input message to Environment
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN 'XMLNSC' NAME 'InpReq';
+		SET rEnv.Temp.InpReq = rInBkngSts;
+		SET rEnv.Temp.ResID = resID;		
+		SET rEnv.Temp.BookingChannel = BookingChannel;
+		
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCheckBookingStatusRS AS rOutBkngSts;		
+		SET rOutBkngSts.(XMLNSC.Attribute)TransactionIdentifier = COALESCE(rInBkngSts.(XMLNSC.Attribute)TransactionIdentifier,'');
+		SET rOutBkngSts.(XMLNSC.Attribute)Version = COALESCE(rInBkngSts.(XMLNSC.Attribute)Version,'');
+		
+					
+		IF COALESCE(resID ,'')='' THEN				
+		    SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Invalid Reservation ID';
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+		END IF;
+		PROPAGATE TO LABEL 'LoadBk' DELETE NONE;
+		
+		IF COALESCE(rEnv.Error.ShortText,'')='Booking Locked' THEN
+			SET rOutBkngSts.ns:Warnings.ns:Warning = rEnv.Error.Message;
+		    SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '9891';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Booking is currently locked.';
+		ELSEIF CONTAINS(REPLACE(LOWER(COALESCE(rEnv.Error.ShortText,'')),' ',''),'res') AND CONTAINS(REPLACE(LOWER(COALESCE(rEnv.Error.ShortText,'')),' ',''),'notfound') THEN
+		    SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Reservation ID not found.';				
+		ELSEIF NOT(COALESCE(rEnv.Completed,FALSE)) THEN
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			CREATE FIELD rOutBkngSts.ns:Success;
+		END IF;		
+				
+--		SET rEnv.Temp.Res_Lock[] = PASSTHRU(cQuery VALUES(resID));
+--
+--		IF SQLCODE = 0 THEN
+--			SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+--			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCheckBookingStatusRS AS rOutBkngSts;
+--			--CALL com.ncl.ais.utils.CopyAttributes(rInBkngSts,rOutBkngSts);
+--			SET rOutBkngSts.(XMLNSC.Attribute)TransactionIdentifier = COALESCE(rInBkngSts.(XMLNSC.Attribute)TransactionIdentifier,'');
+--			SET rOutBkngSts.(XMLNSC.Attribute)Version = COALESCE(rInBkngSts.(XMLNSC.Attribute)Version,'');
+--			CREATE FIELD rOutBkngSts.ns:Success;
+--
+--			IF EXISTS(rEnv.Temp.Res_Lock[]) THEN
+--				
+--				SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '9891';
+--				SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Booking is currently locked.';
+--				
+--			ELSE IF resID = '' OR resID IS NULL THEN
+--				
+--				SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+--				SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Invalid Reservation ID';
+--				
+--			END IF;	
+--			END IF;
+--			PROPAGATE TO TERMINAL 'out1';
+--			RETURN FALSE;
+--
+--		ELSE
+--			CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+--			SET rEmail.EmailAddress.ToAddress = ToEmailId;
+--			SET rEmail.EmailSubject = 'Check the Database';
+--			SET rEmail.EmailContent = 'Please verify the database if it is down.';
+--			
+--		END IF;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF LogPayload THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Check Booking Status Response..', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Endpoint;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     CruiseCheckBookingStatus_Exception
+ * Description       :     This module takes care of exception handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload,NodeLabel,'Cruise Check Booking Status Exception..','xml',rEnv);
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     CruiseCheckBookingStatus_FaultHandler
+ * Description       :     This module takes care of fault handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutBkngSts REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+	  	SET OutputRoot.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		--CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCheckBookingStatusRS AS rOutBkngSts;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Generic Runtime Exceptions Cruise Check Booking Status..', rEnv);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+
+			SET rOutBkngSts.ns:Warnings.ns:Warning = cErrorText;
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOutBkngSts.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     CruiseCheckBookingStatus_FaultHandler
+ * Description       :     This module takes care of fault handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus_GetSessionReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut REFERENCE TO Environment.Variables;
+		DECLARE vb NAMESPACE 'http://NCL_ValidateBookingLib';
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling ValidateBookingSource ...', rEnv);			
+		SET OutputRoot.MQMD 			= InputRoot.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.vb:VerifyAgencyRequest as rOut;
+		SET rOut.source = rEnv.Temp.InpReq.*:POS.*:Source;		
+		RETURN TRUE;
+	END;
+	CREATE FUNCTION Main2() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut REFERENCE TO Environment.Variables;
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling GetSession ...', rEnv);			
+		SET OutputRoot.MQMD 			= InputRoot.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ as rOut;
+		SET rOut.*:POS 					= rEnv.Temp.InpReq.*:POS;
+		SET rOut.*:GetOrCreateSession 	= 'Y';
+		SET rOut.*:ReservationId 		= rEnv.Temp.ResID;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     CruiseCheckBookingStatus_FaultHandler
+ * Description       :     This module takes care of fault handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus_LoadBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut 			REFERENCE TO Environment.Variables;
+		DECLARE rInManageSession 	REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;		
+	    DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		IF LASTMOVE(rAgency) THEN
+			SET rEnv.SessionGUID 	 = rAgency.sessionGUID;
+			SET rEnv.Endpoint 		 = COALESCE(rAgency.*:endpoint,'');
+			SET OutputRoot.HTTPRequestHeader."x-upstream" 	= rEnv.Endpoint;			
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+			SET rOut.Options.Lock  				= 'Y';		
+			SET rOut.ResShellOptions.IncludeElements='ResHeader';
+			SET rOut.ResID 						= rEnv.Temp.ResID ;
+		ELSEIF LASTMOVE(rInManageSession) AND EXISTS(rInManageSession.SessionInfo.SessionToken[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Manage Session invoked', rEnv);
+			SET rEnv.SessionGUID 							= rInManageSession.SessionInfo.SessionToken;
+			SET rEnv.Endpoint 								= COALESCE(rInManageSession.SessionInfo.Endpoint,'');
+			SET OutputRoot.HTTPRequestHeader."x-upstream" 	= rEnv.Endpoint;
+			
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--			SET rOut.MsgHeader.Version 			= VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID 		= rEnv.SessionGUID;
+--			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.BookingChannel;
+			SET rOut.Options.Lock  				= 'Y';		
+			SET rOut.ResShellOptions.IncludeElements='ResHeader';
+			SET rOut.ResID 						= rEnv.Temp.ResID ;
+		
+		ELSEIF EXISTS(rInManageSession.*:Warnings[]) OR EXISTS(rInManageSession.*:Errors[]) OR COALESCE(rEnv.SessionGUID,'') =''THEN
+			SET rEnv.Error.ShortText = 'Get Session Error';
+			RETURN FALSE;			
+		END IF;
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling LoadBooking service ...', rEnv);
+		-- Load Booking
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     CruiseCheckBookingStatus_FaultHandler
+ * Description       :     This module takes care of fault handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus_LoadBookingResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutBkngSts REFERENCE TO Environment.Variables;
+		DECLARE iRef REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		IF EXISTS(iRef.Errors.Error[]) THEN
+			SET rEnv.Error.Message = COALESCE(InputRoot.XMLNSC.LoadBooking_OUT.Errors.Error.ErrorMessage, 'Load Booking Error');
+			SET rEnv.Error.ShortText ='Booking Locked';
+		ELSEIF EXISTS(iRef.ResShell.ResHeader.LockInfo.ExpiresAt[]) THEN
+			SET rEnv.Completed = TRUE;
+		END IF;		
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCheckBookingStatus
+ * MODULE NAME       :     CruiseCheckBookingStatus_FaultHandler
+ * Description       :     This module takes care of fault handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseCheckBookingStatus_LogOutReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		IF EXISTS(rEnv.SessionGUID[]) THEN
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Log Out..', rEnv);
+		    SET OutputRoot.HTTPRequestHeader."x-upstream" 	= rEnv.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version 		= com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID 	= rEnv.SessionGUID;
+		RETURN TRUE;
+		ELSE
+			RETURN FALSE;
+		END IF;	
+	END;
+END MODULE;

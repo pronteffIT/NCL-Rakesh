@@ -1,0 +1,161 @@
+BROKER SCHEMA com.ncl.ais
+
+--DECLARE CACHE SHARED ROW;
+DECLARE InsCodeType EXTERNAL CHARACTER 'Insurance';
+DECLARE PromoCodeType EXTERNAL CHARACTER 'PromosToDisplay';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE SpclReqCodeType EXTERNAL CHARACTER 'SpecialRequests';
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE AdviceCodeType EXTERNAL CHARACTER 'ConsumerAdvice';
+
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rOut,rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC;
+		--DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.sc:NCL_CruiseCreateUpdateBookingRS;
+
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';		
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY sc:NCL_CruiseCreateUpdateBookingRS;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rEnvIn, rOut);
+		
+		SET rOut.sc:Errors.sc:Error = cErrorText;		
+		SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)Code = '12228';
+		--SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)ShortText = 'System Internal Error';
+		SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)ShortText = 'Internal System error Try again Later';
+		SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)Type = '3';
+		
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		--PROPAGATE TO LABEL 'UNLOCK_LOGOUT';
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.XMLNSC.*:NCL_CruiseCreateUpdateBookingRS.(XMLNSC.Attribute)Endpoint = Environment.Variables.endPoint;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_MapErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC;
+		MOVE rIn FIRSTCHILD;
+		MOVE rIn NEXTSIBLING;
+		
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		
+		CALL CreateWarningRespForVXErrors(rEnv, rEnvInMsg, rIn, rOutRoot);		
+		SET rOutRoot.XMLNSC.sc:NCL_CruiseCreateUpdateBookingRS.sc:SailingInfo = rEnvInMsg.*:SailingInfo;		
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateBooking response message', 'xml', rEnv);
+
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		
+		--PROPAGATE TO LABEL 'UNLOCK_LOGOUT';
+		RETURN FALSE;		
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_createImpersonate
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE resImpersonate REFERENCE TO OutputRoot.XMLNSC.*:Impersonate_IN;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE FIELD OutputRoot.XMLNSC.*:Impersonate_IN AS resImpersonate;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,resImpersonate);
+		IF(rEnvInMsg.*:Impersonate.*:ResAgentLogin IS NOT NULL) THEN
+			SET resImpersonate.ResAgent.Username = rEnvInMsg.*:Impersonate.*:ResAgentLogin;
+		ELSE
+			SET resImpersonate.TravelAgent.AgentID = rEnvInMsg.*:Impersonate.*:TravelAgentID;
+		END IF;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_processImpersonate
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rImpersonateIn REFERENCE TO InputRoot.XMLNSC.*:Impersonate_OUT;
+		IF EXISTS(rImpersonateIn.Errors[]) THEN
+			SET rEnv.Temp.ImpersonateError = 'Y';
+		END IF;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_dbSearchAgencyPhone
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE resDBSearch REFERENCE TO OutputRoot.XMLNSC.*:DbSearch_IN;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE FIELD OutputRoot.XMLNSC.*:DbSearch_IN AS resDBSearch;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,resDBSearch);
+		IF(rEnvInMsg.*:TPA_Extensions.*:ExtensionName = 'SecondaryBranch') THEN
+			SET resDBSearch.Agencies.AgencyPhone.PhoneNumber = rEnvInMsg.*:TPA_Extensions.*:ExtensionValue;
+		END IF;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_saveAgencyPhone
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rImpersonateIn REFERENCE TO InputRoot.XMLNSC.*:DbSearch_OUT;
+		SET rEnv.secondaryAgency = rImpersonateIn.Agencies.Agency.AgencyHeader.AgencyID;
+	END;
+END MODULE;

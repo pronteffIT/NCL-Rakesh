@@ -1,0 +1,94 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_AttachIndAir_BuildUpdateBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rTempRef REFERENCE TO Environment.Variables;
+		DECLARE loadBookingOut REFERENCE TO InputRoot.XMLNSC.*:LoadBooking_OUT;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InputMsg.XMLNSC.*:NCL_CruiseAttachIndependentAirRQ;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	    CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY UpdateBooking_IN;
+	    
+	    
+	    IF ((EXISTS (loadBookingOut.Errors.Error[])) AND (
+												loadBookingOut.Errors.Error.ErrorSeverity='E' OR
+												loadBookingOut.Errors.Error.ErrorSeverity='F' OR
+												loadBookingOut.Errors.Error.ErrorSeverity='EXCEPTION' OR
+												EXISTS(loadBookingOut.Errors.Error.ErrorMessage[]))) 
+		THEN						
+			CALL CopyEntireMessage();
+						
+			PROPAGATE TO LABEL 'LOADBKG_ERROR';
+			RETURN FALSE;
+		END IF;
+	    
+	    
+	    --SET rEnv.TempPortInfo = THE(SELECT RC.Location.From.Code as FromPort,RC.Location.To.Code as ToPort FROM loadBookingOut.ResShell.ResComponents.ResComponent[] as RC 
+	    --WHERE RC.Type='SAIL' AND RC.GuestRefs = '1');
+	    --SET loadBookingOut.ResComponents.ResComponent
+		--SET rOutResp.MsgHeader = loadBookingOut.MsgHeader;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionID,rOutResp);
+		
+		SET rOutResp.ResShell.ResHeader = loadBookingOut.ResShell.ResHeader;
+		SET rOutResp.ResShellOptions.IncludeElements ='ResHeader ResPackages ResAirPoints ResAirIndependents';
+		SET rOutResp.ResShell.ResAirIndependents = loadBookingOut.ResShell.ResAirIndependents;
+		
+		FOR guestItem as rEnvInMsg.*:AirInfo.*:Guest[]
+		DO			
+			
+	--		IF guestItem.FlightType = 'INDEPENDENT' THEN 
+				
+				DECLARE rAirGuest,rflight REFERENCE TO loadBookingOut.ResShell.ResAirIndependents.ResAirIndependent;
+				
+				
+				IF 	EXISTS(guestItem.*:Out[]) THEN
+					CREATE LASTCHILD OF rOutResp.ResShell.ResAirIndependents AS rTempRef DOMAIN('XMLNSC') IDENTITY ResAirIndependent; 
+					SET rTempRef.GuestRefs = guestItem.*:GuestRefNumber;
+					
+					SET rTempRef.SegmentKind = 'OUTBOUND';
+					FOR outSegmentItem as guestItem.*:Out[1].*:ItineraryDetails[]	DO
+						
+						CREATE LASTCHILD OF rTempRef.Flights AS rflight IDENTITY Flight;
+				   		SET rflight.LegSeqN = outSegmentItem.*:Seq;
+	               		SET rflight.Airline = outSegmentItem.*:Carrier;
+	               		SET rflight.FlightNo = outSegmentItem.*:Flight;
+	               		SET rflight.DepartureDateTime = outSegmentItem.*:DepartureTime;
+	               		SET rflight.DepartureAirport = outSegmentItem.*:DeparturePort;
+	               		SET rflight.ArrivalDateTime = outSegmentItem.*:ArrivalTime;
+	               		SET rflight.ArrivalAirport = outSegmentItem.*:ArrivalPort;
+	               		
+					END FOR;
+				END IF; 	
+				--ELSEIF EXISTS(guestItem.*:Return[]) THEN
+				IF EXISTS(guestItem.*:Return[]) THEN	
+					CREATE LASTCHILD OF rOutResp.ResShell.ResAirIndependents AS rTempRef DOMAIN('XMLNSC') IDENTITY ResAirIndependent; 
+					SET rTempRef.GuestRefs = guestItem.*:GuestRefNumber;
+					
+					SET rTempRef.SegmentKind = 'RETURN';      
+					FOR outSegmentItem as guestItem.*:Return[1].*:ItineraryDetails[]
+					DO  
+						CREATE LASTCHILD OF rTempRef.Flights AS rflight IDENTITY Flight; 
+				   		SET rflight.LegSeqN = outSegmentItem.*:Seq;
+		           		SET rflight.Airline = outSegmentItem.*:Carrier;
+		           		SET rflight.FlightNo = outSegmentItem.*:Flight;
+		           		SET rflight.DepartureDateTime = outSegmentItem.*:DepartureTime;
+		           		SET rflight.DepartureAirport = outSegmentItem.*:DeparturePort;
+		           		SET rflight.ArrivalDateTime = outSegmentItem.*:ArrivalTime;
+		           		SET rflight.ArrivalAirport = outSegmentItem.*:ArrivalPort;
+		           		
+					END FOR;
+						
+				END IF;	
+				
+		--	END IF;	
+		END FOR;			 
+
+		RETURN TRUE;
+	END;
+	
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

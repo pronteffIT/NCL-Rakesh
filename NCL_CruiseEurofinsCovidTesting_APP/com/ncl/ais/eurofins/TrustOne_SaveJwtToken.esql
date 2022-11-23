@@ -1,0 +1,13 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+
+
+CREATE COMPUTE MODULE TrustOne_SaveJwtToken
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET rEnv.JWT_TOKEN = rIn.token;
+		SET rEnv.JWT_TOKEN_EXPIRATION = rIn.expiration; 
+		RETURN TRUE;
+	END;	
+END MODULE;

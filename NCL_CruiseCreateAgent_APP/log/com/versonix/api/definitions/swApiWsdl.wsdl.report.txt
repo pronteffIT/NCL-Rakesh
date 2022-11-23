@@ -1,0 +1,34 @@
+
+
+Importing file: E:\NCL Code\swApiWsdl.wsdl
+
+The WSDL import will proceed with bindings SwApiSoap11.
+Creating wsdl schema document for file:///E:/NCL Code/swApiWsdl.wsdl.
+Parsing wsdl binding {http://versonix.com/api/definitions}SwApiSoap11.
+Parsing wsdl binding input processAmadeus.
+Parsing wsdl binding output processAmadeus.
+Parsing wsdl binding input processPayment.
+Parsing wsdl binding output processPayment.
+Parsing wsdl binding input processEncryptDecrypt.
+Parsing wsdl binding output processEncryptDecrypt.
+Parsing wsdl binding input processBookPackages.
+Parsing wsdl binding output processBookPackages.
+Parsing wsdl binding input processXmlApi.
+Parsing wsdl binding output processXmlApi.
+Processing doc style for operation processAmadeus.
+Processing doc style for operation processPayment.
+Processing doc style for operation processEncryptDecrypt.
+Processing doc style for operation processBookPackages.
+Processing doc style for operation processXmlApi.
+Populating WSDL schema swApiWsdl.xsd.
+Creating file swApiWsdl.xsd in the workspace.
+Creating file /NCL_CruiseCreateAgent_Kunal_APP/swApiWsdl_InlineSchema1.xsd in the workspace.
+Copying source WSDL swApiWsdl.wsdl to swApiWsdl.wsdl.
+
+Elapsed time processing this message definition file: 1.343 seconds
+Number of warnings for this message definition file: 0
+
+
+Number of files processed: 1
+
+

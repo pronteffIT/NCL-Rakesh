@@ -1,0 +1,78 @@
+BROKER SCHEMA com.ncl.cvs
+
+
+CREATE COMPUTE MODULE Import_Cvs_Manifest_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.DFDL.CVS_MAINIFEST_ACK;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rHeader,rRecord,rEmailReq REFERENCE TO OutputRoot;
+		--CREATE PROCEDURE BUILD_NR_ERROR(IN eventType CHARACTER, IN fileName CHARACTER ,
+		--IN sailID CHARACTER,IN messageTxt CHARACTER ,IN status CHARACTER, INOUT rOutput REFERENCE )
+		SET rEnv.FILE_NAME =  InputLocalEnvironment.File.Name;
+		--Format NCLH_45925_GUESTELIG_Test_202106091841_DataQualityreport.txt		
+		DECLARE sailIDFromFileName CHARACTER SUBSTRING(SUBSTRING(rEnv.FILE_NAME AFTER '_') BEFORE '_');
+		DECLARE rNewRelic REFERENCE TO OutputRoot;				
+		IF LOG_TO_NEWRELIC 
+		THEN
+			CALL BUILD_NR_ERROR('CVS_MAINIFEST_ACK', rEnv.FILE_NAME , sailIDFromFileName,'Received' ,'OK', rNewRelic );
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		--Get The Provider name from the SAILING
+		DECLARE cQuery CHARACTER 'SELECT TO_CHAR(sh.sail_date_from,''YYYYMMDD'') AS SAIL_DATE_FROM,sh.PORT_FROM FROM SAIL_HEADER SH WHERE SAIL_ID = ?';
+		SET rEnv.Temp.SAIL_DATA[] = PASSTHRU(cQuery,sailIDFromFileName);
+		IF NOT EXISTS(rEnv.Temp.SAIL_DATA[]) 
+		THEN
+			CALL BUILD_NR_ERROR('CVS_MAINIFEST_ACK', rEnv.FILE_NAME , sailIDFromFileName,'Invalid SAIL ID in file' ,'ERROR', rNewRelic );
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		DECLARE PROVIDER CHARACTER ;		
+		SET PROVIDER = COALESCE(GetTestingProviderCode(rEnv.Temp.SAIL_DATA[1].PORT_FROM,rEnv.Temp.SAIL_DATA[1].SAIL_DATE_FROM),'NOT FOUND');		
+		IF PROVIDER = 'NOT FOUND' THEN
+			CALL BUILD_NR_ERROR('CVS_MAINIFEST_ACK', rEnv.FILE_NAME , sailIDFromFileName,'PORT NOT CONFIGURED :'|| rEnv.Temp.SAIL_DATA[1].PORT_FROM || ' SAIL DATE:'|| rEnv.Temp.SAIL_DATA[1].SAIL_DATE_FROM ,'ERROR', rNewRelic );
+			PROPAGATE TO TERMINAL 'out1';			
+			RETURN FALSE;
+		END IF;
+		SET OutputRoot = NULL;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		CREATE LASTCHILD OF rEnv DOMAIN('DFDL') NAME 'DFDL';				
+		CREATE LASTCHILD OF rEnv.DFDL.CVS_MAINIFEST_ACK AS rHeader NAME 'header';			
+		DECLARE cErrorMsg,cRefID CHARACTER;
+		DECLARE r REFERENCE TO InputRoot.DFDL.CVS_MAINIFEST_ACK.record[1];
+				
+		WHILE  LASTMOVE(r) = TRUE
+		DO
+			SET cErrorMsg = NULL;
+			SET cRefID = TRIM(SUBSTRING(r.REF_ID AFTER '-'));
+			DECLARE guestID DECIMAL CAST( cRefID AS DECIMAL);
+			DECLARE cRegistered CHARACTER 'N';
+			IF UPPER(TRIM(r.REG_STATUS)) = 'REGISTERED' THEN
+				SET cRegistered = 'Y'; 
+			END IF;
+			CALL ncl_upd_manifest_exch_log(guestID,PROVIDER,NULL,r.REASON,r.STATUS,cRegistered,NULL,NULL,NULL,cErrorMsg);
+			MOVE r NEXTSIBLING;			
+		END WHILE;
+		
+		IF LOG_TO_NEWRELIC 
+		THEN
+			DECLARE rNewRelic REFERENCE TO OutputRoot;
+			CALL BUILD_NR_ERROR('CVS_MAINIFEST_ACK', rEnv.FILE_NAME , sailIDFromFileName,'Processed' ,'OK', rNewRelic );
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;		
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE ncl_upd_manifest_exch_log (
+	    IN p_guest_id    DECIMAL,
+	    IN p_provider_cd  CHARACTER,
+	    IN p_ref_txt      CHARACTER,
+	    IN p_reason_txt   CHARACTER,
+	    IN p_process_cd   CHARACTER,
+	    IN p_is_registered_cd CHARACTER,
+	    IN p_email_sent_cd CHARACTER,
+	    IN p_last_email_sent_dt DATE,
+	    IN p_email_txt  CHARACTER,
+	    OUT p_error_txt   CHARACTER
+	)	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.ncl_upd_manifest_exch_log";
+END MODULE;

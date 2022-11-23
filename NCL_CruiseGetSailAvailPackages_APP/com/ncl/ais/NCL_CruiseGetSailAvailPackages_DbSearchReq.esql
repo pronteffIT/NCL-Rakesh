@@ -1,0 +1,457 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_GET_SAIL_AVAIL_PKG_RESP';
+DECLARE SWCode SHARED ROW;
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSailAvailPackages
+* MODULE NAME : DbSearchReq
+* Description : This module is used to buildrequest for DbSearch.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* -----------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseGetSailAvailPackages_DbSearchReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE ref REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSailAvailPackagesRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+		DECLARE rOutWar REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS;
+		DECLARE req INTEGER;
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(ref.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(ref.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '','','',rEnv);
+		---add input payload to logging									 	
+		
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'getSailAvailPackages input request message', 'xml', rEnv);
+	END IF;
+		SET rEnv.version = '1.0';
+		SET rEnv.Quid = ref.*:SessionId.*:SessionToken;
+		SET rEnv.lang = 'ENG';
+		------Build Request for DbSearch
+		SET req = ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		IF (req = 0) THEN
+			DETACH rOut;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS AS rOutWar;			
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			CREATE FIELD rOutWar.ns:Warnings ;
+			SET rOutWar.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutWar.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from backend , Try again Later';
+			SET rOutWar.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+--		SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--		SET rOut.MsgHeader.SessionGUID = rEnv.Quid;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Quid,rOut);
+		SET rOut.MsgHeader.Language = 'ENG';
+		SET rOut.Options.ActiveOnly = 'Y';
+		SET rOut.Options.CountOnly = 'N';
+		SET rOut.Options.FilterBySets = 'Y';
+		SET rOut.Options.IncludeDisplayRanks = 'N';
+		SET rOut.Options.MaxDuration = '60';
+		SET rOut.Settings.SectionName = 'BUSINESS RULES';
+		SET rOut.Settings.ParameterCode = 'AuthCodeAgencyPGMAmenity';
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSailAvailPackages
+* MODULE NAME : UpdateBooking
+* Description : This module is used to buildrequest for UpdateBooking.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSailAvailPackages_UpdateBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseGetSailAvailPackagesRQ;
+		DECLARE rDbSearch REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rOutUpdt REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		---IF error occur in Dbsearch
+		IF LENGTH(rDbSearch.Errors.Error.ErrorMessage) > 0 THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error in Db search...', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			SET OutputRoot.XMLNSC.Body.Errors.Error = rDbSearch.Errors.Error;
+			SET OutputRoot.XMLNSC.Body.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetSailAvailPackagesRS';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			----Store response from DbSearch in Enviroment
+			SET rEnv.DbSearchSettings.SectionName = rDbSearch.Parameter.SectionName;
+			SET rEnv.DbSearchSettings.ParameterCode = rDbSearch.Parameter.ParameterCode;
+			SET rEnv.DbSearchSettings.ParameterValue = rDbSearch.Parameter.ParameterValue;
+			SET rEnv.DbSearchSettings.ParameterType = rDbSearch.Parameter.ParameterType;
+			------build Request for UpdateBooking_IN
+			 CALL com.ncl.iib.log.AddLogEvent(NodeLabel, ' Invoke UpdateBooking ...', rEnv);
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rOutUpdt;
+--			SET rOutUpdt.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOutUpdt.MsgHeader.SessionGUID = rEnv.Quid;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Quid,rOutUpdt);
+			SET rOutUpdt.MsgHeader.Language = 'ENG';
+			SET rOutUpdt.ResShell.ResHeader.AgencyID = CAST(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID AS INTEGER);
+			SET rOutUpdt.ResShell.ResHeader.ResStatus = 'SH';
+			SET rOutUpdt.ResShell.ResHeader.SourceCode = rIn.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code;
+			IF LENGTH(rIn.*:OfficeCode) > 2 THEN
+				SET rOutUpdt.ResShell.ResHeader.OfficeCode = rIn.*:OfficeCode;
+			ELSE
+				SET rOutUpdt.ResShell.ResHeader.OfficeCode = 'NCL INTL';
+			END IF;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSailAvailPackages
+* MODULE NAME : GetAvailPrimPackages_IN
+* Description : This module is used to buildrequest for GetAvailPrimPackages_IN.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSailAvailPackages_GetAvailPrimPackages_IN
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE ref REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSailAvailPackagesRQ;
+		DECLARE rOutWar REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS;
+		DECLARE req INTEGER;
+		DECLARE code,regionCode,codeType,querry CHARACTER;
+		DECLARE rPrimPackages REFERENCE TO OutputRoot.XMLNSC.GetAvailPrimPackages_IN;
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(ref.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(ref.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '','','',rEnv);
+		---add input payload to logging									 	
+		
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'getSailAvailPackages input request message', 'xml', rEnv);
+	END IF;
+		SET rEnv.version = '1.0';
+		SET rEnv.Quid = ref.*:SessionId.*:SessionToken;
+		SET rEnv.lang = 'ENG';
+		------Build Request for DbSearch
+		SET req = ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		IF (req = 0) THEN
+--			DETACH rOut;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS AS rOutWar;			
+--			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			CREATE FIELD rOutWar.ns:Warnings ;
+			SET rOutWar.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutWar.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from backend , Try again Later';
+			SET rOutWar.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+
+			--request for availPrimPackages
+			CREATE FIELD OutputRoot.XMLNSC.GetAvailPrimPackages_IN AS rPrimPackages;
+			SET rPrimPackages.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			-- not passing the SessionGUID
+--			SET rPrimPackages.MsgHeader.SessionGUID = rEnv.Quid ;
+			SET rPrimPackages.MsgHeader.Language = 'ENG';
+			SET rPrimPackages.MsgHeader.CallerInfo.UserInfo.Internal.Username = 'NCLWEBC';
+			SET rPrimPackages.MsgHeader.CallerInfo.UserInfo.Internal.Password = 'NCLWEBC';
+			SET rPrimPackages.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = 'NCLWEBC';
+			
+			SET rPrimPackages.SearchParams.PackageStartRange.From = CAST(ref.*:SailingDateRange.*:Start AS DATE FORMAT 'yyyy-MM-dd');
+			IF LENGTH(ref.*:SailingDateRange.*:End) > 0 THEN
+				SET rPrimPackages.SearchParams.PackageStartRange.To = CAST(ref.*:SailingDateRange.*:End AS DATE FORMAT 'yyyy-MM-dd') ;
+			ELSE
+				SET rPrimPackages.SearchParams.PackageStartRange.To = CAST(ref.*:SailingDateRange.*:Start AS DATE FORMAT 'yyyy-MM-dd') ;
+			END IF;
+			IF LENGTH(ref.*:SailingDateRange.*:Duration) > 0 THEN
+				DECLARE duration,days CHARACTER;
+				DECLARE dayIndex ,prefixIndex INTEGER;
+				SET duration = ref.*:SailingDateRange.*:Duration;
+				SET dayIndex = POSITION('D' IN duration);
+				IF dayIndex = -1 THEN
+					SET dayIndex = LENGTH(duration);
+				END IF;
+				SET prefixIndex = POSITION('P' IN duration);
+				SET days = SUBSTRING(duration FROM prefixIndex FOR dayIndex);
+				SET rPrimPackages.SearchParams.PackageLenRange.Min = CAST(days AS INTEGER);
+				SET rPrimPackages.SearchParams.PackageLenRange.Max = CAST(days AS INTEGER);
+			ELSE
+				SET rPrimPackages.SearchParams.PackageLenRange.Min = 0;
+				SET rPrimPackages.SearchParams.PackageLenRange.Max = 99;
+			END IF;
+			
+			SET rPrimPackages.SearchParams.Ships.Ship = ref.*:ShipDetails.*:ShipCode;
+			SET codeType = 'GeoArea';
+			SET code = ref.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET regionCode = ref.*:RegionDetails.*:RegionCode;
+			IF NOT EXISTS(SWCode.result[]) THEN
+				SET querry= 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+				DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+				INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+				INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+				TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? ';
+				SET SWCode.result[] = PASSTHRU(querry VALUES(code,codeType));
+			END IF;
+			
+			SET rPrimPackages.SearchParams.Destinations.Destination = THE(SELECT ITEM A.SW_CODE FROM SWCode.result[] AS A WHERE A.EXTERNAL_CODE=code);
+			SET rPrimPackages.SearchParams.Promotions.PromoCode = '$Force_program';
+			SET rPrimPackages.SearchOptions.AvailabilityMode = 'GTY';
+			SET rPrimPackages.SearchOptions.IncludeComponents = 'Y';
+			SET rPrimPackages.SearchOptions.ExcludeOccupancy = 'Y';
+			SET rPrimPackages.SearchOptions.CalcPrices = 'N';
+			SET rPrimPackages.SearchOptions.IncludeCategories = 'N';
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSailAvailPackages
+* MODULE NAME : DbSearchReq
+* Description : This module is used to buildrequest for DbSearch.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSailAvailPackages_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutPkgs REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseGetSailAvailPackagesRQ;
+		DECLARE rInGetSail REFERENCE TO InputRoot.XMLNSC.GetAvailPrimPackages_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS;
+		DECLARE rAvail REFERENCE TO rInGetSail.AvailPackages.AvailPackage;
+		DECLARE bPayload BLOB ;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+	    SET OutputRoot.MQRFH2.usr.Endpoint  = COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+		
+		---If occur error in AvailPRimPackages Response
+		IF EXISTS(rInGetSail.Errors.Error.ErrorMessage[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur while invoking GetAvailPrimPackages ...', rEnv);
+			SET OutputRoot.XMLNSC.Body.Errors.Error = rInGetSail.Errors.Error;
+			SET OutputRoot.XMLNSC.Body.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePayForAmenitiesRS';
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+
+		ELSEIF EXISTS(rInGetSail.AvailPackages.AvailPackage[]) THEN
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS AS rOut;
+			SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+			CREATE FIELD rOut.ns:Success ;
+			FOR source AS rInGetSail.AvailPackages.AvailPackage[] DO
+				SET rEnv.Temp[] = SELECT a.Sail FROM source.Package.Components.Component[] AS a WHERE a.BaseType = 'SAIL';
+				IF (source.Package.Vacation.From > rEnv.Temp.Sail.From.DateTime)
+					OR (source.Package.Vacation.To > rEnv.Temp.Sail.To.DateTime) THEN
+					SET rEnv.exclusionFlag ='1';
+				ELSE
+					SET rEnv.exclusionFlag ='0';
+				END IF;
+				--------build response Package Details
+				IF source.Package.GroupColor <> 'RED' OR rEnv.exclusionFlag <> '1' THEN
+					CREATE LASTCHILD OF rOut.ns:Packages AS rOutPkgs NAMESPACE ns NAME 'Package';
+					SET rOutPkgs.ns:VoyageID = source.Package.PackageID;
+					SET rOutPkgs.ns:SailID = source.Package.SailID;
+					SET rOutPkgs.ns:Start = SUBSTRING( rEnv.Temp.Sail.From.DateTime FROM 1 FOR 10);
+					SET rOutPkgs.ns:Duration = 'P' ||source.Package.SailDays|| 'D';
+					SET rOutPkgs.ns:End = SUBSTRING(rEnv.Temp.Sail.To.DateTime FROM 1 FOR 10);
+					SET rOutPkgs.ns:ShipDetails.ns:ShipCode = rEnv.Temp.Sail.Ship;
+					SET rOutPkgs.ns:RegionDetails.ns:RegionCode = source.Package.Destination;
+					SET rOutPkgs.ns:PackageDescription = source.Package.Description;
+					DETACH rEnv.Temp;
+				END IF;
+			END FOR;
+			-----payload aaded
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get Sail Avail message', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+           ---------If no package Exsist
+		ELSEIF NOT EXISTS(rOut.ns:Packages[]) THEN
+			DELETE FIELD rOut.ns:Success ;
+       	    CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS AS rOut;			
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.ns:Warnings ;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '92000';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'No sailings available for request.  Please change request';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			----payload aaded
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get Sail Avail response message ', 'xml', rEnv);
+		END IF;
+		END IF;
+RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSailAvailPackages
+* MODULE NAME : RuntimeError
+* Description : This module is used to build Response for RuntimeError.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetSailAvailPackages_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseGetSailAvailPackagesRQ;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			---call logging Procedure
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking api', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		    END IF;
+			---Build Response for RuntimeError
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetSailAvailPackagesRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Warnings.ns:Warning = cErrorText;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System backend error , please try again later';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSailAvailPackages
+* MODULE NAME : ExceptionHandler
+* Description : This module is used to build Response for ExceptionHandler.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSailAvailPackages_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'GetSailAvail Invalid request message', 'xml', rEnv);
+		END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+	END;
+END MODULE;

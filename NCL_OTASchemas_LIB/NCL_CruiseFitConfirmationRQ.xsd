@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2005 rel. 3 U (http://www.altova.com) by Mayra Rodriguez (Norwegian Cruise Line) -->
+<!-- edited with XMLSPY v5 rel. 2 U (http://www.xmlspy.com) by Eric Bousquet (AMADEUS) -->
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="2.1" id="OTA2005B">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseFitConfirmationRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The  FIT COnfirmation Request message requests the  Confirmation to be sent as a pdf to the specified email address. </xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale object.  Contains information about the message sender.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Email" type="EmailType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Contains the agency related search criteria</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ReservationID" type="UniqueID_Type"/>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+			<xs:attributeGroup ref="ResponseGroup"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

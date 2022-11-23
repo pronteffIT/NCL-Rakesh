@@ -1,0 +1,798 @@
+
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_UPDATELCB_RESP';
+DECLARE ExternalChache SHARED ROW;
+DECLARE ExternalCacheStatus SHARED ROW;
+DECLARE LogPayLoad EXTERNAL BOOLEAN False;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : LogIn
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_LogIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:LCBID, ''),
+		'',
+		'',
+		rEnv);
+		--add payload to logging
+		IF (LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, ' CruiseUpdateLCB request message', 'xml', rEnv);
+		END IF;
+		----preparing Login request
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		SET rOut.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : StoreTW_Req
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_StoreTW_Req
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		DECLARE rUpdateTWRes REFERENCE TO InputRoot.XMLNSC.UpdateTW_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS;
+		-- handle errors in the UpdateTW_OUT response
+		IF EXISTS(rUpdateTWRes.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UpdateTW returned errors ...', rEnv);
+
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			SET rOut.ns:Warnings.ns:Warning = rUpdateTWRes.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rUpdateTWRes.Errors.Error.ErrorMessage FROM 1 FOR 64);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE ;
+
+		END IF;
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke StoreTW api', rEnv);
+		DECLARE rStoreTW REFERENCE TO OutputRoot.XMLNSC.StoreTW_IN;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.StoreTW_IN AS rStoreTW;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rStoreTW);
+--		SET rStoreTW.MsgHeader.Version = VersonixAPIVersion;
+--		SET rStoreTW.MsgHeader.SessionGUID = rEnv.SessionId;
+		SET rStoreTW.Options.Unlock = 'Y';
+
+
+		IF rUpdateTWRes.TwShell.TwHeader.TwID IS NOT NULL THEN
+			SET rStoreTW.TwID = rUpdateTWRes.TwShell.TwHeader.TwID;
+		END IF;
+
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : StoreTWResp
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_StoreTWResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		DECLARE rStoreTW REFERENCE TO InputRoot.XMLNSC.StoreTW_OUT;
+		DECLARE rUpdateLCBRS REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rUpdateLCBRS;
+		--------response for warning and other default
+		IF EXISTS(rStoreTW.Errors.Error[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur while StoreTW api', rEnv);
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rUpdateLCBRS);
+			--warning
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning = rStoreTW.Errors.Error.ErrorMessage;
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText =SUBSTRING(rStoreTW.Errors.Error.ErrorMessage FROM 1 FOR 64);
+
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+		ELSE
+			-- Build Response
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rUpdateLCBRS);
+
+			CREATE LASTCHILD OF rUpdateLCBRS NAMESPACE ns NAME 'Success';
+
+			SET rUpdateLCBRS.ns:Type = rStoreTW.TwShell.TwHeader.Type;
+			SET rUpdateLCBRS.ns:LCBID = rStoreTW.TwShell.TwHeader.TwID;
+			--add payload
+			IF(LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseUpdateLCB Response message', 'xml', rEnv);
+		END IF;
+
+	END IF;
+
+END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : DeleteTWResponse
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 15/Apr/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_DeleteTWResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		DECLARE rDeleteTW REFERENCE TO InputRoot.XMLNSC.DeleteTW_OUT;
+		DECLARE rUpdateLCBRS REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rUpdateLCBRS;
+		--------response for warning and other default
+		IF EXISTS(rDeleteTW.Errors.Error[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur while DeleteTW api', rEnv);
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rUpdateLCBRS);
+			--warning
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning = rDeleteTW.Errors.Error.ErrorMessage;
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText =SUBSTRING(rDeleteTW.Errors.Error.ErrorMessage FROM 1 FOR 64);
+
+			SET rUpdateLCBRS.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+		ELSE
+			-- Build Response
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rUpdateLCBRS);
+
+			CREATE LASTCHILD OF rUpdateLCBRS NAMESPACE ns NAME 'Success';
+			--add payload
+			IF(LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseUpdateLCB Response message', 'xml', rEnv);
+		END IF;
+
+	END IF;
+
+END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : UpdateTW_Req
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_UpdateTW_Req
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rTwDetails,rTwDetail,rResID,vReservation,rGuestClientID REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		DECLARE rLoadTWRes REFERENCE TO InputRoot.XMLNSC.LoadTW_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS;
+		DECLARE rUpdateTW REFERENCE TO OutputRoot.XMLNSC.UpdateTW_IN;
+		DECLARE rDeleteTW_IN REFERENCE TO OutputRoot.XMLNSC.DeleteTW_IN;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rTwDetailCount INTEGER 0;
+		-- handle errors in the LoadTW_OUT response
+		IF EXISTS(rLoadTWRes.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'LoadTW returned errors ...', rEnv);
+
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			SET rOut.ns:Warnings.ns:Warning = rLoadTWRes.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rLoadTWRes.Errors.Error.ErrorMessage FROM 1 FOR 64);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE ;
+
+		END IF;
+
+		IF EXISTS(rIn.*:UpdateLCB[]) THEN
+
+			IF (UCASE(rIn.*:UpdateLCB.*:Mode) = 'REMOVE') THEN
+				SET rTwDetailCount = CARDINALITY(rLoadTWRes.TwShell.TwDetails.TwDetail[]);
+				-- DeleteTW_IN
+				IF (rTwDetailCount = 2) THEN -- IF LCB has exact two reservations, then remove the LCB
+
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke DeleteTW_IN api', rEnv);
+					SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+					CREATE FIELD OutputRoot.XMLNSC.DeleteTW_IN AS rDeleteTW_IN;
+					CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rDeleteTW_IN);
+--					SET rDeleteTW_IN.MsgHeader.Version = VersonixAPIVersion;
+--					SET rDeleteTW_IN.MsgHeader.SessionGUID = rEnv.SessionId;
+					SET rDeleteTW_IN.TwID = rIn.*:LCBID;
+
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE ;
+				ELSEIF (rTwDetailCount > 2) THEN -- Remove Reservation from LCB
+					-- Checking whether the Reservation sent in the request message is associated with LCB or not
+					SET rEnv.Temp.RemoveCheckResid[] = SELECT ITEM RC.ResID FROM rLoadTWRes.TwShell.TwDetails.TwDetail[] AS RC WHERE RC.ResID = rIn.*:UpdateLCB.*:ResID;
+
+					IF NOT EXISTS(rEnv.Temp.RemoveCheckResid[]) THEN
+
+						SET OutputRoot.MQMD = rEnv.MQMD;
+						CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+						-- If error exist from the callable invoke then send to Generic warning
+						CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+						SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+						SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Reservation does not exists for this LCB';
+						SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+						PROPAGATE TO TERMINAL 'out2';
+						RETURN FALSE;
+
+					ELSE
+						CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke UpdateTW api', rEnv);
+
+						SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+						CREATE FIELD OutputRoot.XMLNSC.UpdateTW_IN AS rUpdateTW;
+						CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rUpdateTW);
+--						SET rUpdateTW.MsgHeader.Version = VersonixAPIVersion;
+--						SET rUpdateTW.MsgHeader.SessionGUID = rEnv.SessionId;
+
+						SET rUpdateTW.TwShell.TwHeader.TwID = rIn.*:LCBID;
+						SET rUpdateTW.TwShell.TwHeader.Type = 'AB';
+
+						IF EXISTS(rLoadTWRes.*:TwShell.*:TwDetails.*:TwDetail[]) THEN
+
+							CREATE LASTCHILD OF rUpdateTW.TwShell AS rTwDetails IDENTITY TwDetails ;
+
+							FOR rTwDetailItem as rLoadTWRes.*:TwShell.*:TwDetails.*:TwDetail[]
+								DO
+								IF NOT (rTwDetailItem.ResID = rIn.*:UpdateLCB.*:ResID) THEN
+									CREATE LASTCHILD OF rTwDetails AS rTwDetail IDENTITY TwDetail ;
+									CREATE LASTCHILD OF rTwDetail AS rResID IDENTITY ResID ;
+									SET rResID = rTwDetailItem.ResID;
+								END IF;
+							END FOR;
+						END IF;
+
+						PROPAGATE TO TERMINAL 'out';
+						RETURN FALSE ;
+
+					END IF;
+
+				END IF;
+
+			END IF;
+
+			IF (UCASE(rIn.*:UpdateLCB.*:Mode) = 'ADD' AND UCASE(COALESCE(rIn.*:UpdateLCB.*:VerifyPackageAndCurrency,'false')) = 'FALSE') THEN
+
+				SET rEnv.DupilcateResIDs.ReservationID[] = SELECT A.ResID FROM rLoadTWRes.TwShell.TwDetails.TwDetail[] AS A WHERE A.ResID = rIn.*:UpdateLCB.*:ResID;
+
+				IF NOT EXISTS (rEnv.DupilcateResIDs.ReservationID[]) THEN
+					CALL BuildUpdateTW_IN(rEnv,rIn,rLoadTWRes,rOutRoot);
+				ELSE
+					SET OutputRoot.MQMD = rEnv.MQMD ;
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+					-- If error exist from the callable invoke then send to Generic warning
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+					SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+					SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Reservation already present in this LCB';
+					SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+					PROPAGATE TO TERMINAL 'out2';
+					RETURN FALSE;
+				END IF;
+
+			END IF;
+
+			IF (UCASE(rIn.*:UpdateLCB.*:Mode) = 'ADD' AND UCASE(COALESCE(rIn.*:UpdateLCB.*:VerifyPackageAndCurrency,'false')) = 'TRUE') THEN
+
+				SET rEnv.DupilcateResIDs.ReservationID[] = SELECT A.ResID FROM rLoadTWRes.TwShell.TwDetails.TwDetail[] AS A WHERE A.ResID = rIn.*:UpdateLCB.*:ResID;
+
+				IF EXISTS (rEnv.DupilcateResIDs.ReservationID[]) THEN
+					SET OutputRoot.MQMD = rEnv.MQMD;
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+					-- If error exist from the callable invoke then send to Generic warning
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+					SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+					SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Reservation already present in this LCB';
+					SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+					PROPAGATE TO TERMINAL 'out2';
+					RETURN FALSE;
+				END IF;
+
+				CREATE FIELD rEnv.Reservation AS vReservation;
+				SET vReservation.ResID = rIn.*:UpdateLCB.*:ResID;
+
+				FOR rTwDetailItem as rLoadTWRes.*:TwShell.*:TwDetails.*:TwDetail[]
+					DO
+					CREATE LASTCHILD OF vReservation AS rResID IDENTITY ResID;
+					SET rResID = rTwDetailItem.ResID;
+
+				END FOR;
+				-- Invoke the LoadBooking Vx api
+				PROPAGATE TO LABEL 'LoadBooking';
+
+				FOR rLoadBkg AS rEnv.LoadBookingOut.LoadBooking_OUT[] DO
+					-- Checking Loading Booking Errors
+					IF EXISTS(rLoadBkg.Errors.Error[]) THEN
+						-----Validation Warning
+						CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur in LoadBooking ...', rEnv);
+						SET OutputRoot.MQMD = rEnv.MQMD;
+						CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+						CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+						SET rOut.ns:Warnings.ns:Warning = rLoadBkg.Errors.Error.ErrorMessage;
+						SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+						SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rLoadBkg.Errors.Error.ErrorMessage FROM 1 FOR 64);
+						SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+						PROPAGATE TO TERMINAL 'out2';
+						RETURN FALSE;
+					END IF;
+
+					IF NOT EXISTS(rEnv.Currency[]) THEN
+						SET rEnv.Currency = rLoadBkg.*:ResShell.*:ResHeader.*:Currency;
+					END IF;
+					-- Verify the Currency
+					IF rEnv.Currency = rLoadBkg.*:ResShell.*:ResHeader.*:Currency THEN
+
+						IF NOT EXISTS(rEnv.LbResPckg.PackageIDs[]) THEN
+							SET rEnv.LbResPckg.PackageIDs[] = SELECT A.PackageID FROM rLoadBkg.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE';
+
+						ELSE
+							FOR rPkgId AS rEnv.LbResPckg.PackageIDs[] DO
+								SET rEnv.TempPkgId.PackageIDs[] = SELECT A.PackageID FROM rLoadBkg.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageID = rPkgId.*:PackageID;
+								IF NOT EXISTS (rEnv.TempPkgId.PackageIDs[]) THEN
+									SET OutputRoot.MQMD = rEnv.MQMD ;
+									CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+									-- If error exist from the callable invoke then send to Generic warning
+									CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+									SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+									SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'LCB cannot be created, one or more reservations has different package ID';
+									SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+									PROPAGATE TO TERMINAL 'out2';
+									RETURN FALSE;
+								END IF;
+								DELETE FIELD rEnv.TempPkgId;
+							END FOR;
+						END IF;
+					ELSE
+						SET OutputRoot.MQMD = rEnv.MQMD ;
+						CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+						-- If error exist from the callable invoke then send to Generic warning
+						CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+						SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+						SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'LCB cannot be created, one or more reservations has different currency';
+						SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+
+						PROPAGATE TO TERMINAL 'out2';
+						RETURN FALSE;
+					END IF;
+
+				END FOR;
+				CALL BuildUpdateTW_IN(rEnv,rIn,rLoadTWRes,rOutRoot);
+
+			END IF;
+
+		ELSEIF EXISTS(rIn.*:SetLeadGuest[]) THEN
+
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke UpdateTW api', rEnv);
+
+			CREATE FIELD rEnv.Reservation AS vReservation;
+			SET vReservation.ResID = rIn.*:UpdateLCB.*:ResID;
+
+			FOR rTwDetailItem as rLoadTWRes.*:TwShell.*:TwDetails.*:TwDetail[]
+				DO
+				CREATE LASTCHILD OF vReservation AS rResID IDENTITY ResID;
+				SET rResID = rTwDetailItem.ResID;
+
+			END FOR;
+			-- Invoke the LoadBooking Vx api
+			PROPAGATE TO LABEL 'LoadBooking';
+			-- Checking Loading Booking Errors
+			FOR rLoadBkg AS rEnv.LoadBookingOut.LoadBooking_OUT[] DO
+				IF EXISTS(rLoadBkg.Errors.Error[]) THEN
+					-----Validation Warning
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur in LoadBooking ...', rEnv);
+					SET OutputRoot.MQMD = rEnv.MQMD;
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+					SET rOut.ns:Warnings.ns:Warning = rLoadBkg.Errors.Error.ErrorMessage;
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rLoadBkg.Errors.Error.ErrorMessage FROM 1 FOR 64);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+					PROPAGATE TO TERMINAL 'out2';
+					RETURN FALSE;
+				END IF;
+
+				FOR rResGuest AS rLoadBkg.*:ResShell.*:ResGuests.*:ResGuest[] DO
+					-- Collecting all the Guests ClientID
+					CREATE LASTCHILD OF rEnv.GuestClientids AS rGuestClientID NAME 'GuestClientID';
+					SET rGuestClientID = rResGuest.ClientID;
+				END FOR;
+
+			END FOR;
+
+			SET rEnv.Temp.CheckGuestClientID[] = SELECT ITEM CL FROM rEnv.GuestClientids.GuestClientID[] AS CL WHERE CL = rIn.*:SetLeadGuest.*:PrimaryGuest;
+			-- Checking whether the PrimaryGuest from the request is present in the LoadBooking Guest ClientID
+			IF EXISTS(rEnv.Temp.CheckGuestClientID[]) THEN
+
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+				CREATE FIELD OutputRoot.XMLNSC.UpdateTW_IN AS rUpdateTW;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rUpdateTW);
+--				SET rUpdateTW.MsgHeader.Version = VersonixAPIVersion;
+--				SET rUpdateTW.MsgHeader.SessionGUID = rEnv.SessionId;
+
+				SET rUpdateTW.TwShell.TwHeader.TwID = rIn.*:LCBID;
+				SET rUpdateTW.TwShell.TwHeader.Type = 'AB';
+
+				SET rUpdateTW.TwShell.TwHeader.ResponsibleClient = rIn.*:SetLeadGuest.*:PrimaryGuest;
+				SET rUpdateTW.TwShell.TwHeader.Comments = rIn.*:SetLeadGuest.*:Comments;
+				SET rUpdateTW.TwShell.TwDetails = rLoadTWRes.TwShell.TwDetails;
+			ELSE
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+				-- If error exist from the callable invoke then send to Generic warning
+				CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Invalid PrimaryGuest(ClientID) which is not part of Reservations for this LCB';
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+			END IF;
+
+		END IF;
+
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* PROCEDURE : BuildUpdateTW_IN
+* Description :
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE PROCEDURE BuildUpdateTW_IN(INOUT rEnv REFERENCE,IN rIn REFERENCE, IN rLoadTWRes REFERENCE, INOUT OutputRoot REFERENCE)
+BEGIN
+
+	DECLARE rTwDetails,rTwDetail,rResID REFERENCE TO rEnv;
+	DECLARE rUpdateTW REFERENCE TO OutputRoot.XMLNSC.UpdateTW_IN;
+	CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke UpdateTW api', rEnv);
+
+	SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+	CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	CREATE FIELD OutputRoot.XMLNSC.UpdateTW_IN AS rUpdateTW;
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rUpdateTW);
+--	SET rUpdateTW.MsgHeader.Version = VersonixAPIVersion;
+--	SET rUpdateTW.MsgHeader.SessionGUID = rEnv.SessionId;
+
+	SET rUpdateTW.TwShell.TwHeader.TwID = rIn.*:LCBID;
+	SET rUpdateTW.TwShell.TwHeader.Type = 'AB';
+
+	IF EXISTS(rLoadTWRes.*:TwShell.*:TwDetails.*:TwDetail[]) THEN
+
+		CREATE LASTCHILD OF rUpdateTW.TwShell AS rTwDetails IDENTITY TwDetails ;
+
+		FOR rTwDetailItem as rLoadTWRes.*:TwShell.*:TwDetails.*:TwDetail[]
+			DO
+			CREATE LASTCHILD OF rTwDetails AS rTwDetail IDENTITY TwDetail ;
+			CREATE LASTCHILD OF rTwDetail AS rResID IDENTITY ResID ;
+			SET rResID = rTwDetailItem.ResID;
+
+		END FOR;
+	END IF;
+
+	CREATE LASTCHILD OF rTwDetails AS rTwDetail IDENTITY TwDetail ;
+	CREATE LASTCHILD OF rTwDetail AS rResID IDENTITY ResID ;
+	SET rResID = rIn.*:UpdateLCB.*:ResID;
+
+END;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : RuntimeError
+* Description : This module is used for RuntimeError.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		DECLARE bPayload BLOB;
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateLCBRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseUpdateLCB response message', 'xml', rEnv);
+		END IF;
+
+		RETURN TRUE;
+
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : LoadTW
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_LoadTW
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseUpdateLCBRQ;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS;
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--copy parameter from login out
+		SET rEnv.agencyId = rAgency.agencyID ;
+		-- SET rEnv.agencyCurrency =rAgency.agencyCurrency;
+		SET rEnv.SessionId = rAgency.sessionGUID;
+		SET rEnv.Temp.Endpoint = COALESCE(rAgency.endpoint, '');
+		-- This flow will decide the path to carryon based on the response obtained from the Callable flow.
+		IF EXISTS(rAgency.agencyNotFound.(XMLNSC.Attribute)ShortText[]) OR
+			EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)ShortText[]) OR
+			EXISTS (rAgency.loginError.(XMLNSC.Attribute)ShortText[])
+			THEN
+			SET OutputRoot.MQMD = rEnv.MQMD ;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateLCBRS AS rOut;
+			-- If error exist from the callable invoke then send to Generic warning
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rAgency,rOut);
+			-- log payload
+			IF LogPayLoad THEN
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseUpdateLCB message', 'xml', rEnv);
+			END IF;
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke LoadTW api', rEnv);
+			DECLARE rLoadTW REFERENCE TO OutputRoot.XMLNSC.LoadTW_IN;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.LoadTW_IN AS rLoadTW;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rLoadTW);
+--			SET rLoadTW.MsgHeader.Version = VersonixAPIVersion;
+--			SET rLoadTW.MsgHeader.SessionGUID = rEnv.SessionId;
+			SET rLoadTW.Options.Lock = 'Y';
+
+			SET rLoadTW.TwID = rIn.*:LCBID;
+
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : Exception
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 28/Mar/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseUpdateLCB Invalid request message', 'xml', rEnv);
+		END IF;
+	END IF;
+
+	SET OutputRoot = InputRoot;
+	SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : LoadBookingReq
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 17/Apr/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateLCB_LoadBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rEnvResId,rOut REFERENCE TO Environment.Variables;
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke LoadBooking api', rEnv);
+
+		FOR rResId AS rEnv.Reservation.ResID[] DO
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF rEnv.ResIDs AS rEnvResId NAME 'ResID';
+			SET rEnvResId = rResId;
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionId;
+--			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+			SET rOut.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages';
+			SET rOut.ResID = rResId;
+			PROPAGATE TO TERMINAL 'out';
+		END FOR;
+		RETURN FALSE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* FLOW NAME : NCL_CruiseUpdateLCB
+* MODULE NAME : LoadBookingReq
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 17/Apr/2019 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateLCB_LoadBookingRes
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rLoadBkg REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		CREATE LASTCHILD OF rEnv.LoadBookingOut AS rLoadBkg DOMAIN('XMLNSC') NAME 'LoadBooking_OUT';
+		SET rLoadBkg = rIn;
+	END;
+END MODULE;

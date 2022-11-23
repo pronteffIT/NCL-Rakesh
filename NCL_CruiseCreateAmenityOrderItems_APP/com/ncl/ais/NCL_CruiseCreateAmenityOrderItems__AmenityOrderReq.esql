@@ -1,0 +1,119 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateAmenityOrderItems__AmenityOrderReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rIn,rResp,rEnvXmlNsc,rWarn,rError,rOut, rOutMsg REFERENCE TO Environment.Variables;
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE bPayload BLOB;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE rInManageSession REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		CREATE LASTCHILD OF rEnv AS rEnvXmlNsc DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF rEnvXmlNsc AS rResp IDENTITY sc:NCL_CruiseCreateAmenityOrderItemsRS;
+		-- Copy root level attributes from environment
+		CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rResp);	
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from ValidateBookingSource service...', rEnv);
+		
+		IF EXISTS (InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID[]) 
+		THEN
+			--CREATE LASTCHILD OF rResp IDENTITY sc:Success;
+			SET rEnv.sessionID = InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID;
+			SET rEnv.agencyID = InputRoot.XMLNSC.VerifyAgencyResponse.agencyID;
+			SET rEnv.Temp.Endpoint =  InputRoot.XMLNSC.VerifyAgencyResponse.endpoint;
+		ELSE
+			SET rIn = InputRoot.XMLNSC.VerifyAgencyResponse;			
+			-- Call service to map errors to errors or warnings structure of response	
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rIn, rResp);			
+			-- Send the appropriate error response and end flow
+			CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+			-- Set the MQMD header details from the Environment
+			SET OutputRoot.MQMD = Environment.MQMD;
+			--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+			
+			SET OutputRoot.XMLNSC = rEnvXmlNsc;
+			
+			-- Log the response payload
+			SET bPayload = OutputRoot.XMLNSC;
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateAmenityOrderItems response message', 'xml', rEnv);
+			END IF ;
+			PROPAGATE TO TERMINAL 'out1';			
+			RETURN FALSE;			
+		END IF;		
+		
+		DECLARE cTts CHARACTER CURRENT_GMTTIMESTAMP;
+		DECLARE cTs  CHARACTER;
+		DECLARE sailDate CHARACTER;
+		--DECLARE sailDate TIMESTAMP;
+		DECLARE queryResult ROW ;
+		DECLARE rVXReq, rAmenityOrder,rAmOrderHdr,rAmOrderItem,rAmOrderItems,rInvoiceItems,rInvoiceItem REFERENCE TO Environment.Variables;		
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE rEnvInAmOrder REFERENCE TO rEnvIn.*:AmenityOrder;
+		DECLARE rEnvInReqInfo REFERENCE TO rEnvInAmOrder.*:RequestorInfo;
+		DECLARE rEnvInAmOrderInfo REFERENCE TO rEnvInAmOrder.*:AmenityOrderInfo;
+		
+		-- Compute the sailDate		
+		-- SET queryResult = PASSTHRU('SELECT RH.SAIL_DATE_FROM FROM SEA.RES_HEADER RH WHERE RH.RES_ID=?',
+		--					rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);
+		
+		-- SET sailDate = queryResult.SAIL_DATE_FROM;
+
+		SET sailDate = THE(SELECT ITEM RH.SAIL_DATE_FROM FROM Database.SEA.RES_HEADER AS RH 
+						WHERE RH.RES_ID = rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);
+				
+		-- Compute AmenityCount	
+		SET rEnv.InitialAmenityCount = com.ncl.ais.utils.GetAmenityCountByResID(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);	 
+		
+		-- Convert the GMT Timestamp to the required format
+		SET cTs = SUBSTRING (cTts FROM 15 FOR 10)||'T'|| SUBSTRING (cTts FROM 26 FOR 12 ) || 'Z';
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking StoreAmenity service...', rEnv);
+		
+		-- Prepare the request message to call Versonix Store Amenity API
+		--CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rVXReq IDENTITY UpdateAmenityOrder_IN;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rVXReq);
+--		SET rVXReq.MsgHeader.Version = VersonixAPIVersion;
+--		SET rVXReq.MsgHeader.SessionGUID = rEnv.sessionID;
+		SET rVXReq.Options.Store = 'Y';
+		
+		CREATE LASTCHILD OF rVXReq AS rAmenityOrder IDENTITY AmenityOrder;
+		CREATE LASTCHILD OF rAmenityOrder AS rAmOrderHdr IDENTITY AmOrderHeader;		
+		
+		SET rAmOrderHdr.OrderDate = cTs; 			 
+		SET rAmOrderHdr.OrderStatus = com.ncl.ais.utils.FindVersonixCode(rEnvInAmOrder.(XMLNSC.Attribute)Status, 
+								COALESCE(rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC'));
+		SET rAmOrderHdr.OrderDescription = FIELDVALUE(rEnvInAmOrderInfo.*:OrderDescription);
+		SET rAmOrderHdr.Comments = ''; 
+		SET rAmOrderHdr.RequesterType = FIELDVALUE(rEnvInReqInfo.(XMLNSC.Attribute)OriginatorType);
+		SET rAmOrderHdr.RequesterID = COALESCE(CAST(rEnvInReqInfo.(XMLNSC.Attribute)ID AS INTEGER), 0); 
+		SET rAmOrderHdr.RequesterName = rEnvInReqInfo.*:Name.*:Surname; 
+		SET rAmOrderHdr.RequesterPhone = rEnvInReqInfo.*:Phone; 
+		SET rAmOrderHdr.RecipientType = 'FIT';
+		SET rAmOrderHdr.RecipientID = COALESCE(CAST(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)ID AS INTEGER), 0);
+		SET rAmOrderHdr.RecipientStatus = com.ncl.ais.utils.FindVersonixStatus(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)Status,
+											COALESCE(rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC'));
+		SET rAmOrderHdr.OrderValid = rEnvInAmOrder.*:AmenityOrderInfo.*:ISOrderValid;
+		SET rAmOrderHdr.DispatchedDate = cTs;									
+		SET rAmOrderHdr.DispatchedOK = rEnvInAmOrder.*:AmenityOrderInfo.*:ISDispatchedOK; 
+		SET rAmOrderHdr.TerminationCompleted = rEnvInAmOrder.*:AmenityOrderInfo.*:ISTerminationCompleted;
+		SET rAmOrderHdr.GiftCardTo = rEnvInAmOrder.*:GiftCardInfo.*:GiftCardTo.*:Surname;
+		SET rAmOrderHdr.GiftCardMessage = rEnvInAmOrder.*:GiftCardInfo.*:GiftCardMessage;
+		SET rAmOrderHdr.ComplimentsOf = rEnvInAmOrder.*:GiftCardInfo.*:GiftCardComplimentsOf;
+		SET rAmOrderHdr.CancelRefundDone = rEnvInAmOrder.*:AmenityOrderInfo.*:ISRefundDoneAfterCancellation;
+		SET rAmOrderHdr.Currency = FIELDVALUE(rEnvInAmOrder.*:AmenityOrderInfo.*:Currency.(XMLNSC.Attribute)CurrencyCode);
+		SET rAmOrderHdr.InvoiceValid = rEnvInAmOrder.*:AmenityOrderInfo.*:ISInvoiceValid;				
+		RETURN TRUE;
+	END;
+END MODULE;
+

@@ -1,0 +1,47 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE GetUserInfo_LookupUserInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		DECLARE cUserinfo, cCacheVal CHARACTER '';
+		
+		-- lookup username and pwd from cache using channel
+		SET cUserinfo = GetUserInfoFromCache(rEnv.Temp.Channel, XC10UserInfoMap, XC10ConnectionConfig);
+		
+		IF COALESCE(cUserinfo, '') = '' OR STARTSWITH(cUserinfo, 'ERROR') THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UserInfo lookup from cache failed, reading user info from file ...' || cUserinfo, rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';
+			
+			SET cUserinfo = rEnv.Temp.UserInfo.UserName || ',' || rEnv.Temp.UserInfo.Password;
+			
+			IF COALESCE(cUserinfo, '') <> '' THEN
+				SET cCacheVal = SaveUserInfoFromCache(rEnv.Temp.Channel, cUserinfo, '-1', XC10UserInfoMap, XC10ConnectionConfig);
+			END IF;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE SaveUserInfoFromCache(IN cChannel CHARACTER, IN cUserInfo CHARACTER, IN cacheExpiry CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+	CREATE PROCEDURE GetUserInfoFromCache(IN cChannel CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	
+END MODULE;
+
+
+CREATE COMPUTE MODULE GetUserInfo_SaveUserInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		SET rEnv.Temp.UserInfo[] = SELECT U.UserName, U.Password FROM InputRoot.XMLNSC.VXUserList.User[] AS U WHERE U.Channel = rEnv.Temp.Channel;		
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+

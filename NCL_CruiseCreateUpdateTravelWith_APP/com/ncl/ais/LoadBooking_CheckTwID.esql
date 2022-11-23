@@ -1,0 +1,73 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE LoadBooking_CheckTwID
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.*:NCL_CruiseCreateUpdateTravelWithRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rOut, rOptions, rTwID,LockedTWs REFERENCE TO OutputRoot;		
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];		
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'			
+			THEN
+				SET bFatalError = TRUE;
+			END IF;	
+			MOVE rError NEXTSIBLING;
+		END WHILE;	
+		IF bFatalError = TRUE THEN
+			CALL CopyEntireMessage();		
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;			
+		ELSEIF EXISTS(rIn.runtimeError[]) THEN	
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpdateTravelWithRS AS rOut;		
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+			SET rOut.*:Errors.*:Error = rIn.runtimeError;				
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;			
+		ELSEIF NOT EXISTS(rIn.*:ResShell.*:TwInfo.*:Booking[]) THEN
+	 			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpdateTravelWithRS AS rOut;		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+				SET rOut.*:Errors.*:Error = 'Booking information for TravelWith is Missing';				
+				PROPAGATE TO LABEL 'GENERIC_WARN';
+				RETURN FALSE;	
+		END IF;
+
+	
+		SET rEnv.Temp.TWID = THE(SELECT ITEM FIELDVALUE(B.*:TwID) FROM rIn.*:ResShell.*:TwInfo.*:Booking[]
+												 AS B WHERE B.*:TwType = rOrgMsg.*:TravelWithInfo.*:TWDetail.*:Type); 
+					
+					IF rEnv.Temp.TWID <> '' THEN
+						
+						PROPAGATE TO TERMINAL 'out1';
+						RETURN FALSE;
+						
+					ELSE
+						
+						PROPAGATE TO TERMINAL 'out';
+						RETURN FALSE;
+						
+					END IF;
+				
+		
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

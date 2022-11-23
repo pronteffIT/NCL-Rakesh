@@ -1,0 +1,137 @@
+BROKER SCHEMA com.ncl.ais
+--EMAIL Userdefined fields
+DECLARE ERROR_ONLY EXTERNAL BOOLEAN TRUE;
+DECLARE EMAIL_TO EXTERNAL CHARACTER 'nclfcsupport@ncl.com';
+DECLARE EMAIL_SMTP EXTERNAL CHARACTER '';
+DECLARE EMAIL_FROM EXTERNAL CHARACTER '';
+DECLARE EMAIL_SUBJECT EXTERNAL CHARACTER '';
+DECLARE EMAIL_CC EXTERNAL CHARACTER '';
+DECLARE EMAIL_BODY EXTERNAL CHARACTER '';
+DECLARE EMAIL_TO_ERROR EXTERNAL CHARACTER 'nclfcsupport@ncl.com';
+DECLARE EMAIL_ATTACH_NAME EXTERNAL CHARACTER 'SF_Coupon.csv';
+
+
+CREATE COMPUTE MODULE ProcessCpnFile_ProcessImportFile
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.DFDL.SFCouponImport;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rHeader,rRecord,rEmailReq REFERENCE TO OutputRoot;
+		
+		DECLARE rClientId DECIMAL;
+		DECLARE rFileName CHARACTER InputRoot.MQRFH2.usr.WMQFTEFileName;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQRFH2.usr = InputRoot.MQRFH2.usr;
+		CREATE LASTCHILD OF rEnv DOMAIN('DFDL') NAME 'DFDL';				
+		CREATE LASTCHILD OF rEnv.DFDL.SFResponseFile AS rHeader NAME 'header';			
+		DECLARE rEntityType CHARACTER 'CLNT';
+		DECLARE count INTEGER 0;
+		DECLARE errorCount INTEGER 0;
+		DECLARE r REFERENCE TO InputRoot.DFDL.SFCouponImport.record[1];		
+		WHILE  LASTMOVE(r) = TRUE
+		DO
+			BEGIN
+    		DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE'%' 
+    		BEGIN 
+    			CREATE LASTCHILD OF rEnv.DFDL.SFResponseFile AS rRecord NAME 'record'; 
+				SET rRecord.client = r.client;
+				SET rRecord.errormsg = 'ERROR:' || CAST(SQLCODE AS CHARACTER) || ' '|| SQLSTATE||' ' || CAST(SQLNATIVEERROR AS CHARACTER)||' ' || SQLERRORTEXT;
+				SET errorCount = errorCount + 1;
+				MOVE r NEXTSIBLING;
+    		END;
+			Declare rCouponId  DECIMAL 0;
+			DECLARE rErrorMsg   CHARACTER ;			
+	
+			CALL ncl_ins_acc_coupon(r.client,r.entity_type,r.currency,r.amount,r.amount_left,r.coupon_class,
+							NULL,r.comments,NULL,r.valid_from,r.valid_to,
+							r.effective_from,r.effective_to,'FILE',r.certificate,rFileName,rCouponId,rErrorMsg);
+			IF ERROR_ONLY=FALSE OR LENGTH(rErrorMsg) > 0 THEN
+				CREATE LASTCHILD OF rEnv.DFDL.SFResponseFile AS rRecord NAME 'record'; 
+				SET rRecord.client = r.client;									
+				SET rRecord.coupon = rCouponId;
+				SET rRecord.errormsg = rErrorMsg;
+				SET errorCount = errorCount + 1;
+			END IF;	
+			SET count = count +1 ;
+			IF count > 1000 THEN
+				PASSTHRU('COMMIT');
+				SET count = 0;
+			END IF;
+			MOVE r NEXTSIBLING;
+			END;				
+		END WHILE;
+		PASSTHRU('COMMIT');
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmailReq;
+		SET rEmailReq.EmailAddress.FromAddress = EMAIL_FROM;
+		SET rEmailReq.EmailAddress.ToAddress = EMAIL_TO;
+		SET rEmailReq.EmailSubject = EMAIL_SUBJECT;
+		SET rEmailReq.EmailContentType = 'text/html;charset=utf-8';
+		SET rEmailReq.Attachment.AttachmentContent = CAST(ASBITSTREAM(rEnv.DFDL.SFResponseFile) AS CHARACTER CCSID 1208 ENCODING 546);
+		SET rEmailReq.Attachment.AttachmentType = 'application/octet-stream';
+		SET rEmailReq.Attachment.AttachmentName = EMAIL_ATTACH_NAME;
+		SET rEmailReq.EmailContent = EMAIL_BODY;
+		SET rEmailReq.Attachment.AttachmentEncoding = 'base64';		
+		--SET OutputRoot.BLOB.BLOB = ASBITSTREAM(OutputRoot.DFDL.SFResponseFile OPTIONS RootBitStream);
+		--DELETE FIELD OutputRoot.DFDL;
+		IF errorCount > 0 THEN
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;										
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE ncl_ins_acc_coupon( 
+	 	IN p_entity_id DECIMAL,
+	    IN p_entity_type  CHARACTER,
+	    IN p_currency_code  CHARACTER,
+	    IN p_amount DECIMAL,
+	    IN p_amount_left   DECIMAL,
+	    IN p_coupon_class  CHARACTER,
+	    IN p_res_id   DECIMAL,
+	    IN p_comments    CHARACTER,
+	    IN p_office_code  CHARACTER,
+	    IN p_valid_from   DATE,
+	    IN p_valid_to     DATE,
+	    IN p_effective_from  DATE,
+	    IN p_effective_to   DATE,
+	    IN p_channel   CHARACTER,
+	    IN p_ref_txt      CHARACTER,
+	    IN p_filename_txt  CHARACTER,
+	    OUT p_coupon_id DECIMAL,
+	    OUT p_err_msg      CHARACTER
+	)
+	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_INS_ACC_COUPON";		
+END MODULE;
+
+CREATE COMPUTE MODULE ProcessCpnFile_HandleError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		IF EXISTS(rEnv.Temp.Headers.MQMD[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		END IF;			
+			
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+				
+		DECLARE rEmailReq REFERENCE TO OutputRoot;
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmailReq;
+		SET rEmailReq.EmailAddress.FromAddress = EMAIL_FROM;
+		SET rEmailReq.EmailAddress.ToAddress = EMAIL_TO_ERROR;
+		SET rEmailReq.EmailSubject = 'SF_CPN_UPLOAD :Internal Error';
+		SET rEmailReq.EmailContentType = 'text/html;charset=utf-8';
+		SET rEmailReq.EmailContent = cErrorText;
+		
+	END;
+END MODULE;		

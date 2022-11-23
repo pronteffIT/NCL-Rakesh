@@ -1,0 +1,265 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://NCLOTALib/BuildAmenityOrder';
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_AddPaymentInfo_PrepareDBSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addPaymentInfo;
+		DECLARE rDbSrch REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+				
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET rEnv.Temp.Endpoint = rIn.*:Endpoint;
+		
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'addPaymentInfo';
+		SET rEnv.Temp.addPaymentInfo = rIn;
+		
+		SET rEnv.Temp.SessionID = rIn.*:sessionGUID;
+		SET rEnv.Temp.ReservationID = rIn.*:reservationID;
+		SET rEnv.Temp.OriginatorType = rIn.*:amenityOrderReq.*:RequestorInfo.(XMLNSC.Attribute)OriginatorType;
+		SET rEnv.Temp.RequestorID = rIn.*:amenityOrderReq.*:RequestorInfo.(XMLNSC.Attribute)ID;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', '', rEnv.Temp.ReservationID, rEnv.Temp.RequestorID, '', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add payment info request message', 'xml', rEnv);
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling VX DBSearch api to get payment info ...', rEnv);
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDbSrch;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rDbSrch);
+		
+--		SET rDbSrch.MsgHeader.Version = VersonixAPIVersion;
+--		
+--		IF LENGTH(COALESCE(rIn.*:sessionGUID,'')) > 0 THEN
+--			SET rDbSrch.MsgHeader.SessionGUID = rIn.*:sessionGUID;
+--		ELSE
+--			CREATE FIELD rDbSrch.MsgHeader.CallerInfo.UserInfo.Internal;
+--		END IF;		
+		SET rDbSrch.AccTransactions.DestEntityType = 'AMENITY';
+		SET rDbSrch.AccTransactions.DestEntityID = CAST(rIn.*:amenityOrderReq.(XMLNSC.Attribute)ID AS INTEGER);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search request message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddPaymentInfo_ProcessDBSearchResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rDbSrch REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rDbSrchAccTran REFERENCE TO rDbSrch.AccTransactions.AccTransaction;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:addPaymentInfoResponse.amenityOrderRes;
+		
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search response message', 'xml', rEnv);
+		END IF;
+
+		IF EXISTS(rDbSrch.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error response from VX DBSearch api while getting payment info ...', rEnv);
+			
+			-- send the input message to create error response
+			CREATE FIELD OutputRoot.XMLNSC.sc:addPaymentInfoFault_warning AS rResp;
+			CALL com.ncl.ais.utils.CreateResponseFromDBSearchErrors(rDbSrch, rResp);
+			
+			PROPAGATE;
+		ELSE		
+			CREATE FIELD OutputRoot.XMLNSC.sc:addPaymentInfoResponse.sc:amenityOrderRes AS rResp;
+			
+			SET rResp = rEnv.Temp.*:addPaymentInfo.*:amenityOrderReq;
+			
+			IF LASTMOVE(rDbSrchAccTran) THEN
+				SET rResp.sc:AmenityOrderPaymentInfo.(XMLNSC.Attribute)ID = rDbSrchAccTran.TransID;
+				SET rResp.sc:AmenityOrderPaymentInfo.(XMLNSC.Attribute)PaymentDate = rDbSrchAccTran.Timestamp;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:SrcID = rDbSrchAccTran.SrcEntityID;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:SrcType = rDbSrchAccTran.SrcEntityType;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:DestID = rDbSrchAccTran.DestEntityID;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:DestType = rDbSrchAccTran.DestEntityType;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:FormOfPayment = rDbSrchAccTran.FormOfTrans;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:Currency.(XMLNSC.Attribute)Amount = rDbSrchAccTran.Amount;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:Currency.(XMLNSC.Attribute)CurrencyCode = rDbSrchAccTran.Currency;
+				SET rResp.sc:AmenityOrderPaymentInfo.sc:Status = rDbSrchAccTran.Status;
+			END IF;
+						
+			IF COALESCE(rEnv.Temp.OriginatorType, '') = 'INDIVIDUAL' THEN
+				PROPAGATE TO TERMINAL 'out1';
+			ELSE
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add payment info response message', 'xml', rEnv);
+				END IF;
+				
+				PROPAGATE;
+			END IF;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddPaymentInfo_DBSearchRequestorInfoReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addPaymentInfoResponse;
+		DECLARE rDbSrch REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+		
+		DECLARE bPayload BLOB;
+		
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'addPaymentInfoResponse';
+		SET rEnv.Temp.addPaymentInfoResponse = rIn;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling VX DBSearch api to get requestor details ...', rEnv);
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDbSrch;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rDbSrch);		
+		
+--		SET rDbSrch.MsgHeader.Version = VersonixAPIVersion;
+--		IF LENGTH(COALESCE(rIn.*:sessionGUID,'')) > 0 THEN
+--			SET rDbSrch.MsgHeader.SessionGUID = rIn.*:sessionGUID;
+--		ELSE
+--			CREATE FIELD rDbSrch.MsgHeader.CallerInfo.UserInfo.Internal;
+--		END IF;		
+		SET rDbSrch.Clients.ClientID = CAST(rEnv.Temp.RequestorID AS INTEGER);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search request message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddPaymentInfo_AddRequestorDetails
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rDbSrch REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:addPaymentInfoResponse;
+
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search response message', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rDbSrch.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error response from VX DBSearch api while getting requestor details ...', rEnv);
+			
+			-- send the input message to create error response
+			CREATE FIELD OutputRoot.XMLNSC.sc:addPaymentInfoFault_warning AS rResp;
+			CALL com.ncl.ais.utils.CreateResponseFromDBSearchErrors(rDbSrch, rResp);
+		ELSE
+			CREATE FIELD OutputRoot.XMLNSC.sc:addPaymentInfoResponse AS rResp;
+			
+			SET rResp = rEnv.Temp.*:addPaymentInfoResponse;
+	
+			SET rResp.sc:amenityOrderRes.sc:RequestorInfo.(XMLNSC.Attribute)ID = rDbSrch.Clients.Client.ClientID;
+			SET rResp.sc:amenityOrderRes.sc:RequestorInfo.sc:Name.sc:GivenName = rDbSrch.Clients.Client.FirstName;
+			SET rResp.sc:amenityOrderRes.sc:RequestorInfo.sc:Name.sc:Surname = rDbSrch.Clients.Client.LastName;
+		END IF;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add payment info response message', 'xml', rEnv);
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddPaymentInfo_CreateFaultMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:addPaymentInfoFault;
+
+		DECLARE bPayload BLOB;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.sc:addPaymentInfoFault AS rResp;
+		
+		SET rResp.(XMLNSC.Attribute)Code = '1228';
+		SET rResp.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rResp.(XMLNSC.Attribute)Type = '3';
+		SET rResp = COALESCE(rEnv.ErrorSummary.ErrorText, 'System error from back end. Please try again later');	
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add payment info response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_AddPaymentInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

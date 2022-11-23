@@ -1,0 +1,1733 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE PROCEDURE BuildManageClientsReq(IN rInMsgResInfo REFERENCE, INOUT rOut REFERENCE, INOUT rEnv REFERENCE)
+BEGIN
+	DECLARE rOutMsg REFERENCE TO rEnv;	
+	DECLARE rClientInfo,rClntsWithoutID,rClntsWithID,rguestRefMapClient,rHouseholdMatched REFERENCE TO rEnv;
+	DECLARE clientInfoByResId , guestloyaltyIDs ROW;
+	DECLARE query CHARACTER;		
+	DECLARE clientIDCount INTEGER 0;
+	DECLARE clientIDsFoundForResId, clntDetsPresent BOOLEAN FALSE;		
+	DECLARE resID INTEGER;
+	
+	CREATE FIELD rEnv.Temp;
+	CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'BMCR';		
+	DECLARE rbmcr REFERENCE TO rEnv.Temp.BMCR;
+
+	SET rbmcr.ClntsWithIDString = '#';					 
+	SET resID = CAST(rInMsgResInfo.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+	
+	CALL ParseGuestDetails(rInMsgResInfo,rbmcr,clientIDCount,clntDetsPresent);	
+	
+	DECLARE rClntsWithIDs REFERENCE TO rbmcr.ClientsWithIDs;
+	DECLARE rClntsWithoutIDs REFERENCE TO rbmcr.ClientsWithoutIDs;		
+	
+	-- TODO This reservationID is actually a repeatable field (2 possible occurrences). Why using just one?
+	IF resID IS NOT NULL
+	THEN
+		DECLARE query CHARACTER;
+		-- TODO If this query can return duplicates, then they will have to be eliminated at the query itself
+		SET query = 'SELECT client_id FROM SEA.res_guest RG WHERE RG.res_id = ? AND client_id IS NOT NULL';
+		SET  rEnv.Temp.clientIDsByResId[] = PASSTHRU(query VALUES(resID));
+
+		IF (NOT clntDetsPresent) AND (clientIDCount = CARDINALITY (rEnv.Temp.clientIDsByResId.client_id[])) 
+		THEN
+			-- If the two lists are equal
+			IF ArrayCompare(rEnv.Temp.clientIDsByResId,rbmcr.ClntsWithIDString) 
+			THEN
+				-- Do not invoke Manage Clients and just return to the caller 
+				RETURN;
+			END IF;
+		END IF;
+		
+		--For existing reservation map the existing household and client id
+		DECLARE rChInfo REFERENCE TO rEnv;
+		FOR rId AS rEnv.Temp.clientIDsByResId[]
+		DO
+			DECLARE clientId CHARACTER;
+			SET clientId = CAST( rId.CLIENT_ID AS CHARACTER);			
+			CREATE FIELD rEnv.chInfo AS rChInfo;
+			CALL GetClientNameAndHouseholdInfo(clientId,rChInfo);
+			DECLARE cGuestRefNum CHARACTER  GetGuestRefID(rClntsWithIDs.{clientId});			
+			IF EXISTS(rChInfo.clientInfo[]) AND LENGTH(cGuestRefNum)>0
+			THEN
+				DECLARE dbClientInfo REFERENCE TO rChInfo.clientInfo[1];
+				IF NOT EXISTS(rbmcr.HouseholdMatched[]) 
+				THEN
+					CREATE FIELD rbmcr.HouseholdMatched;
+				END IF;				
+				CREATE LASTCHILD OF rbmcr.HouseholdMatched AS rHouseholdMatched NAME cGuestRefNum;
+				SET rHouseholdMatched = dbClientInfo.HOUSEHOLD_ID;
+				IF NOT EXISTS(rbmcr.clientsGuestRefMap[]) 
+				THEN
+					CREATE FIELD rbmcr.clientsGuestRefMap;
+				END IF;						
+				CREATE LASTCHILD OF rbmcr.clientsGuestRefMap AS rguestRefMapClient IDENTITY Client;
+				SET rguestRefMapClient.GuestRefNum = cGuestRefNum;
+				SET rguestRefMapClient.ClientID = clientId;												
+			END IF;								
+		END FOR;
+			  
+	END IF;
+	
+	-- Process Clients with IDs when ResId is not provided
+	IF resID IS NULL AND EXISTS(rClntsWithIDs.*[])
+	THEN
+		DECLARE rChInfo REFERENCE TO rEnv;
+		DECLARE rclient REFERENCE TO rClntsWithIDs;
+		DECLARE deleteFlag BOOLEAN FALSE;
+		DECLARE bclientMatch BOOLEAN FALSE;
+		DECLARE guestInfoDontMatch BOOLEAN FALSE;
+		
+		MOVE rclient FIRSTCHILD;
+		
+		WHILE LASTMOVE(rclient) DO
+			CREATE FIELD rEnv.chInfo AS rChInfo;
+			CALL GetClientNameAndHouseholdInfo(FIELDNAME(rclient),rChInfo);
+			
+			IF EXISTS(rEnv.chInfo.clientInfo[])
+			THEN
+				SET bclientMatch = FALSE;
+				DECLARE hholdMatch BOOLEAN FALSE;
+				DECLARE dbClientInfo REFERENCE TO rEnv.chInfo.clientInfo[1];
+				
+				WHILE LASTMOVE(dbClientInfo) AND (NOT bclientMatch OR NOT hholdMatch) DO
+									
+					IF com.ncl.ais.utils.AddressDBMatch(rclient.*:ContactInfo.*:Address, dbClientInfo.ADDRESS_CITY, dbClientInfo.STATE_CODE, 
+									dbClientInfo.COUNTRY_CODE, dbClientInfo.ADDRESS_LINE1, dbClientInfo.ADDRESS_LINE2,dbClientInfo.ADDRESS_LINE3,
+									dbClientInfo.ADDRESS_LINE4)
+					THEN
+						IF NOT EXISTS(rbmcr.HouseholdMatched[]) 
+						THEN
+							CREATE FIELD rbmcr.HouseholdMatched;
+						END IF;
+						
+						CREATE LASTCHILD OF rbmcr.HouseholdMatched AS rHouseholdMatched NAME GetGuestRefID(rclient);
+						SET rHouseholdMatched = dbClientInfo.HOUSEHOLD_ID;
+						
+						SET hholdMatch = TRUE;
+					ELSEIF COALESCE(dbClientInfo.HOUSEHOLD_ID, '') <> '' THEN -- RN: fix for the clients having houshold id but unmatched address
+						SET rbmcr.AddressNotMatched.{GetGuestRefID(rclient)} = CAST(dbClientInfo.HOUSEHOLD_ID AS CHARACTER);
+					END IF;
+					
+					IF ClientInfoMatch(rclient.*:ContactInfo, dbClientInfo.FIRST_NAME, dbClientInfo.LAST_NAME, dbClientInfo.BIRTHDAY)
+					THEN
+						-- Add the client to clientGuestRefMap
+						IF NOT EXISTS(rbmcr.clientsGuestRefMap[]) 
+						THEN
+							CREATE FIELD rbmcr.clientsGuestRefMap;
+						END IF;
+						
+						CREATE LASTCHILD OF rbmcr.clientsGuestRefMap AS rguestRefMapClient IDENTITY Client;
+						
+						SET rguestRefMapClient.GuestRefNum = GetGuestRefID(rclient);
+						SET rguestRefMapClient.ClientID = FIELDNAME(rclient);
+												
+						-- Not sure this is where the flag should be set
+						SET bclientMatch = TRUE;
+					ELSE
+						SET guestInfoDontMatch = TRUE;
+					END IF;	
+					
+					MOVE dbClientInfo NEXTSIBLING;
+				END WHILE;						
+				
+				IF NOT bclientMatch THEN	
+					-- Remove the client from this array and move to clientsWithoutID array
+					CREATE LASTCHILD OF rClntsWithoutIDs AS rClntsWithoutID IDENTITY client;	
+					SET rClntsWithoutID.GuestRefID = GetGuestRefID(rclient);
+					SET rClntsWithoutID.GuestDetail = rclient;
+					
+					-- Remove the entry from clientsWithIDString and from the list in env
+					SET rbmcr.ClntsWithIDString = REPLACE(rbmcr.ClntsWithIDString,'#'||FIELDNAME(rclient)||'#','#');
+				END IF;											
+			ELSE
+				-- Invalid Loyalty ID mentioned. We treat this as a clientWithoutID only
+				CREATE LASTCHILD OF rClntsWithoutIDs AS rClntsWithoutID IDENTITY client;	
+				SET rClntsWithoutID.GuestRefID = GetGuestRefID(rclient);
+				SET rClntsWithoutID.GuestDetail = rclient; 	
+				
+				-- Remove the entry from clientsWithIDString and from env
+				SET rbmcr.ClntsWithIDString = REPLACE(rbmcr.ClntsWithIDString,'#'||FIELDNAME(rclient)||'#','#');
+				-- TODO How to delete this client from the array?	
+				SET deleteFlag = TRUE;		
+			END IF;		
+		
+			-- Clear the previous lookup details from Env. DETACH is only deleting one occurrence
+			DETACH rEnv.chInfo;
+			
+			MOVE rclient NEXTSIBLING;			
+		END WHILE;
+
+		--IF deleteFlag OR NOT bclientMatch THEN
+		IF deleteFlag OR guestInfoDontMatch THEN
+			DECLARE cur, next REFERENCE TO rClntsWithIDs;
+			MOVE next FIRSTCHILD;
+			
+			WHILE LASTMOVE(next)
+			DO
+				MOVE cur TO next;
+				MOVE next NEXTSIBLING;
+				
+				IF NOT CONTAINS(rbmcr.ClntsWithIDString, FIELDNAME(cur)) 
+				THEN
+					DETACH rClntsWithIDs.{FIELDNAME(cur)};
+				END IF;
+			END WHILE;
+		END IF;
+	END IF;
+	
+	-- IF ResID is provided and clientswithoutIDs exists, then extractdetails from DB for each clientID of that ResID 
+	-- and check if any matches exist in clientsWithoutIDs
+	IF resID IS NOT NULL AND EXISTS(rClntsWithoutIDs.client[])
+	THEN		
+		FOR clientIDByResId AS rEnv.Temp.clientIDsByResId.client_id[]
+		DO
+			CREATE LASTCHILD OF rbmcr AS rClientInfo IDENTITY listClientInfo;								
+			CALL GetClientNameAndHouseholdInfo(clientIDByResId,rEnv);				
+			IF EXISTS(rEnv.clientInfo[])
+			THEN
+				FOR rClntsWithoutID AS rClntsWithoutIDs.client[]
+				DO	
+					DECLARE dbClientInfo REFERENCE TO rEnv.clientInfo;
+					
+					IF EXISTS(rClntsWithoutID.GuestDetail.*:ContactInfo[])
+					THEN							
+						IF com.ncl.ais.utils.AddressDBMatch(rClntsWithoutID.GuestDetail.*:ContactInfo.*:Address, dbClientInfo.ADDRESS_CITY, dbClientInfo.STATE_CODE, 
+								dbClientInfo.COUNTRY_CODE, dbClientInfo.ADDRESS_LINE1, dbClientInfo.ADDRESS_LINE2,dbClientInfo.ADDRESS_LINE3,
+								dbClientInfo.ADDRESS_LINE4)
+						THEN
+							IF NOT EXISTS(rbmcr.HouseholdMatched[]) 
+							THEN
+								CREATE FIELD rbmcr.HouseholdMatched;
+							END IF;
+							
+							CREATE LASTCHILD OF rbmcr.HouseholdMatched AS rHouseholdMatched NAME rClntsWithoutID.GuestRefID;
+							SET rHouseholdMatched = dbClientInfo.HOUSEHOLD_ID;
+						END IF;
+						
+						IF ClientInfoMatch(rClntsWithoutID.GuestDetail.*:ContactInfo,dbClientInfo.FIRST_NAME,dbClientInfo.LAST_NAME,dbClientInfo.BIRTHDAY)
+						THEN
+							-- Add the clientID to clientswithID, Also make an entry to guestrefmap 
+							-- Add the client to clientGuestRefMap
+							IF NOT EXISTS(rbmcr.clientsGuestRefMap[]) 
+							THEN
+								CREATE FIELD rbmcr.clientsGuestRefMap;
+							END IF;
+					
+							CREATE LASTCHILD OF rbmcr.clientsGuestRefMap AS rguestRefMapClient IDENTITY Client;
+							SET rguestRefMapClient.GuestRefNum = rClntsWithoutID.GuestRefID;
+							SET rguestRefMapClient.ClientID = dbClientInfo.CLIENT_ID;						
+				
+							IF NOT CONTAINS (rbmcr.ClntsWithIDString, dbClientInfo.CLIENT_ID || '#')
+							THEN 
+								SET rClntsWithIDs.{dbClientInfo.CLIENT_ID} = rClntsWithoutID.GuestDetail;	
+								SET rbmcr.ClntsWithIDString = rbmcr.ClntsWithIDString || dbClientInfo.CLIENT_ID || '#';
+							END IF;	
+						END IF;	
+					END IF;	
+				
+					DETACH rEnv.clientInfo;						
+				END FOR;
+			
+				DETACH rEnv.clientInfo;	
+			END IF;		
+		END FOR;	
+	END IF;	
+	
+	IF EXISTS(rbmcr.HouseholdMap.household[])
+	THEN
+			-- Set Session ID
+		CREATE LASTCHILD OF rOut AS rOutMsg IDENTITY ManageClients_IN;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rOutMsg);
+--		SET rOutMsg.MsgHeader.Version = VersonixAPIVersion;
+--		SET rOutMsg.MsgHeader.SessionGUID = rEnv.sessionID;
+	
+		-- Create ManageClients Request message
+		CALL CreateManageClientsRequest(rOutMsg, rbmcr);
+	END IF;	
+END;
+
+-- Parse GuestDetails
+CREATE PROCEDURE ParseGuestDetails (IN rInMsgResInfo REFERENCE, INOUT rbmcr REFERENCE, IN clientIDCount INTEGER, INOUT clntDetsPresent BOOLEAN)
+BEGIN
+	DECLARE rClntsWithIDs,rClntsWithID,rClntsWithoutIDs,rClntsWithoutID,householdClient,emptyclient REFERENCE TO rbmcr;
+
+	CREATE LASTCHILD OF rbmcr AS rClntsWithIDs IDENTITY ClientsWithIDs;
+	CREATE LASTCHILD OF rbmcr AS rClntsWithoutIDs IDENTITY ClientsWithoutIDs; 
+	
+	FOR rGuestDetail AS rInMsgResInfo.*:GuestDetails.*:GuestDetail[]
+	DO
+		IF EXISTS(rGuestDetail.*:ContactInfo[])
+		THEN
+			DECLARE gLoyaltyID CHARACTER '';
+			-- TODO Extract LoyaltyID. Consider making this a function
+			CALL GetGuestLoyaltyID(rGuestDetail,gLoyaltyID);
+			
+			IF NOT(gLoyaltyID = '') 
+			THEN
+				-- Add the client to clients with IDs array
+				SET rClntsWithIDs.{gLoyaltyID} = rGuestDetail;	
+				
+				-- Eliminate duplicates in the string that will be used for comparing array elements
+				IF NOT CONTAINS (rbmcr.ClntsWithIDString, gLoyaltyID || '#')
+				THEN 
+					SET rbmcr.ClntsWithIDString = rbmcr.ClntsWithIDString || gLoyaltyID || '#';
+					SET clientIDCount = clientIDCount + 1;					
+				END IF;	
+			ELSE
+				DECLARE guestRefID CHARACTER GetGuestRefID(rGuestDetail);
+				DECLARE rClntsWithoutID REFERENCE TO rClntsWithoutIDs;	
+				
+				CREATE LASTCHILD OF rClntsWithoutIDs AS rClntsWithoutID IDENTITY client;	
+				SET rClntsWithoutID.GuestRefID = guestRefID;
+				SET rClntsWithoutID.GuestDetail = rGuestDetail; 					
+			END IF;
+			
+			-- Check if there is atleast one GuestDetails with Name/Address in it
+			IF (NOT clntDetsPresent) AND (EXISTS(rGuestDetail.*:ContactInfo.*:PersonName[]) OR EXISTS(rGuestDetail.*:ContactInfo.*:Address[]) )
+			THEN
+				SET clntDetsPresent = TRUE;
+			END IF;
+			
+			DECLARE rGuestContactInfo REFERENCE TO rGuestDetail.*:ContactInfo;
+			
+			IF EXISTS(rGuestContactInfo.*:Address[]) THEN									 
+				DECLARE rGuestAddress REFERENCE TO rGuestContactInfo.*:Address;
+									
+				IF EXISTS(rbmcr.HouseholdMap[]) THEN
+					DECLARE MatchFound BOOLEAN FALSE;
+					DECLARE household REFERENCE TO rbmcr.HouseholdMap;
+					MOVE household FIRSTCHILD;						
+
+					WHILE (NOT MatchFound) AND LASTMOVE(household) DO
+						DECLARE householdAddr REFERENCE TO household.Address;
+						
+						IF com.ncl.ais.utils.AddressMatch(rGuestAddress, householdAddr) THEN
+							SET MatchFound = TRUE;
+							CREATE LASTCHILD OF household.Clients AS householdClient IDENTITY Client;
+							SET householdClient = rGuestContactInfo;								
+						END IF;
+						
+						MOVE household NEXTSIBLING REPEAT TYPE NAME;
+					END WHILE;
+					
+					IF NOT MatchFound THEN
+						DECLARE rhousehold REFERENCE TO rbmcr;
+						-- Create new household
+						CREATE LASTCHILD OF rbmcr.HouseholdMap AS rhousehold IDENTITY household;							
+						SET rhousehold.Address = rGuestAddress;
+						SET rhousehold.Clients.Client = rGuestContactInfo;							
+					END IF;						
+				ELSE
+					-- Create HouseholdMap
+					SET rbmcr.HouseholdMap.household.Address  = rGuestAddress;
+					SET rbmcr.HouseholdMap.household.Clients.Client = rGuestContactInfo;	
+				END IF;								
+			ELSE
+				-- TODO This has to be moved to household at some point and processed accordingly
+				IF NOT EXISTS(rbmcr.HouseholdMap.emptyhousehold[]) THEN
+					SET rbmcr.HouseholdMap.emptyhousehold.Clients.Client = rGuestContactInfo;					
+				ELSE
+					CREATE LASTCHILD OF rbmcr.HouseholdMap.emptyhousehold.Clients AS emptyclient IDENTITY Client;
+					SET emptyclient = rGuestContactInfo;	
+				END IF;
+			END IF;
+		END IF;
+	END FOR;
+	
+	-- If there are empty address households, create an empty address and add them as households
+	IF EXISTS(rbmcr.HouseholdMap.emptyhousehold[])
+	THEN
+		DECLARE rEmptyAddress, rhousehold, rHhClients, rHhClient REFERENCE TO rbmcr;
+		DECLARE rEmptyHhClients REFERENCE TO rbmcr.HouseholdMap.emptyhousehold.Clients;
+		
+		CREATE FIELD rbmcr.emptyAddress AS rEmptyAddress;
+		
+		-- Build empty address. TODO Should this really be done or NULL values should suffice?
+		SET rEmptyAddress.sc:AddressLine = '';
+		SET rEmptyAddress.sc:CityName = '';
+		SET rEmptyAddress.sc:PostalCode = '';
+		SET rEmptyAddress.sc:StateProv = '';
+		SET rEmptyAddress.sc:CountryName = '';
+		
+		-- Create new household
+		CREATE LASTCHILD OF rbmcr.HouseholdMap AS rhousehold IDENTITY household;							
+		SET rhousehold.Address = rEmptyAddress;
+		CREATE FIELD rhousehold.Clients AS rHhClients;
+		
+		FOR rEmptyClient AS rEmptyHhClients.Client[] DO	
+			CREATE LASTCHILD OF rHhClients AS rHhClient NAME 'Client';			
+			SET rHhClient = rEmptyClient;				
+		END FOR;
+		
+		DETACH rbmcr.HouseholdMap.emptyhousehold;		
+	END IF;
+END;	
+
+
+-- TODO Move to Common Utils
+CREATE PROCEDURE GetClientNameAndHouseholdInfo (IN clientID CHARACTER, INOUT rCHInfo REFERENCE)
+BEGIN
+	DECLARE queryString CHARACTER 'SELECT c.CLIENT_ID, c.HOUSEHOLD_ID, c.LAST_NAME, c.FIRST_NAME, c.MIDDLE_NAME, c.FULL_NAME,
+									c.SALUTATION, c.TITLE, TO_CHAR(c.BIRTHDAY,' || '''' || 'yyyy-mm-dd' || '''' || ') BIRTHDAY, c.SEX, c.NATIONALITY, c.CITIZENSHIP, 
+									c.EMAIL, c.WEB_LOGIN_NAME, SEQ_NUMBER, ADDRESS_TYPE, ADDRESS_LINE1, ADDRESS_LINE2, ADDRESS_CITY,
+									STATE_CODE,  ZIP,  COUNTRY_CODE, HOUSEHOLD_ADDR_ID, ADDRESS_LINE3, ADDRESS_LINE4 FROM SEA.client c, 
+									SEA.household_address h WHERE c.client_id = ? AND c.household_id = h.household_id(+) AND h.ADDRESS_TYPE(+) IN 
+									(' || '''' || 'HOME ADDRESS' || '''' || ',' || '''' || 'PRIMARY' || '''' ||')';
+	-- Extract more information for the client ID
+	SET rCHInfo.clientInfo[] = PASSTHRU(queryString VALUES(clientID));
+END;
+
+
+-- TODO Revisit and unit test this proc thoroughly
+CREATE PROCEDURE MapVXErrorsToWarnings (IN rInErrors REFERENCE, INOUT rOutWarnings REFERENCE) 
+BEGIN
+	DECLARE rOutWarning REFERENCE TO rOutWarnings;
+	
+	FOR rInError AS rInErrors.Error[] DO
+		CREATE LASTCHILD OF rOutWarnings AS rOutWarning IDENTITY sc:Warning;
+		
+		SET rOutWarning = COALESCE(FIELDVALUE(rInError.ErrorMessage),'');	
+		SET rOutWarning.(XMLNSC.Attribute)Code = rInError.ErrorCode;
+		SET rOutWarning.(XMLNSC.Attribute)ShortText = COALESCE(SUBSTRING(FIELDVALUE(rInError.ErrorMessage) FROM 1 FOR 64),'');
+		SET rOutWarning.(XMLNSC.Attribute)Type = 3;			
+	END FOR;		
+END;
+
+-- TODO Revisit and unit test this proc thoroughly
+CREATE PROCEDURE ArrayCompare (IN arr1 REFERENCE, IN arr2Str CHARACTER) RETURNS BOOLEAN
+BEGIN
+	DECLARE MisMatchFound BOOLEAN FALSE;
+	DECLARE arr1Element REFERENCE TO arr1.*[1];
+	
+	WHILE (NOT MisMatchFound) AND LASTMOVE(arr1Element) DO
+		IF NOT CONTAINS(arr2Str, CAST(FIELDVALUE(arr1Element) AS CHARACTER) || '#') THEN
+			SET MisMatchFound = TRUE;
+		END IF;
+		
+		MOVE arr1Element NEXTSIBLING REPEAT TYPE NAME;
+	END WHILE;
+	
+	RETURN NOT MisMatchFound;
+END;
+		
+-- Crude function to compare addresses
+CREATE FUNCTION ClientInfoMatch(IN rContactInfo REFERENCE, IN fName CHARACTER, IN surname CHARACTER, IN birthday CHARACTER) RETURNS BOOLEAN
+BEGIN
+	DECLARE isEqual BOOLEAN TRUE;
+		
+	IF NOT(UPPER(rContactInfo.*:PersonName.*:GivenName) = UPPER(fName)) THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	IF isEqual AND NOT(UPPER(rContactInfo.*:PersonName.*:Surname) = UPPER(surname)) THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	IF isEqual AND NOT(UPPER(COALESCE(rContactInfo.(XMLNSC.Attribute)BirthDate,'')) = UPPER(COALESCE(birthday,''))) THEN
+		-- If Age is present, check if the ages match even though the birthdates don'tcalculate it from birthday and compare
+		IF EXISTS(rContactInfo.(XMLNSC.Attribute)Age[]) THEN				
+			DECLARE age INTEGER;
+			
+			IF birthday IS NULL THEN
+				SET age = 0;
+			ELSE
+				DECLARE birthdate DATE;
+				DECLARE ageInterval INTERVAL;
+				
+				SET birthdate = CAST(birthday AS DATE);
+				SET ageInterval = (CURRENT_DATE - birthdate) YEAR;
+				SET age = CAST(ageInterval AS INTEGER);
+			END IF;
+			
+			IF NOT (CAST(rContactInfo.(XMLNSC.Attribute)Age AS INTEGER) = age) THEN
+				SET isEqual = FALSE;
+			END IF;
+		ELSE
+			SET isEqual = FALSE;
+		END IF;
+	END IF;
+	
+	RETURN isEqual;
+END;
+
+CREATE PROCEDURE CreateManageClientsRequest (INOUT rOutMsg REFERENCE, INOUT rEnvBmcr REFERENCE)
+BEGIN
+	DECLARE rCreate, rCreateHouseholds, rUpdate, rUpdateHouseholds REFERENCE TO rOutMsg;
+	
+	CREATE LASTCHILD OF rOutMsg AS rCreate IDENTITY "Create";
+	CREATE LASTCHILD OF rCreate AS rCreateHouseholds IDENTITY Households;
+
+	CREATE LASTCHILD OF rOutMsg AS rUpdate IDENTITY Update;
+	CREATE LASTCHILD OF rUpdate AS rUpdateHouseholds IDENTITY Households;
+	
+	CALL AddClients(FALSE,rEnvBmcr,rCreateHouseholds);
+	
+	CALL AddClients(TRUE,rEnvBmcr,rUpdateHouseholds);
+END;
+	
+CREATE PROCEDURE AddClients (IN UpdateFlag BOOLEAN, INOUT rEnvBmcr REFERENCE, INOUT rCrtUpdtHouseholds REFERENCE)
+BEGIN		 
+	FOR rHousehold AS rEnvBmcr.HouseholdMap.household[] DO
+		DECLARE rCrtUpdtHousehold REFERENCE TO rCrtUpdtHouseholds;
+		DECLARE rClients,rHouseholdHeader REFERENCE TO rEnvBmcr;
+		
+		CREATE FIELD rEnvBmcr.householdBO.HouseholdHeader.Clients;
+		
+		DECLARE rhouseholdBO REFERENCE TO rEnvBmcr.householdBO;
+		DECLARE rHhClients REFERENCE TO rhouseholdBO.HouseholdHeader.Clients;
+		
+		FOR rHouseholdClient AS rHousehold.Clients.Client[] DO
+			DECLARE matchFound BOOLEAN FALSE;
+			
+			IF NULLIF(FIELDVALUE(rHouseholdClient.(XMLNSC.Attribute)LoyaltyMembershipID),'')<> '' AND CONTAINS(rEnvBmcr.ClntsWithIDString,FIELDVALUE(rHouseholdClient.(XMLNSC.Attribute)LoyaltyMembershipID))
+			THEN
+				SET matchFound = TRUE;
+			ELSE
+				-- Loop through clientsGuestRefMap to find the guestRef number
+				DECLARE rGRMClient REFERENCE TO rEnvBmcr.clientsGuestRefMap.Client[1];
+				
+				WHILE (NOT matchFound) AND LASTMOVE(rGRMClient) DO
+					IF (rGRMClient.GuestRefNum = FIELDVALUE(rHouseholdClient.(XMLNSC.Attribute)GuestRefNumber))  
+						AND (NOT com.ncl.ais.utils.IsEmpty(rGRMClient.GuestRefNum))
+					THEN
+						SET matchFound = TRUE;
+					END IF;
+					
+					MOVE rGRMClient NEXTSIBLING REPEAT TYPE NAME;
+				END WHILE;	
+			END IF;
+			
+			IF ((NOT matchFound) AND (NOT UpdateFlag)) OR (matchFound AND UpdateFlag) THEN
+				CALL createUpdateClient (UpdateFlag, rHouseholdClient, rEnvBmcr);
+				
+				DECLARE rHhClient REFERENCE TO rHhClients; 
+				CREATE LASTCHILD OF rHhClients AS rHhClient NAME 'Client';
+				SET rHhClient = rEnvBmcr.clientBO;				
+									
+				IF UpdateFlag THEN
+					DECLARE householdMatch BOOLEAN FALSE;
+					DECLARE rHMHousehold REFERENCE TO rEnvBmcr.HouseholdMatched;
+					DECLARE householdID CHARACTER '';
+					DECLARE gRef CHARACTER FIELDVALUE(rHouseholdClient.(XMLNSC.Attribute)GuestRefNumber);
+
+					IF EXISTS(rHMHousehold.{FIELDVALUE(rHouseholdClient.(XMLNSC.Attribute)GuestRefNumber)}[]) THEN
+						SET householdMatch = TRUE;
+						SET householdID = rHMHousehold.{FIELDVALUE(rHouseholdClient.(XMLNSC.Attribute)GuestRefNumber)};
+					END IF;
+
+					IF householdMatch AND EXISTS(rEnvBmcr.clientBO.ClientHeader[]) THEN
+						SET rHhClient.ClientHeader.HouseholdID = householdID;
+					ELSE
+						CALL PopulateAddresses (rhouseholdBO,rHouseholdClient);					
+					END IF;
+				ELSE
+					CALL PopulateAddresses (rhouseholdBO,rHouseholdClient);
+				END IF;
+				
+				DETACH rEnvBmcr.clientBO;
+			END IF;
+		END FOR;
+		
+		IF EXISTS(rHhClients.Client[]) OR EXISTS(rhouseholdBO.Addresses.Address[])  
+		THEN			
+			CREATE LASTCHILD OF rCrtUpdtHouseholds AS rCrtUpdtHousehold IDENTITY Household;
+			SET rCrtUpdtHousehold = rhouseholdBO;
+		END IF;
+		
+		DETACH rEnvBmcr.householdBO;
+	END FOR;
+END;
+	
+
+CREATE PROCEDURE createUpdateClient (IN UpdateFlag BOOLEAN, IN rContactInfo REFERENCE, INOUT rEnvBmcr REFERENCE)
+BEGIN
+	CREATE FIELD rEnvBmcr.clientBO.ClientHeader;
+	DECLARE rclientHeader REFERENCE TO rEnvBmcr.clientBO.ClientHeader;
+	DECLARE guestRefno CHARACTER '';
+	
+	IF UpdateFlag THEN
+		IF com.ncl.ais.utils.IsEmpty(rContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID) THEN
+			DECLARE matchFound BOOLEAN FALSE;
+			DECLARE rGRMClient REFERENCE TO rEnvBmcr.clientsGuestRefMap.Client[1];
+			
+			WHILE (NOT matchFound) AND LASTMOVE(rGRMClient) DO
+				IF (rGRMClient.GuestRefNum = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)GuestRefNumber))  
+					AND (NOT com.ncl.ais.utils.IsEmpty(rGRMClient.GuestRefNum))
+				THEN
+					SET matchFound = TRUE;
+					SET rclientHeader.ClientID = rGRMClient.ClientID;
+				END IF;
+				
+				MOVE rGRMClient NEXTSIBLING REPEAT TYPE NAME;
+			END WHILE;	
+		ELSE
+			SET rclientHeader.ClientID = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID);
+		END IF;
+	END IF;
+	
+	SET rclientHeader.LastName = rContactInfo.*:PersonName.*:Surname;
+	SET rclientHeader.FirstName = rContactInfo.*:PersonName.*:GivenName;
+	SET rclientHeader.MiddleName = rContactInfo.*:PersonName.*:MiddleName;
+
+	-- Updated for Airwave on 06/26/2018.
+	IF FIELDVALUE(rContactInfo.(XMLNSC.Attribute)Gender) = 'Male' THEN
+		SET rclientHeader.Gender = 'M';
+	ELSEIF FIELDVALUE(rContactInfo.(XMLNSC.Attribute)Gender) = 'Female'  THEN
+		SET rclientHeader.Gender ='F';
+	END IF;		
+
+	SET rclientHeader.Occupation = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)GuestOccupation);
+	SET rclientHeader.Title = rContactInfo.*:PersonName.*:NamePrefix;
+	SET rclientHeader.Citizenship = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)Nationality);
+	SET rclientHeader.Birthday = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)BirthDate);
+	SET rclientHeader.EMail = rContactInfo.*:Email[1];
+	
+	-- RN: fix for the clients having houshold id but unmatched address
+	SET guestRefno = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+	
+	IF EXISTS(rEnvBmcr.AddressNotMatched.{guestRefno}[]) THEN
+		SET rclientHeader.HouseholdID = rEnvBmcr.AddressNotMatched.{guestRefno};
+	END IF;
+	
+	IF EXISTS(rContactInfo.*:Telephone[]) THEN
+		DECLARE rPhones REFERENCE TO rEnvBmcr.clientBO;
+		CREATE LASTCHILD OF rEnvBmcr.clientBO AS rPhones IDENTITY Phones;
+		
+--		FOR rTelephone AS rContactInfo.*:Telephone[] DO				
+--			DECLARE rPhone REFERENCE TO rPhones;
+--			CREATE LASTCHILD OF rPhones AS rPhone IDENTITY Phone;
+--			SET rPhone.PhoneType = 'HOME';
+--			SET rPhone.PhoneNumber = FIELDVALUE(rTelephone.(XMLNSC.Attribute)PhoneNumber);			
+--		END FOR;
+--	SEAOPS-1573 - Store client phone numbers.
+		FOR rTelephone AS rContactInfo.*:Telephone[] DO
+			DECLARE rPhone REFERENCE TO rPhones;
+			DECLARE rTempPhone CHARACTER FIELDVALUE(rTelephone.(XMLNSC.Attribute)PhoneNumber);
+			IF rTempPhone IS NOT NULL THEN
+				IF NOT EXISTS(rEnvBmcr.Telephones.{rTempPhone}[]) THEN
+					CREATE LASTCHILD OF rPhones AS rPhone IDENTITY Phone;
+					SET rPhone.PhoneType = 'HOME';
+					SET rPhone.IntlCode = FIELDVALUE(rTelephone.(XMLNSC.Attribute)CountryAccessCode);
+					SET rPhone.PhoneNumber = rTempPhone;
+					SET rEnvBmcr.Telephones.{rTempPhone} =  guestRefno;				
+				END IF;
+			END IF;
+		END FOR;	
+
+	END IF;
+END;
+
+CREATE PROCEDURE PopulateAddresses (INOUT rCrtUpdtHousehold REFERENCE, IN rContactInfo REFERENCE)
+BEGIN
+	IF EXISTS(rContactInfo.*:Address[]) THEN			
+		CREATE FIELD rCrtUpdtHousehold.Addresses.Address;
+		DECLARE rOutAddr REFERENCE TO rCrtUpdtHousehold.Addresses.Address;
+		DECLARE rInAddr REFERENCE TO rContactInfo.*:Address;
+		
+		-- TODO Consider revising the array index method
+		SET rOutAddr.Line1 = rInAddr.*:AddressLine[1];
+		SET rOutAddr.Line2 = rInAddr.*:AddressLine[2];
+		SET rOutAddr.Line3 = rInAddr.*:AddressLine[3];
+		SET rOutAddr.Line4 = rInAddr.*:AddressLine[4];
+		
+		SET rOutAddr.AddressType = 'HOME ADDRESS';
+		SET rOutAddr.City = rInAddr.*:CityName;
+		SET rOutAddr.State = FIELDVALUE(rInAddr.*:StateProv.(XMLNSC.Attribute)StateCode);
+		SET rOutAddr.ZIP = rInAddr.*:PostalCode;
+		SET rOutAddr.Country = FIELDVALUE(rInAddr.*:CountryName.(XMLNSC.Attribute)Code);
+	END IF;
+END;
+
+	
+CREATE PROCEDURE SetResponseClientInfo(IN rInGuestDetails REFERENCE, INOUT rOutMsg REFERENCE, INOUT rEnv REFERENCE)
+BEGIN
+	DECLARE rClients REFERENCE TO rInGuestDetails;
+	
+	-- Loop through GuestDetails
+	FOR guestDetail AS rInGuestDetails.*:GuestDetail[] DO
+		DECLARE clientID CHARACTER '0'; 
+		DECLARE guestRefNumber CHARACTER GetGuestRefID(guestDetail);			
+		
+		CREATE LASTCHILD OF rOutMsg AS rClients IDENTITY clients;
+		
+		IF EXISTS(rEnv.Temp.BMCR.clientsGuestRefMap[]) THEN				
+			SET clientID = THE(SELECT ITEM P.ClientID FROM rEnv.Temp.BMCR.clientsGuestRefMap.Client[] AS P WHERE P.GuestRefNum = guestRefNumber);
+		END IF;
+		
+		IF (clientID = '0') THEN
+			DECLARE loyaltyID CHARACTER;
+			CALL GetGuestLoyaltyID(guestDetail, loyaltyID);
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(loyaltyID) THEN
+				SET clientID = loyaltyID;
+			END IF;
+		END IF;
+		
+		SET rClients.clientId = clientID;
+		SET rClients.guestRef = CAST(guestRefNumber AS INTEGER);
+	END FOR;
+END;	
+
+
+CREATE PROCEDURE GetGuestLoyaltyID (IN rInGuestDetail REFERENCE, INOUT rLoyaltyID CHAR)
+BEGIN
+	SET rLoyaltyID = COALESCE(COALESCE(NULLIF(rInGuestDetail.*:ContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID,''),NULLIF(rInGuestDetail.*:LoyaltyInfo.(XMLNSC.Attribute)MembershipID,'')),'');
+END;
+
+
+CREATE FUNCTION GetGuestRefID (IN rInGuestDetail REFERENCE) RETURNS CHARACTER
+BEGIN
+	RETURN COALESCE(rInGuestDetail.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber,'');
+END;
+
+
+CREATE FUNCTION FindClientIdFromManageClientOut (IN rInGuestDetail REFERENCE, IN rManageClientOut REFERENCE, INOUT rBmcr REFERENCE) RETURNS CHARACTER
+BEGIN
+	DECLARE givenName, lastName, middlename CHARACTER NULL; 
+	DECLARE birthdate, loyaltyID CHARACTER;
+	DECLARE IDCount INTEGER 0;
+	DECLARE rClientIDs REFERENCE TO rBmcr;
+	
+	CREATE LASTCHILD OF rBmcr AS rClientIDs NAME 'clientIDList';
+	
+	SET rBmcr.EmailMap = NULL;
+	
+	IF EXISTS(rInGuestDetail.*:ContactInfo.*:PersonName[])
+	THEN
+		SET givenName = COALESCE(rInGuestDetail.*:ContactInfo.*:PersonName.*:GivenName,'');
+		SET lastName = COALESCE(rInGuestDetail.*:ContactInfo.*:PersonName.*:Surname,'');
+	END IF;
+	
+	SET birthdate = COALESCE(FIELDVALUE(rInGuestDetail.*:ContactInfo.(XMLNSC.Attribute)BirthDate),'');	
+		
+	CALL GetGuestLoyaltyID(rInGuestDetail, loyaltyID);
+	
+	IF loyaltyID = '' THEN
+		SET loyaltyID = 0;
+	END IF;
+	
+	FOR rHousehold AS rManageClientOut.Households.Household[] DO
+		FOR rClient AS rHousehold.HouseholdHeader.Clients.Client[] DO
+			DECLARE rClientHeader REFERENCE TO rClient.ClientHeader;
+			--DECLARE cBirthdate CHARACTER COALESCE(SUBSTRING(rClientHeader.Birthday BEFORE 'T'),'');
+			DECLARE cBirthdate CHARACTER COALESCE(rClientHeader.Birthday, '');
+			
+			IF CONTAINS(cBirthdate, 'T') THEN
+				SET cBirthdate = SUBSTRING(rClientHeader.Birthday BEFORE 'T');
+			END IF;
+			
+			IF rClientHeader.IsActive = 'Y' AND UPPER(rClientHeader.FirstName) = UPPER(givenName) 
+				AND UPPER(rClientHeader.LastName) = UPPER(lastName) AND cBirthdate = birthdate
+			THEN
+				DECLARE rClientID REFERENCE TO rBmcr;
+				CREATE LASTCHILD OF rClientIDs AS rClientID NAME 'clientID';
+				SET rClientID = FIELDVALUE(rClientHeader.ClientID);
+				SET IDCount = IDCount + 1;
+				
+				IF EXISTS(rClientHeader.EMail[]) THEN
+					IF NOT EXISTS(rBmcr.EmailMap[]) THEN
+						CREATE FIELD rBmcr.EmailMap;
+					END IF;
+					
+					DECLARE rEmailMap,rEmails REFERENCE TO rBmcr.EmailMap;
+					CREATE LASTCHILD OF rEmailMap AS rEmails NAME 'Emails';
+					
+					SET rEmails.email = rClientHeader.EMail;
+					SET rEmails.clientID = rClientHeader.ClientID;
+				END IF;
+			END IF;
+		END FOR;
+	END FOR;
+	
+	IF IDCount = 1 THEN
+		RETURN rClientIDs.clientID;
+	ELSEIF IDCount = 0 THEN
+		RETURN loyaltyID;
+	ELSE
+		-- More than one clientID matched
+		DECLARE matchFound BOOLEAN FALSE;
+		DECLARE rClient REFERENCE TO rClientIDs.clientID[1];
+		
+		WHILE (NOT matchFound) AND LASTMOVE(rClient) DO
+			IF rClient = loyaltyID THEN
+				SET matchFound = TRUE;
+			END IF;
+			
+			MOVE rClient NEXTSIBLING;
+		END WHILE;	
+
+		IF matchFound THEN
+			RETURN loyaltyID;
+		ELSE
+			DECLARE clientID CHARACTER;
+			
+			IF EXISTS(rInGuestDetail.*:ContactInfo.*:Email[]) AND (EXISTS(rBmcr.EmailMap.Emails[])) THEN
+				DECLARE emailMatch BOOLEAN FALSE;
+				DECLARE rEmailItem REFERENCE TO rBmcr.EmailMap.Emails[1];
+				
+				WHILE (NOT emailMatch) AND LASTMOVE(rEmailItem) DO
+					IF (UPPER(rEmailItem.email) = UPPER(rInGuestDetail.*:ContactInfo.*:Email)) THEN
+						SET emailMatch = TRUE;
+						SET clientID = rEmailItem.clientID;						
+					END IF;
+					
+					MOVE rEmailItem NEXTSIBLING;
+				END WHILE;	
+				
+				IF emailMatch AND clientID IS NOT NULL THEN
+					RETURN clientID;
+				ELSE
+					-- TODO Consider using FIRSTCHILD
+					RETURN rClientIDs.clientID[1];
+				END IF;
+			END IF;
+			
+			RETURN rClientIDs.clientID[1];							
+		END IF;
+		
+		RETURN rClientIDs.clientID[1];
+	END IF;
+	
+	RETURN '0';
+END;
+
+
+CREATE PROCEDURE BuildPromotions(IN rIn REFERENCE, INOUT rEnvProms REFERENCE)
+BEGIN
+	DECLARE PROMOS ROW;
+	DECLARE rPromoCode REFERENCE TO PROMOS;
+	DECLARE rEnvPromo, rExclPromo, rEnvResTrans REFERENCE TO rEnvProms;
+	
+	DECLARE cGuestRefNum, cFareCode CHARACTER '';
+	
+	-- loop thru the guest list
+	FOR rGuestDtl AS rIn.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+		SET cGuestRefNum = rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber;
+		
+		-- loop thru the fare code
+		FOR rFareCode AS rGuestDtl.*:SelectedFareCode[] DO
+			SET cFareCode = rFareCode.(XMLNSC.Attribute)FareCode;
+			
+			IF EXISTS(PROMOS.{cFareCode}[]) THEN
+				SET PROMOS.{cFareCode} = PROMOS.{cFareCode} || ' ' || cGuestRefNum;
+			ELSE
+				SET PROMOS.{cFareCode} = cGuestRefNum;
+			END IF;
+		END FOR;		
+	END FOR;
+	
+	MOVE rPromoCode FIRSTCHILD;
+
+	-- loop thru the farecode list		
+	WHILE LASTMOVE(rPromoCode) DO
+		CREATE LASTCHILD OF rEnvProms AS rEnvPromo NAME 'Promotions';
+		SET rEnvPromo.PromoCode = FIELDNAME(rPromoCode);
+		SET rEnvPromo.GuestRefs = rPromoCode;
+
+		-- loop thru the guest list
+		FOR rGuestDtl AS rIn.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+			SET cGuestRefNum = rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber;
+			
+			IF NOT CONTAINS(rEnvPromo.GuestRefs, cGuestRefNum) THEN
+				CREATE LASTCHILD OF rEnvProms AS rExclPromo NAME 'Promotions';
+				
+				SET rExclPromo.GuestRefs = cGuestRefNum;
+				SET rExclPromo.PromoCode = FIELDNAME(rPromoCode);
+				SET rExclPromo.Mode = 'EXCLUDED';
+			END IF;
+		END FOR;
+		
+		MOVE rPromoCode NEXTSIBLING;
+	END WHILE;
+END;
+
+CREATE PROCEDURE RemoveGroupFareCodes(INOUT rEnvObjects REFERENCE)
+BEGIN
+	DECLARE rEnvProms, rEnvPromo REFERENCE TO rEnvObjects;
+	
+	SET rEnvObjects.TempVXProms = rEnvObjects.VXPromotions;
+	DETACH rEnvObjects.VXPromotions;
+	CREATE FIELD rEnvObjects.VXPromotions AS rEnvProms;
+	
+	FOR rPromos AS rEnvObjects.TempVXProms.Promotions[] DO
+		IF NOT com.ncl.ais.utils.FareCodeIsGroup(rPromos.PromoCode,'A') THEN
+			CREATE LASTCHILD OF rEnvProms AS rEnvPromo NAME 'Promotions';
+			-- Tree copy.
+			SET rEnvPromo = rPromos;			
+		END IF;
+	END FOR;
+	
+	DETACH rEnvObjects.TempVXProms;
+END;
+
+
+CREATE PROCEDURE CrtUpdateBookingReqWithoutResId(INOUT rEnv REFERENCE, INOUT rOrgMsg REFERENCE, IN rCrtUpdateRes REFERENCE, 
+													INOUT rUpdtBkngReq REFERENCE, INOUT OutputRoot REFERENCE)
+BEGIN
+	DECLARE rResGuest, rResPkg, rResPromo, rResCoupon, rResSpclReqItem, rCabin, rShipReq REFERENCE TO rUpdtBkngReq;
+	DECLARE rSailInfo REFERENCE TO rOrgMsg.*:SailingInfo;
+	DECLARE rSource REFERENCE TO rOrgMsg.*:POS.*:Source;
+	
+	DECLARE channel CHARACTER FIELDVALUE(rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+	DECLARE cLookupCode CHARACTER '';
+	DECLArE groupIdAdded BOOLEAN FALSE;
+
+--	SET rUpdtBkngReq.MsgHeader.Version = VersonixAPIVersion;
+--	SET rUpdtBkngReq.MsgHeader.SessionGUID = rEnv.sessionID;
+
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rUpdtBkngReq);
+	
+	SET rUpdtBkngReq.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResShipRequests';
+	SET rUpdtBkngReq.ResShell.ResHeader.ResID = rEnv.ResID;
+	SET rUpdtBkngReq.ResShell.ResHeader.AgencyID = rEnv.agencyID;
+	-- SEAOPS 1784 - Secondary agency
+	IF rEnv.secondaryAgency IS NOT NULL THEN
+		SET rUpdtBkngReq.ResShell.ResHeader.SecAgencyID = rEnv.secondaryAgency;
+	ELSE
+		SET rUpdtBkngReq.ResShell.ResHeader.SecAgencyID = FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgencyID);
+	END IF;
+	SET rUpdtBkngReq.ResShell.ResHeader.AgentID = FIELDVALUE(rOrgMsg.*:AgentInfo.(XMLNSC.Attribute)AgentID);
+	SET rUpdtBkngReq.ResShell.ResHeader.SecAgentID = FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgentID);
+	SET rUpdtBkngReq.ResShell.ResHeader.SecAgencyID2 = rEnv.secondaryAgency;
+	
+
+	-- SEAOPS-1380. In case of traditional group add group id.
+	FOR rEnvPromo AS rEnv.Temp.Objects.VXPromotions.Promotions[] DO
+		IF LENGTH(TRANSLATE(rEnvPromo.PromoCode, '0123456789', '')) = 0 THEN
+			IF groupIdAdded = FALSE THEN
+				SET rUpdtBkngReq.ResShell.ResHeader.GroupID = rEnvPromo.PromoCode;
+				SET groupIdAdded = TRUE;
+			END IF;
+		END IF;
+	END FOR;
+	
+	IF(rEnv.TempCollection.collectionID > 0) THEN
+	 	SET rUpdtBkngReq.ResShell.ResHeader.CollectionID = rEnv.TempCollection.collectionID;
+	 	SET rUpdtBkngReq.ResShell.ResHeader.ResStatus = 'RQ';
+	END IF;
+	
+	SET rUpdtBkngReq.ResShell.ResHeader.SourceCode = channel;
+	
+	FOR rGuestDtl AS rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+		-- create Res guests
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResGuests AS rResGuest NAME 'ResGuest';
+		
+		SET rResGuest.GuestSeqN = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+		SET rResGuest.GuestAge = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)Age);
+		SET rResGuest.ClientID = LookupClientID(FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber),rCrtUpdateRes);
+		
+		SET rResGuest.Insurance = com.ncl.ais.utils.XrefSWCodesWithDefault(channel, InsCodeType, rGuestDtl.*:SelectedInsurance.(XMLNSC.Attribute)InsuranceCode, rEnv, OutputRoot);			
+		SET rResGuest.Gender = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)Gender);
+		
+		-- map res packages. Adding additional check to avoid creating empty ResPackage if sailinginfo not present
+		IF NOT EXISTS(rUpdtBkngReq.ResShell.ResPackages.ResPackage[]) AND EXISTS(rSailInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID[]) THEN
+			-- map primary voyage package
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rResPkg NAME 'ResPackage';
+			
+			SET rResPkg.PackageID = FIELDVALUE(rSailInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+			--SET rResPkg.Ship = FIELDVALUE(rSailInfo.*:SelectedSailing.*:CruiseLine.(XMLNSC.Attribute)ShipCode);
+			SET rResPkg.PriceCategory = FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode);
+			SET rResPkg.BerthCategory = FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode);
+		END IF;
+		
+		FOR rSelPkg AS rGuestDtl.*:SelectedPackages.*:SelectedPackage[] DO
+			-- map secondary packages
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rResPkg NAME 'ResPackage';
+			
+			SET rResPkg.PackageID = FIELDVALUE(rSelPkg.(XMLNSC.Attribute)CruisePackageCode);
+			SET rResPkg.GuestRefs = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+		END FOR;
+	END FOR;
+	
+	-- map promotions
+	FOR rEnvPromo AS rEnv.Temp.Objects.VXPromotions.Promotions[] DO
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPromotions AS rResPromo NAME 'ResPromotion';
+		
+		SET rResPromo.GuestRefs = rEnvPromo.GuestRefs;		
+		SET cLookupCode = com.ncl.ais.utils.XrefSWCodes(channel, PromoCodeType, rEnvPromo.PromoCode, rEnv, OutputRoot);
+		
+		IF com.ncl.ais.utils.IsEmpty(cLookupCode) THEN
+			SET rResPromo.PromoCode = rEnvPromo.PromoCode;
+		ELSE
+			SET rResPromo.PromoCode = cLookupCode;
+		END IF;
+		
+		IF COALESCE(rEnvPromo.Mode, '') IN('EXCLUDED', 'MANUAL') THEN
+			SET rResPromo.Mode = rEnvPromo.Mode;
+		ELSE
+			SET rResPromo.Mode = 'FORCED';
+		END IF;
+	END FOR;
+	
+	---- Commented for AirWave Changes---
+/*	FOR rSCabin AS rSailInfo.*:SelectedCategory.*:SelectedCabin[] DO
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.Inventory.CabinChain AS rCabin NAME 'CabinAssignment';
+		SET rCabin.CabinNumber = FIELDVALUE(rSCabin.(XMLNSC.Attribute)CabinNumber);		
+	END FOR;
+*/	
+
+	-- Updated ResShipRequest Mapping for Airwave--
+	/*DECLARE CabinSeq INTEGER 1;
+	
+	FOR rSCabin AS rSailInfo.*:SelectedCategory.*:SelectedCabin[] DO
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResShipRequests AS rShipReq NAME 'ResShipRequest';
+		SET rShipReq.CabinSeqN = CabinSeq;
+		SET rShipReq.Category = rResPkg.BerthCategory;
+	
+		IF FIELDVALUE(rSCabin.(XMLNSC.Attribute)CabinNumber) = 'WTL' THEN
+			SET rShipReq.InventoryReqType = 'WTL ONLY';
+		ELSEIF 	FIELDVALUE(rSCabin.(XMLNSC.Attribute)CabinNumber) = 'GTY' THEN
+			SET rShipReq.InventoryReqType = 'GTY ONLY';	
+		ELSE
+			SET rShipReq.RequestedCabin = FIELDVALUE(rSCabin.(XMLNSC.Attribute)CabinNumber);
+		END IF;		
+		
+		--SET CabinSeq = CabinSeq +1;
+	END FOR;*/
+	
+	SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.Category = 
+		COALESCE(FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode), FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode));
+		        				
+	IF FIELDVALUE(rSailInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber) = 'WTL' THEN
+		SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.InventoryReqType = 'WTL ONLY';
+	ELSEIF 	FIELDVALUE(rSailInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber) = 'GTY' THEN
+		SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.InventoryReqType = 'GTY ONLY';	
+	ELSE
+		SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.RequestedCabin = FIELDVALUE(rSailInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber);
+	END IF;
+	
+	FOR rGuestDtl AS rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+		-- map coupons
+		FOR rSelCoupon AS rGuestDtl.*:SelectedCoupons.*:Coupon[] DO
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.Coupons AS rResCoupon NAME 'Coupon';
+			
+			SET rResCoupon.CouponID = FIELDVALUE(rSelCoupon.(XMLNSC.Attribute)ID);
+			SET rResCoupon.GuestSeqN = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+			SET rResCoupon.Amount = CAST(rSelCoupon.*:AmountTobeApplied.(XMLNSC.Attribute)Amount AS INTEGER) / 100;
+		END FOR;
+		
+		-- map special requests
+		FOR rSelService AS rGuestDtl.*:SelectedSpecialServices.*:SelectedSpecialService[] DO
+			-- get sub SW code from cache
+			 SET cLookupCode = com.ncl.ais.utils.GetSubSWCodeFromCache(channel || '#' || SpclReqCodeType, rSelService.(XMLNSC.Attribute)Code, XC10CacheMap, 
+																	  XC10ConnectionConfig);
+
+			IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+				SET cLookupCode = com.ncl.ais.utils.LookupSubSWCodeUsingExternalCode(channel, rSelService.(XMLNSC.Attribute)Code, SpclReqCodeType);
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = channel;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = SpclReqCodeType;
+				CREATE FIELD OutputRoot.XMLNSC.CacheMetadata.LoadSubCodes;
+				
+				PROPAGATE TO LABEL 'CACHE_LOAD';				
+			END IF; 
+			
+			SET cLookupCode = SUBSTRING(cLookupCode BEFORE '#1#'); 
+			
+			IF LENGTH(cLookupCode) > 0 THEN
+				SET rUpdtBkngReq.ResShell.SpecialRequests.SpRequest.OrderStatus = 'NEW';
+				CREATE LASTCHILD OF rUpdtBkngReq.ResShell.SpecialRequests.SpRequest.Items AS rResSpclReqItem NAME 'Item';
+				
+				SET rResSpclReqItem.SpReqType = FIELDVALUE(rSelService.(XMLNSC.Attribute)Type);
+				SET rResSpclReqItem.SpReqCode = cLookupCode;
+				SET rResSpclReqItem.SpReqName = FIELDVALUE(rSelService.(XMLNSC.Attribute)CodeName);
+				SET rResSpclReqItem.GuestSeqN = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+--					SEAOPS-3567 mapping additional special request attributes and comment Jag
+					DECLARE rPlaceCode CHARACTER '';													
+					SET rPlaceCode = rSelService.(XMLNSC.Attribute)DeliveryPlace;
+					SET rResSpclReqItem.Delivery.PlaceCode = rPlaceCode;
+					SET rResSpclReqItem.Delivery.DateTime = FIELDVALUE(rSelService.(XMLNSC.Attribute)Date);					
+					SET rResSpclReqItem.Comments = rSelService.*:Comment;
+			END IF;
+		END FOR;				
+	END FOR;
+	
+	IF(rEnv.TempCollection.collectionID > 0) 
+	THEN
+		DECLARE parmStr CHARACTER 'AUTHCODEAGENCYPGMAMENITY';
+		DECLARE cAuthCode CHARACTER;
+
+		SET cAuthCode = CAST(THE(SELECT ITEM SS.PARAM_VALUE from Database.SEA.seaware_settings AS SS where SS.param_code = parmStr) AS CHARACTER);
+				
+		IF NOT com.ncl.ais.utils.IsEmpty(cAuthCode) THEN
+			SET rUpdtBkngReq.ResShell.AuthorizationCodes.CodeItem.Code = cAuthCode;
+		END IF;
+	END IF;
+END;
+
+
+CREATE PROCEDURE CrtUpdateBookingReqWithResId(INOUT rEnv REFERENCE, INOUT rOrgMsg REFERENCE, INOUT rLoadBkgRes REFERENCE, INOUT rUpdtBkngReq REFERENCE, INOUT OutputRoot REFERENCE)
+BEGIN
+	DECLARE rResGuest, rResPkg, rResPromo, rResCoupon, rResSpclReqItem, rResShipReq, rEnvInclPkg REFERENCE TO rUpdtBkngReq;
+	DECLARE rSailInfo REFERENCE TO rOrgMsg.*:SailingInfo;
+	DECLARE rGuestDtl REFERENCE TO rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail;
+	DECLARE rSource REFERENCE TO rOrgMsg.*:POS.*:Source;
+	DECLARE rResShell REFERENCE TO rLoadBkgRes.ResShell;
+
+	DECLARE cCompareGuest, cLoyalMbrId, cClientId, cGuestSeqN, cResPromoCode, cLookupCode, cExcludeGuestRefs CHARACTER '';
+	DECLARE iGuestCnt1, iGuestCnt2 INTEGER 0;
+	DECLARE hasLoyaltyMembershipId, guestDetailsDontMatch BOOLEAN FALSE;
+	DECLARE channel CHARACTER FIELDVALUE(rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+	
+	--SET rUpdtBkngReq.MsgHeader = rLoadBkgRes.MsgHeader;
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rUpdtBkngReq);
+	
+	
+	SET rUpdtBkngReq.ResShell.ResHeader = rLoadBkgRes.ResShell.ResHeader;
+	IF COALESCE(FIELDVALUE(rOrgMsg.*:AgentInfo.(XMLNSC.Attribute)AgentID),'')<>'' THEN
+		SET rUpdtBkngReq.ResShell.ResHeader.AgentID = FIELDVALUE(rOrgMsg.*:AgentInfo.(XMLNSC.Attribute)AgentID);
+	END IF;
+	IF COALESCE(FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgencyID),'')<>'' THEN
+		SET rUpdtBkngReq.ResShell.ResHeader.SecAgencyID = FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgencyID);
+	END IF;
+	-- SEAOPS 1784 - Secondary agency
+	IF COALESCE(FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgencyID),'')='' AND rEnv.secondaryAgency IS NOT NULL THEN
+		SET rUpdtBkngReq.ResShell.ResHeader.SecAgencyID = rEnv.secondaryAgency;
+	ELSE
+		SET rUpdtBkngReq.ResShell.ResHeader.SecAgencyID = FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgencyID);
+	END IF;	
+	IF COALESCE(FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgentID),'')<>'' THEN
+		SET rUpdtBkngReq.ResShell.ResHeader.SecAgentID = FIELDVALUE(rOrgMsg.*:SecondaryAgentInfo.(XMLNSC.Attribute)AgentID);
+	END IF;	
+	
+	IF rEnv.TempCollection.collectionResId>0 AND rLoadBkgRes.ResShell.ResHeader.ResStatus='RQ' THEN
+		SET rUpdtBkngReq.ResShell.ResHeader.ResStatus = 'OF';
+		-- SEAOPS-1381 - Booking Source change to GDS.
+		SET rUpdtBkngReq.ResShell.ResHeader.SourceCode = channel;
+	END IF;
+	CREATE FIELD rEnv.Temp.InclPkgs;
+	CREATE FIELD rEnv.Temp.ExclPkgs;
+	
+	FOR rLBPkg AS rLoadBkgRes.ResShell.ResPackages.ResPackage[] DO
+		IF(rLBPkg.PackageClass = 'VOYAGE') THEN
+			CREATE LASTCHILD OF rEnv.Temp.InclPkgs AS rEnvInclPkg NAME 'ResPackage';
+			SET rEnvInclPkg = rLBPkg;
+		ELSE
+			SET rEnv.Temp.ExclPkgs.{rLBPkg.PackageID} = rLBPkg;				
+		END IF;
+	END FOR;
+			
+	-- map res guests
+	SET iGuestCnt1 = CARDINALITY(rLoadBkgRes.ResShell.ResGuests.ResGuest[]);
+	
+	X: WHILE LASTMOVE(rGuestDtl) DO
+		SET cLoyalMbrId = rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+		SET cGuestSeqN = rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber;
+		
+		IF EXISTS(rEnv.ClientIds.{cGuestSeqN}[]) THEN
+			SET cClientId = FIELDVALUE(rEnv.ClientIds.{cGuestSeqN});
+		END IF;
+		
+		IF LENGTH(cLoyalMbrId) > 0 THEN
+			SET hasLoyaltyMembershipId = TRUE;
+		END IF;
+		
+		IF (LENGTH(cClientId) = 0) AND hasLoyaltyMembershipId THEN
+			SET cClientId = cLoyalMbrId;
+		END IF;
+
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResGuests AS rResGuest NAME 'ResGuest';
+		
+		SET rResGuest.GuestSeqN = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+		SET rResGuest.GuestAge = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)Age);
+		SET rResGuest.ClientID = cClientId;
+		
+		IF LENGTH(rGuestDtl.*:SelectedInsurance.(XMLNSC.Attribute)InsuranceCode) > 0 THEN			
+			SET rResGuest.Insurance = com.ncl.ais.utils.XrefSWCodesWithDefault(channel, InsCodeType, rGuestDtl.*:SelectedInsurance.(XMLNSC.Attribute)InsuranceCode, rEnv, OutputRoot);			
+		END IF;
+
+		MOVE rGuestDtl NEXTSIBLING;
+	END WHILE;
+	
+	-- SEAOPS-1775
+	-- map res packages. Adding additional check to avoid creating empty ResPackage if sailinginfo not present
+	IF NOT EXISTS(rUpdtBkngReq.ResShell.ResPackages.ResPackage[]) AND EXISTS(rSailInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID[]) THEN
+		-- map primary voyage package
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rResPkg NAME 'ResPackage';
+		
+		SET rResPkg.PackageID = FIELDVALUE(rSailInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+		--SET rResPkg.Ship = FIELDVALUE(rSailInfo.*:SelectedSailing.*:CruiseLine.(XMLNSC.Attribute)ShipCode);
+		SET rResPkg.PriceCategory = FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode);
+		SET rResPkg.BerthCategory = FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode);
+	END IF;
+	
+	-- map promotions
+	IF EXISTS(rEnv.Temp.Objects.VXPromotions.Promotions[]) THEN
+		FOR rEnvPromo AS rEnv.Temp.Objects.VXPromotions.Promotions[] DO
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPromotions AS rResPromo NAME 'ResPromotion';
+			
+			SET rResPromo.GuestRefs = rEnvPromo.GuestRefs;
+			SET rResPromo.PromoCode = rEnvPromo.PromoCode;
+			SET rResPromo.IsActive = rEnvPromo.IsActive;			
+			
+			IF COALESCE(rEnvPromo.Mode, '') IN('EXCLUDED', 'MANUAL') THEN
+				SET rResPromo.Mode = rEnvPromo.Mode;
+			ELSE
+				SET rResPromo.Mode = 'FORCED';
+			END IF;
+		END FOR;
+		
+		FOR rLoadBkgPromo AS rLoadBkgRes.ResShell.ResPromotions.ResPromotion[] DO
+			DECLARE queryResult ROW;		
+			SET queryResult = THE(SELECT P.PromoCode,P.GuestRefs FROM rEnv.Temp.Objects.VXPromotions.Promotions[] AS P WHERE P.PromoCode = rLoadBkgPromo.PromoCode);			
+			SET cResPromoCode = queryResult.PromoCode;
+			
+			DECLARE queryResult2 ROW;
+			
+			IF LENGTH(COALESCE(cResPromoCode, '')) = 0 THEN
+				--SEAOPS-3699 Removing guest on existing booking Jag	
+				SET queryResult2 = THE(SELECT R.ContactInfo FROM rOrgMsg.ReservationInfo.GuestDetails.GuestDetail[] AS R WHERE R.ContactInfo.(XMLNSC.Attribute)GuestRefNumber = rEnv.Temp.RemainingRefs);
+				IF EXISTS(queryResult2.ContactInfo[]) THEN
+					CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPromotions AS rResPromo NAME 'ResPromotion';				
+					SET rResPromo.GuestRefs = rLoadBkgPromo.GuestRefs;
+					SET rResPromo.PromoCode = rLoadBkgPromo.PromoCode;
+					-- TODO There is some check related to IsActive here
+					SET rResPromo.IsActive = rLoadBkgPromo.IsActive;
+					SET rResPromo.Mode = 'EXCLUDED';
+				END IF;
+			ELSE
+				DECLARE cTempGuestRefs CHARACTER queryResult.GuestRefs;
+				DECLARE cGuestRef,cLoadGuestRefs CHARACTER;
+				
+				CREATE FIELD rEnv.Temp.RemainingRefs;
+
+				IF LENGTH(TRIM(rLoadBkgPromo.GuestRefs)) > 0 THEN
+					SET cLoadGuestRefs = rLoadBkgPromo.GuestRefs || ' ';
+				END IF;
+				
+				WHILE LENGTH(cLoadGuestRefs) > 0 DO
+					SET cGuestRef = SUBSTRING(cLoadGuestRefs BEFORE ' ');
+					
+					IF NOT CONTAINS(cTempGuestRefs,cGuestRef) THEN
+                 		SET rEnv.Temp.RemainingRefs = cGuestRef || ' ';
+             		END IF;
+             		
+             		SET cLoadGuestRefs = SUBSTRING(cLoadGuestRefs AFTER ' ');
+         		END WHILE;
+         		
+				IF LENGTH(TRIM(rEnv.Temp.RemainingRefs)) > 0 THEN
+					
+					--SEAOPS-3699 Removing guest on existing booking - Jag
+					SET queryResult2 = THE(SELECT R.ContactInfo FROM rOrgMsg.ReservationInfo.GuestDetails.GuestDetail[] AS R WHERE R.ContactInfo.(XMLNSC.Attribute)GuestRefNumber = rEnv.Temp.RemainingRefs);
+					IF EXISTS(queryResult2.ContactInfo[]) THEN											
+						CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPromotions AS rResPromo NAME 'ResPromotion';					
+						SET rResPromo.GuestRefs = rEnv.Temp.RemainingRefs;
+						SET rResPromo.PromoCode = rLoadBkgPromo.PromoCode;
+						SET rResPromo.IsActive = rLoadBkgPromo.IsActive;
+						SET rResPromo.Mode = 'EXCLUDED';
+					END IF;	
+				END IF;	
+			END IF;
+			DETACH rEnv.Temp.RemainingRefs;
+		END FOR;
+
+	END IF;
+	
+	-- map ship requests
+	SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.Category = 
+		COALESCE(FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode), rEnv.Temp.UpdateBookingCategory);
+	
+	IF EXISTS(rOrgMsg.*:SailingInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber[]) THEN
+		-- Fix for SEAOPS-1323 - Booking for FS group was created as GTY cabin. 
+		SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.InventoryReqType = 'STANDARD';
+		SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.RequestedCabin = FIELDVALUE(rOrgMsg.*:SailingInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber);
+		SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.Inventory = '';
+		--SET rUpdtBkngReq.ResShell.ResShipRequests.ResShipRequest.Inventory.CabinChain.CabinAssignment.CabinNumber = FIELDVALUE(rOrgMsg.*:SailingInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber);
+	END IF;
+	
+	-- map res transportation
+	-- TODO At this stage nothing would've been populated in vxAir. So this is redundant
+	IF EXISTS(rEnv.Temp.Objects.VXAirTransportations.ResTransportation[]) 
+	THEN
+		SET rUpdtBkngReq.ResShell.ResTransportations = rEnv.Temp.Objects.VXAirTransportations;
+	END IF;
+
+	-- Map Coupons and Special Requests
+	FOR rGuestDtl AS rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+		SET cGuestSeqN = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+		
+		-- map coupons
+		FOR rSelCoupon AS rGuestDtl.*:SelectedCoupons.*:Coupon[] DO
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.Coupons AS rResCoupon NAME 'Coupon';
+			
+			SET rResCoupon.CouponID = FIELDVALUE(rSelCoupon.(XMLNSC.Attribute)ID);
+			SET rResCoupon.GuestSeqN = cGuestSeqN;
+			SET rResCoupon.Amount = CAST(rSelCoupon.*:AmountTobeApplied.(XMLNSC.Attribute)Amount AS INTEGER) / 100;
+		END FOR;
+		
+		-- map special requests
+		IF EXISTS(rGuestDtl.*:SelectedSpecialServices.*:SelectedSpecialService.(XMLNSC.Attribute)Code[]) THEN
+			SET rUpdtBkngReq.ResShell.SpecialRequests.SpRequest.OrderStatus = 'NEW';
+								
+			FOR rSelService AS rGuestDtl.*:SelectedSpecialServices.*:SelectedSpecialService[] DO
+				IF com.ncl.ais.utils.IsEmpty(rSelService.(XMLNSC.Attribute)Mode) OR (rSelService.(XMLNSC.Attribute)Mode <> 'Remove') THEN
+					-- get sub SW code from cache
+					SET cLookupCode = com.ncl.ais.utils.GetSubSWCodeFromCache(channel || '#' || SpclReqCodeType, rSelService.(XMLNSC.Attribute)Code, XC10CacheMap, 
+																			  XC10ConnectionConfig);
+		
+					IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+						-- trigger cache loader
+						SET OutputRoot.XMLNSC.CacheMetadata.Channel = channel;
+						SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = PromoCodeType;
+						CREATE FIELD OutputRoot.XMLNSC.CacheMetadata.LoadSubCodes;
+						
+						PROPAGATE TO LABEL 'CACHE_LOAD';
+			
+						SET cLookupCode = com.ncl.ais.utils.LookupSubSWCodeUsingExternalCode(channel, rSelService.(XMLNSC.Attribute)Code, SpclReqCodeType);
+					END IF;
+		
+					SET cLookupCode = COALESCE(NULLIF(SUBSTRING(cLookupCode BEFORE '#1#'),''),'NCLWEBC');
+					
+					CREATE LASTCHILD OF rUpdtBkngReq.ResShell.SpecialRequests.SpRequest.Items AS rResSpclReqItem NAME 'Item';
+					
+					SET rResSpclReqItem.SpReqType = FIELDVALUE(rSelService.(XMLNSC.Attribute)Type);
+					SET rResSpclReqItem.SpReqCode = cLookupCode;
+					SET rResSpclReqItem.GuestSeqN = cGuestSeqN ;					
+--					SEAOPS-3567 mapping additional special request attributes and comment Jag
+					DECLARE rPlaceCode CHARACTER '';													
+					SET rPlaceCode = rSelService.(XMLNSC.Attribute)DeliveryPlace;
+					SET rResSpclReqItem.Delivery.PlaceCode = rPlaceCode;
+					SET rResSpclReqItem.Delivery.DateTime = FIELDVALUE(rSelService.(XMLNSC.Attribute)Date);					
+					SET rResSpclReqItem.Comments = rSelService.*:Comment;					
+				END IF;
+			END FOR;
+		END IF;
+		
+		-- map res packages
+		IF EXISTS(rGuestDtl.*:SelectedPackages.*:SelectedPackage[]) THEN
+			DECLARE rUBPkgs, rUBPkg REFERENCE TO rUpdtBkngReq;
+			
+			CREATE FIELD rUpdtBkngReq.ResShell.ResPackages AS rUBPkgs;
+			--Loop thru LoadBooking Respackages and map only those with PackageClass = 'VOYAGE'
+			SET rUBPkgs = rEnv.Temp.InclPkgs;
+			
+			FOR rGuestPkg AS rGuestDtl.*:SelectedPackages.*:SelectedPackage[] DO
+				IF (NOT com.ncl.ais.utils.IsEmpty(rGuestPkg.(XMLNSC.Attribute)CruisePackageCode)) AND
+					((NOT EXISTS(rGuestPkg.(XMLNSC.Attribute)Mode[])) OR (rGuestPkg.(XMLNSC.Attribute)Mode <> 'Remove'))
+				THEN
+					DECLARE cPkgCode CHARACTER rGuestPkg.(XMLNSC.Attribute)CruisePackageCode;
+					DECLARE nPkgCode INTEGER;
+					DECLARE fPkgNegative BOOLEAN FALSE;
+					
+					IF SUBSTRING(cPkgCode FROM 1 FOR 1) = '-' THEN
+						SET cPkgCode = SUBSTRING(cPkgCode FROM 2);
+						SET fPkgNegative = TRUE;
+					END IF;
+					
+					IF (com.ncl.ais.utils.isNumeric(cPkgCode)) AND (NOT fPkgNegative) THEN
+						CREATE LASTCHILD OF rUBPkgs AS rUBPkg NAME 'ResPackage';
+						
+						SET rUBPkg.PackageID = cPkgCode;
+						SET rUBPkg.GuestRefs = cGuestSeqN;					
+					END IF;	
+				END IF;
+				
+				DECLARE rExclPkgs REFERENCE TO rEnv.Temp.ExclPkgs;
+				MOVE rExclPkgs FIRSTCHILD;
+				
+				WHILE LASTMOVE(rExclPkgs) DO
+					IF NOT (rGuestPkg.(XMLNSC.Attribute)Mode = 'Remove' AND rGuestPkg.(XMLNSC.Attribute)CruisePackageCode = FIELDNAME(rExclPkgs))
+					THEN
+						IF NOT rGuestPkg.(XMLNSC.Attribute)CruisePackageCode = FIELDNAME(rExclPkgs) THEN
+							CREATE LASTCHILD OF rUBPkgs AS rUBPkg NAME 'ResPackage';
+							SET rUBPkg = rExclPkgs;
+						END IF;	
+					ELSEIF(NOT com.ncl.ais.utils.IsEmpty(rGuestPkg.(XMLNSC.Attribute)CruisePackageCode)) AND
+						  (rGuestPkg.(XMLNSC.Attribute)CruisePackageCode = FIELDNAME(rExclPkgs)) AND (rGuestPkg.(XMLNSC.Attribute)Mode = 'Remove')	
+					THEN
+						SET rEnv.Temp.ExcludeGuestRefs.{FIELDNAME(rExclPkgs)} = COALESCE(rEnv.Temp.ExcludeGuestRefs.{FIELDNAME(rExclPkgs)},'') || cGuestSeqN || ' ';
+					END IF;
+					
+					MOVE rExclPkgs NEXTSIBLING REPEAT TYPE NAME;
+				END WHILE;
+			END FOR;
+		END IF;			
+	END FOR;
+	
+	
+			
+	--Loop through the excluded GuestRefs
+	IF LENGTH(rEnv.Temp.ExcludeGuestRefs.*) > 0 THEN
+		DECLARE rExclPkgs REFERENCE TO rEnv.Temp.ExclPkgs;
+		MOVE rExclPkgs FIRSTCHILD;
+		
+		WHILE LASTMOVE(rExclPkgs) DO
+			DECLARE cExcludeGuestRefs CHARACTER rEnv.Temp.ExcludeGuestRefs.{FIELDNAME(rExclPkgs)};
+			DECLARE cAllGuestRefs CHARACTER rExclPkgs.GuestRefs || ' ';			
+			
+			WHILE LENGTH(cAllGuestRefs) > 0 AND LENGTH(TRIM(cExcludeGuestRefs)) > 0 DO
+				DECLARE cGuestRf CHARACTER SUBSTRING(cExcludeGuestRefs BEFORE ' ');
+				
+				IF CONTAINS(cAllGuestRefs,cGuestRf) THEN
+             		SET cAllGuestRefs = REPLACE(cAllGuestRefs,cGuestRf,'');
+         		END IF;
+         		
+         		SET cExcludeGuestRefs = SUBSTRING(cExcludeGuestRefs AFTER ' ');
+     		END WHILE;
+            
+            IF LENGTH(TRIM(cAllGuestRefs)) > 0 THEN
+            	DECLARE rUBPackage REFERENCE TO rUpdtBkngReq;
+            	
+            	CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rUBPackage NAME 'ResPackage';
+            	SET rUBPackage.PackageID = FIELDNAME(rExclPkgs);
+				SET rUBPackage.GuestRefs = TRIM(cAllGuestRefs);
+            END IF;
+            
+			MOVE rExclPkgs NEXTSIBLING;			
+		END WHILE;	
+				
+	END IF;
+	---Comments
+	
+--	IF EXISTS(rOrgMsg.*:ReservationInfo.*:OptionalComponents[]) THEN 
+--		CALL UpdateLoadBookingComponents(rOrgMsg, rLoadBkgRes, rUpdtBkngReq, OutputRoot);
+--	END IF;
+	
+	DECLARE rPkg, rOptions, rPkgs REFERENCE TO rUpdtBkngReq; 
+	DECLARE inUpdPkgs REFERENCE TO rUpdtBkngReq.ResShell.ResPackages;
+	FOR sleInputPkg AS rOrgMsg.*:ReservationInfo.*:OptionalComponents.*:Packages.*:Package[] DO
+				
+ 			DECLARE slePkg ROW;
+ 			SET slePkg.Data[] = SELECT A FROM inUpdPkgs.ResPackage[] AS A WHERE A.PackageID = sleInputPkg.(XMLNSC.Attribute)ID;
+			IF EXISTS(slePkg.Data[]) THEN
+	 			FOR eachPkg AS inUpdPkgs.ResPackage[] DO   
+					 IF eachPkg.PackageID = sleInputPkg.(XMLNSC.Attribute)ID THEN
+						DECLARE icounter INTEGER 0; 
+						DECLARE iOptionCounter INTEGER CARDINALITY(eachPkg.Options.Option[]);
+						WHILE iOptionCounter > icounter  DO
+	 	  					DELETE FIRSTCHILD OF eachPkg.Options;
+							SET iOptionCounter = iOptionCounter - 1;
+						END WHILE;
+--						DECLARE rOptions REFERENCE TO eachPkg.Options;
+						IF EXISTS(eachPkg.Options[]) THEN
+							DECLARE rOptions REFERENCE TO eachPkg.Options;
+							CALL CreateOptionsComponents(rOptions, sleInputPkg);
+						ELSE 
+							CREATE LASTCHILD OF eachPkg AS rOptions IDENTITY Options;
+							CALL CreateOptionsComponents(rOptions, sleInputPkg);
+						END IF;
+						-- Calling Procedure
+						--CALL CreateOptionsComponents(rOptions, sleInputPkg); 
+	 				END IF;
+		 		END FOR;
+			ELSE 
+				IF NOT EXISTS(rUpdtBkngReq.ResShell.ResPackages[]) THEN
+					CREATE LASTCHILD OF rUpdtBkngReq.ResShell AS rPkgs IDENTITY ResPackages;
+-- 					CREATE LASTCHILD OF rPkgs AS rPkg IDENTITY ResPackage;
+				ELSE
+					DECLARE rPkgs REFERENCE TO rUpdtBkngReq.ResShell.ResPackages;
+				END IF;
+				CREATE LASTCHILD OF rPkgs AS rPkg IDENTITY ResPackage;
+ 				CREATE FIRSTCHILD OF rPkg IDENTITY PackageID VALUE sleInputPkg.(XMLNSC.Attribute)ID;
+ 				
+ 				IF EXISTS(sleInputPkg.*:Components[]) THEN 					
+					CREATE LASTCHILD OF rPkg AS rOptions IDENTITY Options;				
+	 				CALL CreateOptionsComponents(rOptions, sleInputPkg);
+ 				END IF;
+			END IF;
+	END FOR;
+	
+-- SEAOPS - 2002
+
+	DECLARE rEffDate, rUpdtPkgs, rUpdtPkg REFERENCE TO rUpdtBkngReq; 
+  	IF EXISTS(rOrgMsg.*:IsPriceDrop[]) IS NOT NULL AND rOrgMsg.*:IsPriceDrop = 'true' THEN
+  		IF NOT EXISTS(rUpdtBkngReq.ResShell.ResPackages[]) THEN
+  			CREATE LASTCHILD OF rUpdtBkngReq.ResShell AS rUpdtPkgs IDENTITY ResPackages;
+  		END IF; 
+  		DECLARE inUpdBkPkgs REFERENCE TO rUpdtBkngReq.ResShell.ResPackages; 
+		DECLARE effectiveFormat CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS';
+	  	FOR sleLoadPkg AS rLoadBkgRes.ResShell.ResPackages.ResPackage[] DO
+			DECLARE sleUpdtPkg ROW;
+ 			SET sleUpdtPkg.Data[] = SELECT A FROM inUpdBkPkgs.ResPackage[] AS A WHERE A.PackageID = sleLoadPkg.PackageID;
+			IF EXISTS(sleUpdtPkg.Data[]) THEN		
+		 		FOR eachUpdtPkg AS inUpdBkPkgs.ResPackage[] DO
+		 			IF sleLoadPkg.PackageID = eachUpdtPkg.PackageID THEN		 				
+						IF EXISTS(eachUpdtPkg.EffectiveDate[]) THEN
+							SET eachUpdtPkg.EffectiveDate = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT effectiveFormat);
+						ELSE
+							CREATE NEXTSIBLING OF eachUpdtPkg.PackageID AS rEffDate IDENTITY EffectiveDate;
+		 					SET eachUpdtPkg.EffectiveDate = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT effectiveFormat);
+			 			END IF;
+		 			END IF;
+			 	END FOR;
+			ELSE
+				IF NOT EXISTS(inUpdBkPkgs.ResPackage[]) THEN
+					CREATE LASTCHILD OF inUpdBkPkgs AS rUpdtPkg IDENTITY ResPackage;
+					SET rUpdtPkg.PackageID = sleLoadPkg.PackageID;
+					CREATE NEXTSIBLING OF rUpdtPkg.PackageID AS rEffDate IDENTITY EffectiveDate ;
+					SET rEffDate = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT effectiveFormat);
+				ELSE
+ 					CREATE LASTCHILD OF inUpdBkPkgs AS rUpdtPkg IDENTITY ResPackage;
+					SET rUpdtPkg.PackageID = sleLoadPkg.PackageID;
+					CREATE NEXTSIBLING OF rUpdtPkg.PackageID AS rEffDate IDENTITY EffectiveDate ;
+					SET rEffDate = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT effectiveFormat); 				
+				END IF;				
+			END IF;		
+		END FOR;
+	END IF;  	
+END;
+	
+CREATE PROCEDURE CreateOptionsComponents(INOUT rOptions REFERENCE, INOUT sleInputPkg REFERENCE)
+	BEGIN
+		DECLARE rOption, rCompRecordID, rVacationDates REFERENCE TO rOptions;
+ 
+		FOR eachComponent AS sleInputPkg.*:Components.*:Component[] DO 
+			DECLARE setSorN, checkSorN CHARACTER;
+			CREATE LASTCHILD OF rOptions AS rOption IDENTITY Option;
+			CREATE FIRSTCHILD OF rOption AS rCompRecordID IDENTITY CompRecordID VALUE eachComponent.(XMLNSC.Attribute)ID;
+ 
+ 					DECLARE fSelectedForGuests, fExcludedForGuests CHARACTER; 
+					FOR eachGuest AS eachComponent.*:Guests.*:Guest[] DO
+						
+						IF (eachGuest.(XMLNSC.Attribute)Selected) = 'Y' THEN
+							IF fSelectedForGuests IS NOT NULL THEN 
+								SET fSelectedForGuests = fSelectedForGuests ||' '||  eachGuest.(XMLNSC.Attribute)GuestRefNumber;
+							ELSE	
+								SET fSelectedForGuests = eachGuest.(XMLNSC.Attribute)GuestRefNumber;
+							END IF;
+						ELSE
+							IF fExcludedForGuests IS NOT NULL THEN 
+								SET fExcludedForGuests = fExcludedForGuests ||' '||  eachGuest.(XMLNSC.Attribute)GuestRefNumber;
+							ELSE	
+								SET fExcludedForGuests = eachGuest.(XMLNSC.Attribute)GuestRefNumber;
+							END IF;
+						END IF;
+					END FOR;
+					IF fSelectedForGuests IS NOT NULL THEN
+						CREATE NEXTSIBLING OF rCompRecordID IDENTITY SelectedForGuests VALUE fSelectedForGuests;
+					END IF;
+					IF fExcludedForGuests IS NOT NULL THEN
+						CREATE NEXTSIBLING OF rCompRecordID IDENTITY ExcludedForGuests VALUE fExcludedForGuests;
+					END IF; 
+		END FOR;
+ 	
+END;
+	
+
+CREATE PROCEDURE CollectionPrefixToID(IN rGuestDtls REFERENCE, IN prefix CHARACTER) RETURNS INTEGER
+BEGIN
+	DECLARE rGuestDetail REFERENCE TO rGuestDtls;
+	DECLARE matchFound BOOLEAN FALSE;
+	DECLARE collectionID INTEGER 0;
+	
+	MOVE rGuestDetail FIRSTCHILD;
+
+	-- loop thru the farecode list		
+	WHILE (NOT matchFound) AND LASTMOVE(rGuestDetail) DO
+		FOR rSFareCode AS rGuestDetail.*:SelectedFareCode[] DO
+			IF com.ncl.ais.utils.FareCodeIsGroup(FIELDVALUE(rSFareCode.(XMLNSC.Attribute)FareCode),prefix) THEN
+				SET collectionID = CAST(SUBSTRING(FIELDVALUE(rSFareCode.(XMLNSC.Attribute)FareCode) FROM (LENGTH(prefix)+1)) AS INTEGER);
+				SET matchFound = TRUE;
+			END IF;
+		END FOR;
+		
+		MOVE rGuestDetail NEXTSIBLING;
+	END WHILE;
+	
+	RETURN collectionID;
+END;
+	
+
+CREATE PROCEDURE LookupClientID(IN guestRef CHARACTER, IN rCURes REFERENCE) RETURNS CHARACTER
+BEGIN
+	DECLARE rClients REFERENCE TO rCURes;
+	DECLARE matchFound BOOLEAN FALSE;
+	DECLARE clientID CHARACTER '';
+	
+	MOVE rClients FIRSTCHILD;
+
+	-- loop thru the CreateUpdateResponse Client list		
+	WHILE (NOT matchFound) AND LASTMOVE(rClients) DO
+		IF rClients.guestRef = guestRef THEN
+			SET clientID = rClients.clientId;
+			SET matchFound = TRUE;
+		END IF;	
+
+		MOVE rClients NEXTSIBLING;
+	END WHILE;
+	
+	RETURN clientID;
+END;	
+
+	
+CREATE PROCEDURE CreateWarningRespForVXErrors(INOUT rEnv REFERENCE, INOUT rOrgMsg REFERENCE, IN rVxError REFERENCE, INOUT rOutRoot REFERENCE)
+BEGIN
+	DECLARE rOut REFERENCE TO rOutRoot;
+	DECLARE rWarn REFERENCE TO rEnv;
+
+	DECLARE channel CHARACTER FIELDVALUE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+	DECLARE cCode CHARACTER '';	
+	DECLARE cExternalCodeInfo , cErrorMsg CHARACTER '';
+    DECLARE sessionValid BOOLEAN FALSE;
+	DECLARE WARNMSG ROW;
+	
+	CREATE LASTCHILD OF WARNMSG DOMAIN('XMLNSC') NAME 'Warnings';
+	
+	FOR rError AS rVxError.Errors.Error[] DO
+		SET cCode = rError.ErrorCode;
+		CREATE LASTCHILD OF WARNMSG.Warnings AS rWarn IDENTITY sc:Warning;
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(channel || '#' || ExternalCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+	
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			-- trigger cache loader
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+		
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		
+			CALL CreateWarningResp('', channel, cCode, ExternalCodeType, rError, rWarn);
+		ELSE
+			CALL CreateWarningResp(cExternalCodeInfo, channel, cCode, ExternalCodeType, rError, rWarn);
+		END IF;
+	END FOR;
+	
+	-- create response message
+	CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	CREATE LASTCHILD OF rOutRoot.XMLNSC AS rOut IDENTITY sc:NCL_CruiseCreateUpdateBookingRS;
+	
+	CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+	SET rOut.sc:Warnings = WARNMSG.Warnings;
+	
+	IF COALESCE(rEnv.Temp.ValidatePayment, '') = 'Y' THEN
+		FOR rWarning AS rOut.*:Warnings.*:Warning[] DO
+			SET rWarning.(XMLNSC.Attribute)Type = '2';
+		END FOR;
+	END IF;
+END;
+
+
+CREATE PROCEDURE CreateWarningResp(IN cExternalCodeDetails CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+									IN rVxError REFERENCE, INOUT rWarn REFERENCE) 
+BEGIN
+	DECLARE cAdvCode, cErrorMsg, cExternalCode CHARACTER '';
+	DECLARE defAdvCode CHARACTER '12228';
+	DECLARE defErrorMsg CHARACTER 'System error from backend Try Later';
+	
+	SET cExternalCode = cExternalCodeDetails;
+	
+	IF cExternalCode = '' THEN		
+		IF (cErrorCode = '' OR cChannel = '') THEN
+			SET cAdvCode = defAdvCode;
+			SET cErrorMsg = defErrorMsg;
+		ELSE
+			SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+			
+			SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+			SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+		END IF;
+	ELSE
+		SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+	END IF;
+		
+	IF COALESCE(cAdvCode, '') = '' THEN
+		SET rWarn.(XMLNSC.Attribute)Code = defAdvCode;
+		SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(defErrorMsg FROM 1 FOR 64);
+	ELSE
+		SET rWarn.(XMLNSC.Attribute)Code = cAdvCode;
+		SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);
+	END IF;
+	
+	IF rVxError.ErrorSeverity IN('W', 'I') THEN
+		SET rWarn.(XMLNSC.Attribute)Type = '2';
+	ELSE
+		SET rWarn.(XMLNSC.Attribute)Type = '3';
+	END IF;
+		
+	SET rWarn = FIELDVALUE(rVxError.ErrorMessage);
+END;
+
+
+CREATE PROCEDURE StoreErrorsAsWarnings(IN rVxErrors REFERENCE, INOUT rOrgMsg REFERENCE,  INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) 
+BEGIN	
+	DECLARE rWarnings, rWarning REFERENCE TO rEnv;	
+	DECLARE cChannel CHARACTER FIELDVALUE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+	
+	IF NOT EXISTS(rEnv.Temp.Warnings[]) THEN	
+		CREATE FIELD rEnv.Temp.Warnings AS rWarnings;
+	ELSE
+		MOVE rWarnings TO rEnv.Temp.Warnings;
+	END IF;
+	
+	FOR rError AS rVxErrors.Error[] DO
+		CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY sc:Warning;
+		DECLARE cCode CHARACTER rError.ErrorCode;
+		DECLARE cAdvCode, cErrorMsg, cExternalCodeInfo CHARACTER '';
+		
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || ExternalCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+	
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+			SET cExternalCodeInfo = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cCode, ExternalCodeType);	
+			-- trigger cache loader
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+		
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+
+		SET cAdvCode = SUBSTRING(cExternalCodeInfo BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCodeInfo AFTER '#1#') BEFORE '#2#');
+		
+		SET rWarning = FIELDVALUE(rError.ErrorMessage);
+		SET rWarning.(XMLNSC.Attribute)Code = cAdvCode;
+		SET rWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);			
+		
+		IF COALESCE(rEnv.Temp.ValidatePayment, '') = 'Y' THEN
+			SET rWarning.(XMLNSC.Attribute)Type = '2';
+		ELSE
+			IF rError.ErrorSeverity IN('W', 'I') THEN
+				SET rWarning.(XMLNSC.Attribute)Type = '2';
+			ELSE
+				SET rWarning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+		END IF;		
+	END FOR;
+END;	
+
+CREATE PROCEDURE StoreSABREErrorsAsWarnings(IN rVxErrors REFERENCE, INOUT rOrgMsg REFERENCE,  INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) 
+BEGIN	
+	DECLARE rWarnings, rWarning REFERENCE TO rEnv;	
+	DECLARE cChannel CHARACTER 'SABREXML';
+	
+	IF NOT EXISTS(rEnv.Temp.Warnings[]) THEN	
+		CREATE FIELD rEnv.Temp.Warnings AS rWarnings;
+	ELSE
+		SET rWarnings = rEnv.Temp.Warnings;
+	END IF;
+	
+	FOR rError AS rVxErrors.Error[] DO
+		CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY sc:Warning;
+		DECLARE cCode CHARACTER rError.ErrorCode;
+		DECLARE cAdvCode, cErrorMsg, cExternalCodeInfo CHARACTER '';
+		
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || ExternalCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+	
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+			SET cExternalCodeInfo = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cCode, ExternalCodeType);	
+			-- trigger cache loader
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+		
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+
+		SET cAdvCode = SUBSTRING(cExternalCodeInfo BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCodeInfo AFTER '#1#') BEFORE '#2#');
+		
+		SET rWarning = FIELDVALUE(rError.ErrorMessage);
+		SET rWarning.(XMLNSC.Attribute)Code = cAdvCode;
+		SET rWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);			
+		
+		IF rError.ErrorSeverity IN('W', 'I') THEN
+			SET rWarning.(XMLNSC.Attribute)Type = '2';
+		ELSE
+			SET rWarning.(XMLNSC.Attribute)Type = '3';
+		END IF;		
+	END FOR;
+END;

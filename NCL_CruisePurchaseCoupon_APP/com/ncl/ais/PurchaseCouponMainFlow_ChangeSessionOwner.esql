@@ -1,0 +1,77 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE PurchaseCouponMainFlow_ChangeSessionOwner
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rInLA REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		
+		
+        SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET rEnv.AgencyId = InputRoot.XMLNSC.VerifyAgencyResponse.agencyID;
+		SET rEnv.AgencyOfficeCode = InputRoot.XMLNSC.VerifyAgencyResponse.officeCode;
+		SET rEnv.AgencyCurrency = InputRoot.XMLNSC.VerifyAgencyResponse.agencyCurrency;
+		SET rEnv.sessionGUID = InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID;
+		SET rEnv.Endpoint = COALESCE(rInLA.*:endpoint,'');
+		
+		--Checking Error
+		IF EXISTS(rInLA.loginError.(XMLNSC.Attribute)Code[])OR EXISTS(rInLA.runtimeError.(XMLNSC.Attribute)Code[] ) THEN
+			IF EXISTS(rInLA.loginError[]) THEN
+				SET OutputRoot.XMLNSC.Body.Errors.Error = rInLA.loginError ;
+			ELSE
+				SET OutputRoot.XMLNSC.Body.Errors.Error = rInLA.runtimeError;
+			END IF;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.Temp.Channel;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePurchaseCouponRS';
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		ELSE
+			IF (rEnv.AgencyId <>'') THEN
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				DECLARE rImpersonateIn REFERENCE TO OutputRoot.XMLNSC.Impersonate_IN;
+				CREATE FIELD OutputRoot.XMLNSC.Impersonate_IN AS rImpersonateIn;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.*:sessionGUID,rImpersonateIn);
+				DECLARE ccQuery CHARACTER;						
+				SET ccQuery = 'select AGENT_ID from NCL_CRUISE_FIRST_CPN_CFG '||
+								' where office_cd=? and currency_cd=? and qualified_amt=? and coupon_class_cd=?';
+				SET rEnv.Temp.CouponCfg[]=PASSTHRU(ccQuery,rEnv.AgencyOfficeCode,rEnv.Temp.Currency,rEnv.Temp.Amount,rEnv.Temp.CouponClass);
+				IF NOT EXISTS(rEnv.Temp.CouponCfg[])
+				THEN
+					CALL BUILD_VALIDATION_ERROR('Invalid Amount, currency or class for coupon purchase',rEnv);
+					PROPAGATE TO TERMINAL 'out2';
+					RETURN FALSE;
+				END IF;
+				IF LENGTH(rEnv.Temp.AgentID)> 0 THEN
+					SET ccQuery = 'select a.AGENT_ID from agency_contact ag ,agent a where agency_id=? and date_to>sysdate'|| 
+											' and ag.agent_id=a.agent_id and a.agent_id=? and rownum=1';
+					SET rEnv.Temp.Agents[] = PASSTHRU(ccQuery,rEnv.AgencyId,rEnv.Temp.AgentID);
+					IF NOT EXISTS(rEnv.Temp.Agents[]) THEN
+						CALL BUILD_VALIDATION_ERROR('Agent does not belong to agency or not active: '||rEnv.Temp.AgentID,rEnv);
+						PROPAGATE TO TERMINAL 'out2';
+						RETURN FALSE;
+					END IF;
+					SET rImpersonateIn.TravelAgent.AgentID = rEnv.Temp.AgentID;
+				ELSE
+					SET rImpersonateIn.TravelAgent.AgentID = rEnv.Temp.CouponCfg.AGENT_ID;		
+				END IF;
+				
+				IF  COALESCE(rImpersonateIn.TravelAgent.AgentID,0)= 0 THEN
+					CALL BUILD_VALIDATION_ERROR('Agent not configured for coupon purchase for '||rEnv.Temp.Currency|| ' : '|| rEnv.AgencyOfficeCode,rEnv);
+					PROPAGATE TO TERMINAL 'out2';
+					RETURN FALSE;
+				END IF;
+			END IF;
+		END IF;
+		RETURN TRUE;
+	END;
+	
+	CREATE PROCEDURE BUILD_VALIDATION_ERROR(IN errorMessage CHARACTER,IN rEnv REFERENCE)
+	BEGIN
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorMessage = errorMessage;
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorCode='25074';
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorSeverity='E';
+		SET OutputRoot.XMLNSC.Body.Code = rEnv.Temp.Channel;
+		SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePurchaseCouponRS';
+	END;	
+END MODULE;

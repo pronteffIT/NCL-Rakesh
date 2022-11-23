@@ -1,0 +1,116 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_ProcessAmadeus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:processAmadeusResponse;
+		DECLARE rEnv, rPricing, rCharges,rReturnOpt REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rInResp REFERENCE TO rIn.*;
+		DECLARE rEnvSailInfo REFERENCE TO rEnv.Temp.Message.OutSailingInfo ;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE bAmountFound BOOLEAN FALSE;
+		DECLARE rPriceGrp REFERENCE TO rIn.pricingForBookingResponse.sailingGroup.generalPricingGroup[1];
+		DECLARE cDescription CHARACTER '';
+		
+		SET OutputRoot.Properties = InputRoot.Properties;
+		
+		
+		
+		-- Take a backup of the surcharge amount in the Env
+		WHILE LASTMOVE(rPriceGrp) AND NOT bAmountFound
+		DO
+			IF rPriceGrp.generalPriceInfo.amountDetail.amountQualifierCode = '18' 
+			THEN
+				SET rEnv.Temp.Variables.SurchargeAmount = CAST(rPriceGrp.generalPriceInfo.amountDetail.amount AS INTEGER);
+				SET bAmountFound = TRUE;
+			END IF;
+			
+			MOVE rPriceGrp NEXTSIBLING;			
+		END WHILE;
+		
+		IF bAmountFound = TRUE AND NOT com.ncl.ais.utils.IsEmpty(CAST(rEnv.Temp.Variables.SurchargeAmount AS CHARACTER)) THEN
+			-- Update Sailing Info with Surcharge info
+			CREATE LASTCHILD OF rEnvSailInfo.*:SailingInfo AS rCharges IDENTITY ns:MiscCharges;
+			SET rCharges.ns:Surcharge.(XMLNSC.Attribute)Amount = rEnv.Temp.Variables.SurchargeAmount/2;
+		END IF;
+		
+		-- Update FareCodeDescription
+		FOR rFareCodeOpt AS rEnvSailInfo.*:SailingInfo.*:FareCodeOptions.*:FareCodeOption[]
+		DO
+			DECLARE cFareCode CHARACTER FIELDVALUE(rFareCodeOpt.(XMLNSC.Attribute)FareCode);
+			-- FareCodeDescription
+			SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannelPromos || '#' || FareCodeDescCodeType, 
+													   cFareCode, 
+													   XC10CacheMap, XC10ConnectionConfig);
+
+			IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+			THEN
+				SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannelPromos, 
+																			cFareCode, FareCodeDescCodeType);
+				-- trigger cache loader
+				SET rOut.XMLNSC.CacheMetadata.Channel = DefaultChannelPromos;
+				SET rOut.XMLNSC.CacheMetadata.ErrorCodeType = FareCodeDescCodeType;			
+				PROPAGATE TO LABEL 'CACHE_LOAD';						
+			END IF;
+		
+			--SET rFareCodeOpt.(XMLNSC.Attribute)FareCodeDescription = COALESCE(NULLIF(SUBSTRING(SUBSTRING(cDescription AFTER '#1#') BEFORE '#2#'),''),
+			--																	cFareCode);	
+			SET rFareCodeOpt.(XMLNSC.Attribute)FareCodeDescription = COALESCE(NULLIF(SUBSTRING(cDescription BEFORE '#1#'),''),
+																				'');			
+					
+		END FOR;		
+		
+		-- Get Avail Prime Packages if VoyageID is present
+		IF EXISTS(rEnvSailInfo.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID[]) THEN
+			
+			-- Update the sailingremarks				
+			SET rEnvSailInfo.ns:SailingInfo.ns:SailingRemarksText.ns:Text = lookupSailingRemarks(FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID));		
+			
+			-- Prepare Login Request			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			--CREATE FIELD OutputRoot.XMLNSC;
+			SET OutputRoot.XMLNSC.ns:LoginRequest.ns:source = rOrgMsg.*:POS.*:Source;
+			--SET OutputRoot.XMLNSC.ns:LoginRequest.ns:source.ns:BookingChannel.ns:CompanyName.Code = FIELDVALUE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+			--PROPAGATE TO TERMINAL 'out1';
+			--RETURN FALSE;
+			RETURN TRUE;
+						
+		ELSEIF EXISTS(rEnvSailInfo.*:SailingInfo.*:SelectedFare.*:SelectedCategory.*:CabinOptions.*:CabinOption.(XMLNSC.Attribute)CabinNumber[]) 
+		THEN			
+			-- Prepare Cabin Details Lookup message
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'No Cabin Options', rEnv);
+			-- Prepare Final response and dispatch
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseFastSellRS;	
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			CREATE LASTCHILD OF rOut IDENTITY ns:Success;
+			
+			CREATE LASTCHILD OF rOut AS rReturnOpt IDENTITY ns:FastSellReturnOptions;
+	
+			SET rReturnOpt.ns:SailingInfo = rEnvSailInfo.*:SailingInfo;		
+			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);		
+			END IF;
+			--RETURN TRUE;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+			
+		END IF;
+	END;
+
+END MODULE;

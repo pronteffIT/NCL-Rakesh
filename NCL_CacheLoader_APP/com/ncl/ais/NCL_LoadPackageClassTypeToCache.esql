@@ -1,0 +1,60 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_LoadPackageClassTypeToCache_ReadDatabase
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.CacheMetadata;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE cQuery CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet('PackageClassType', '', '', '', '', rEnv);
+
+		SET rEnv.Temp.DB.PackageList[] = PASSTHRU ('select package_id,package_class_type from package_class_link where  eff_date_to > sysdate');
+
+		IF EXISTS(rEnv.Temp.DB.PackageList[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieved package class type from database, proceeding with loading cache ...', rEnv);
+
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'No package info found ...', rEnv);
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_LoadPackageClassTypeToCache_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN	
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;

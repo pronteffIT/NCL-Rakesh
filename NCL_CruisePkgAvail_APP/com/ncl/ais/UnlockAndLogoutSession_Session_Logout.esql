@@ -1,0 +1,22 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE UnlockAndLogoutSession_Session_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.NCL_CruisePkgAvailRQ;
+ 
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			
+			RETURN TRUE;
+		
+	END;
+
+END MODULE;

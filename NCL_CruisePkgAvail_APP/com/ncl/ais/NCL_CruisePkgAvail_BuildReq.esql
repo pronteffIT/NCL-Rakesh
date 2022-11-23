@@ -1,0 +1,48 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CruisePkgAvail_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+DECLARE InsCodeType EXTERNAL CHARACTER 'Insurance';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+
+DECLARE LogPayLoad EXTERNAL BOOLEAN False;
+--***********************************************************************************************
+--** Description of Module
+--** ===========================================================================================
+--** This Module calls Varify Agency app based on Reservation Id and Channel info.
+--***********************************************************************************************
+
+CREATE COMPUTE MODULE NCL_CruisePkgAvail_BuildReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn, PackageID REFERENCE TO InputRoot.XMLNSC.*:NCL_CruisePkgAvailRQ;
+ 		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		CREATE FIELD Environment.Variables AS rEnv; 
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		IF EXISTS(rIn.*:PackageID[]) THEN
+			FOR rPksId AS rIn.*:PackageID[] DO
+				SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+				CREATE LASTCHILD OF rEnv.Temp.Packages IDENTITY PackageID VALUE rPksId.(XMLNSC.Attribute)ID;
+			END FOR;
+		END IF;
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;		
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;			
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruisePkgAvailRQ = rIn;	
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- removing default namespace declaration
+  		SET rEnv.Temp.Message.NCL_CruisePkgAvailRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+		RETURN TRUE;
+	END;
+
+END MODULE;

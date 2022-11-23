@@ -1,0 +1,600 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE CABINCATEGORY SHARED ROW;
+
+CREATE PROCEDURE loadCategoryLocations()  
+BEGIN
+	IF NOT EXISTS(CABINCATEGORY.*[]) THEN
+		SET CABINCATEGORY.O = 'Outside';
+		SET CABINCATEGORY.I = 'Inside';
+		SET CABINCATEGORY."1" = 'Inside';
+		SET CABINCATEGORY."2" = 'Outside';
+		SET CABINCATEGORY."10" = 'OceanView';
+		SET CABINCATEGORY."13" = 'Balcony';
+		SET CABINCATEGORY."14" = 'Suite';
+	END IF;
+END;
+
+CREATE PROCEDURE lookupSailingRemarks(IN voyageID CHARACTER) RETURNS CHARACTER 
+BEGIN
+	DECLARE cQuery CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'select pd.COMMENTS from package_definition pd, sail_header hd where pd.sail_id = hd.sail_id and pd.package_id = ?' ;
+	
+	SET DB.Result[] = PASSTHRU(cQuery VALUES(voyageID));
+	
+	RETURN TRIM(COALESCE(DB.Result.COMMENTS,''));
+
+END;
+
+CREATE PROCEDURE getAgencyInfoFromPCC(IN pcc CHARACTER, IN systemName CHARACTER) RETURNS CHARACTER 
+BEGIN
+	DECLARE cQuery CHARACTER '';
+	DECLARE DB ROW;
+	DECLARE cAgencyInfo CHARACTER '0';
+	
+	SET cQuery = 'select  b.DEFAULT_CURRENCY, b.agency_id , b.agency_name from agency_external a,agency b where a.agency_id=b.agency_id and b.is_Active=''Y'' AND a.pseudo_city_code=? and a.external_names_id = (select external_names_id from sea.external_names where external_name=?)' ;
+	
+	--SET DB.Result[] = PASSTHRU(cQueryResLock VALUES(resID, 'RES.' || resID, sessionID));
+	-- This is how externalID being stored now
+	SET DB.Result[] = PASSTHRU(cQuery VALUES(pcc,systemName));
+	
+	--RETURN COALESCE(CAST(DB.Result.AGENCY_ID AS CHARACTER),'0');
+
+	IF EXISTS(DB.Result[]) THEN
+		SET cAgencyInfo = COALESCE(DB.Result.DEFAULT_CURRENCY, '0') || '#1#' || 
+								CAST(COALESCE(DB.Result.AGENCY_ID, '0') AS CHARACTER) || '#2#' ||
+								COALESCE(DB.Result.AGENCY_NAME, '0');
+	END IF;
+	
+	RETURN cAgencyInfo;
+
+END;
+
+	
+CREATE PROCEDURE getDuration(IN val CHARACTER) RETURNS CHARACTER BEGIN
+	IF com.ncl.ais.utils.IsEmpty(val) THEN
+		RETURN '0';
+	END IF;
+	
+	IF com.ncl.ais.utils.isNumeric(val) THEN
+		RETURN val;
+	ELSE
+		RETURN SUBSTRING(SUBSTRING(val BEFORE 'D') AFTER 'P');
+	END IF;
+END;
+
+CREATE PROCEDURE getEndDate(IN startDate CHARACTER, IN endDate CHARACTER, IN duration CHARACTER) RETURNS CHARACTER 
+BEGIN
+	DECLARE tempDate DATE;
+	DECLARE cDuration CHARACTER;
+	
+	IF NOT com.ncl.ais.utils.isEmpty(endDate) THEN
+		RETURN endDate;
+	END IF;
+	
+	SET cDuration = getDuration(duration) ;
+ 
+		SET tempDate = CAST(startDate AS DATE FORMAT 'yyyy-MM-dd') + CAST(cDuration AS INTERVAL DAY);
+	
+	RETURN CAST(tempDate AS CHARACTER FORMAT 'yyyy-MM-dd');		
+END;
+
+
+
+CREATE PROCEDURE UpdateCabinDetails(IN rCabinList REFERENCE, INOUT rSelectedCat REFERENCE)  
+BEGIN
+	DECLARE tempCabinDetails ROW;
+	DECLARE rTempCabinOptions, rTempCabinOption, rTempBathConfig, rTempCabinConfig REFERENCE TO rSelectedCat;
+
+	CREATE LASTCHILD OF tempCabinDetails DOMAIN('XMLNSC') NAME 'Details';
+	
+	CREATE FIELD tempCabinDetails.Details.ns:CabinOptions AS rTempCabinOptions;
+	
+	FOR rCabinOpt AS rSelectedCat.*:CabinOptions.*:CabinOption[]
+	DO
+		--CREATE LASTCHILD OF rTempCabinOptions AS rTempCabinOption FROM rCabinOpt;
+		CREATE LASTCHILD OF rTempCabinOptions AS rTempCabinOption IDENTITY ns:CabinOption;
+		
+		--CALL com.ncl.ais.utils.CopyAttributes(rCabinOpt, rTempCabinOption);
+		--SET rTempCabinOption.(XMLNSC.Attribute)Status = '36';
+				
+		--SET rTempCabinOption.*[] = rCabinOpt.*[];
+		CALL com.ncl.ais.utils.CopyAttributes(rCabinOpt, rTempCabinOption);
+		SET rTempCabinOption.(XMLNSC.Attribute)Status = '36';	
+		
+		--SET rTempCabinOption = rCabinOpt;
+		
+		DECLARE rCabinDets REFERENCE TO rCabinList.{FIELDVALUE(rCabinOpt.(XMLNSC.Attribute)CabinNumber)};
+	
+		/*FOR rBath AS rCabinDets.CabinDetails.CabinConfiguration[] DO			
+			-- Update the corresponding (how?) temp CabinConfig
+			
+		END FOR; */
+		
+		-- Using array indices for now. Will figure out a better way later
+		--DECLARE nSize INTEGER CARDINALITY(rCabinDets.CabinDetails.CabinConfiguration[]);
+		DECLARE nSize INTEGER CARDINALITY(rCabinDets.CabinConfiguration[]);
+		DECLARE nCount INTEGER 1;
+		
+		WHILE nCount <= nSize 
+		DO
+			--CREATE LASTCHILD OF rTempCabinOption AS rTempCabinConfig IDENTITY ns:CabinConfiguration;
+			--SET rTempCabinConfig.ns:CabinConfiguration[nCount] = rCabinOpt.ns:CabinConfiguration[nCount];
+			
+			CREATE LASTCHILD OF rTempCabinOption AS rTempCabinConfig FROM rCabinOpt.ns:CabinConfiguration[nCount];
+			
+			--SET rTempCabinConfig.*[] = rCabinOpt.ns:CabinConfiguration[nCount].*[];
+			
+			--SET rTempCabinConfig.(XMLNSC.Attribute)BedConfigurationCode = rCabinDets.CabinConfiguration[nCount].(XMLNSC.Attribute)BedConfigurationCode;
+			--SET rTempCabinConfig.(XMLNSC.Attribute)BedCount = rCabinDets.CabinConfiguration[nCount].(XMLNSC.Attribute)BedCount;
+
+			SET rTempCabinConfig.(XMLNSC.Attribute)BedConfigurationCode = rCabinDets.CabinConfiguration[nCount].BedConfigurationCode;
+			SET rTempCabinConfig.(XMLNSC.Attribute)BedCount = rCabinDets.CabinConfiguration[nCount].BedCount;
+			
+			SET nCount = nCount + 1;
+		END WHILE;
+		
+		FOR rBath AS rCabinDets.CabinBathConfiguration[] DO
+			-- Create CabinBathConfig because nothing else will exist. But positioning might be an issue.
+			-- LastChild might land after MeasurementInfo or Remark. It should ideally sit after CabinConfiguration
+			CREATE LASTCHILD OF rTempCabinOption AS rTempBathConfig IDENTITY ns:CabinBathConfiguration;
+			
+			--SET rTempBathConfig.(XMLNSC.Attribute)BathConfigurationCode = rBath.(XMLNSC.Attribute)BathConfigurationCode;
+			--SET rTempBathConfig.(XMLNSC.Attribute)BathCount = rBath.(XMLNSC.Attribute)BathCount;
+			
+			SET rTempBathConfig.(XMLNSC.Attribute)BathConfigurationCode = rBath.BathConfigurationCode;
+			SET rTempBathConfig.(XMLNSC.Attribute)BathCount = rBath.BathCount;
+		END FOR;	
+		
+		SET rTempCabinOption.ns:MeasurementInfo = rCabinOpt.ns:MeasurementInfo;
+		SET rTempCabinOption.ns:Remark = rCabinOpt.ns:Remark;
+		SET rTempCabinOption.ns:CabinFilters = rCabinOpt.ns:CabinFilters;			
+	END FOR;
+		
+	-- Overwrite Cabin Options
+	SET rSelectedCat.*:CabinOptions = tempCabinDetails.Details.ns:CabinOptions;
+END;
+
+CREATE PROCEDURE MapToOutputSailingInfo(IN rInMsg REFERENCE, INOUT rOutSailInfo REFERENCE, INOUT rEnv REFERENCE, IN rOutRoot REFERENCE) 
+BEGIN		
+	DECLARE rSailInfo, rCatOptions, rCatOption, rPriceInfos, rPriceInfo, rFareOpt, rFareOpts, rCabinOptions, rAccPayments, 
+			rCabinOption, rCabinConfig, rSelectedCabin, rCabinHold, rDining, rAccPayment, rCruiseProf, rInsurance REFERENCE TO rOutSailInfo;
+	DECLARE cDescription CHARACTER '';
+	DECLARE cMsgType CHARACTER FIELDNAME(rInMsg);
+	
+	FOR rSailingGrp AS rInMsg.sailingGroup[] 
+	DO		
+		CREATE LASTCHILD OF rOutSailInfo AS rSailInfo IDENTITY ns:SailingInfo;
+		
+		SET rSailInfo.ns:SelectedSailing.(XMLNSC.Attribute)Duration = 'P' || rSailingGrp.sailingDescription.sailingDateTime.sailingDuration || 'D';
+		SET rSailInfo.ns:SelectedSailing.(XMLNSC.Attribute)ShipCode = rSailingGrp.sailingDescription.providerDetails.shipCode;
+		SET rSailInfo.ns:SelectedSailing.(XMLNSC.Attribute)Start = CAST(CAST(rSailingGrp.sailingDescription.sailingDateTime.sailingDepartureDate AS DATE FORMAT 'ddMMyyyy') AS CHARACTER FORMAT 'yyyy-MM-dd');
+		SET rSailInfo.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID = rSailingGrp.sailingDescription.sailingId.cruiseVoyageNbr;
+		
+		--IF cMsgType <> 'fareAvailabilityResponseMessage' AND cMsgType <> 'fastSellResponse' THEN
+		IF cMsgType <> 'fastSellResponse' THEN
+			SET rSailInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)ShipCode = rSailingGrp.sailingDescription.providerDetails.shipCode;
+		END IF;
+		
+		SET rSailInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorCode = rSailingGrp.sailingDescription.providerDetails.cruiselineCode;		
+		
+		-- Create this field here so that it can either be set here or accessed later on
+		--CREATE FIELD rSailInfo.ns:SelectedSailing.ns:Region;
+		
+		--IF cMsgType <> 'fareAvailabilityResponseMessage' AND EXISTS(rSailingGrp.sailingDescription.regionDetails.cruiseRegionCode[])THEN
+		IF cMsgType <> 'fareAvailabilityResponseMessage' THEN
+			SET rSailInfo.ns:SelectedSailing.ns:Region.(XMLNSC.Attribute)RegionCode = rSailingGrp.sailingDescription.regionDetails.cruiseRegionCode;
+		END IF;
+		IF cMsgType = 'categoryAvailabilityResponseMessage' OR cMsgType = 'cabinAvailabilityResponseMessage' THEN
+			SET rSailInfo.ns:SelectedSailing.ns:DeparturePort = rSailingGrp.sailingDescription.arrivalAndDeparturePort.portCode;
+			SET rSailInfo.ns:SelectedSailing.ns:ArrivalPort = rSailingGrp.sailingDescription.arrivalAndDeparturePort.portCode;			
+			SET rSailInfo.ns:Currency.(XMLNSC.Attribute)CurrencyCode = rSailingGrp.currencyInfo.currencyList.currencyIsoCode;
+		END IF;
+		
+		IF NOT EXISTS(rSailInfo.*:Currency[]) THEN
+			-- Create the currencycode element because it has to be positioned only after SelectedSailinghere
+			CREATE FIELD rSailInfo.ns:Currency;
+			
+		END IF;
+		SET rSailInfo.ns:SailingRemarksText.ns:Text = TRIM(rSailingGrp.sailingInformation.textDetails);		
+	
+		IF cMsgType = 'fareAvailabilityResponseMessage' OR cMsgType = 'sailingAvailabilityResponseMessage' THEN
+			-- FareCodeOptions
+			IF EXISTS(rSailingGrp.fareGroup[]) THEN
+				CREATE FIELD rSailInfo.ns:FareCodeOptions AS rFareOpts;
+			END IF;
+			
+			FOR rFareGrp AS rSailingGrp.fareGroup[] 
+			DO					
+				CREATE LASTCHILD OF rFareOpts AS rFareOpt IDENTITY ns:FareCodeOption;
+				
+				SET rFareOpt.(XMLNSC.Attribute)FareCode = rFareGrp.fareCode.fareCodeId.cruiseFareCode;
+				SET rFareOpt.(XMLNSC.Attribute)GroupCode = rFareGrp.passengerGroupId.passengerGroupInfoId.groupCode;
+				SET rFareOpt.(XMLNSC.Attribute)FareDescription = rFareGrp.fareCode.fareCodeId.fareDescription;
+				
+				IF cMsgType = 'fareAvailabilityResponseMessage' THEN
+					-- Get Status from External Code Lookup
+					SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannel || '#' || StatusCodeType, 
+															   rFareGrp.fareCode.statusCode, 
+															   XC10CacheMap, XC10ConnectionConfig);
+
+					IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+					THEN
+						SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannel, 
+																	rFareGrp.fareCode.statusCode, StatusCodeType);
+						-- trigger cache loader
+						SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannel;
+						SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = StatusCodeType;			
+						PROPAGATE TO LABEL 'CACHE_LOAD';				
+					END IF;
+					
+					SET rFareOpt.(XMLNSC.Attribute)Status = COALESCE(SUBSTRING(cDescription BEFORE '#1#'),'');	
+				END IF;
+				
+				IF cMsgType = 'sailingAvailabilityResponseMessage' THEN																	
+					SET rFareOpt.(XMLNSC.Attribute)Status = rFareGrp.fareCode.fareCodeId.statusCode;
+					SET rFareOpt.ns:FareRemark = rFareGrp.fareCode.fareCodeId.remarkText;
+				END IF;									 
+			END FOR;				
+		END IF;			
+	
+		IF cMsgType = 'categoryAvailabilityResponseMessage' OR cMsgType = 'cabinAvailabilityResponseMessage' 
+						OR cMsgType = 'fastSellResponse'
+		THEN
+			-- SelectedFare
+			SET rSailInfo.ns:SelectedFare.(XMLNSC.Attribute)FareCode = rSailingGrp.fareGroup.fareCode.fareCodeId.cruiseFareCode;
+			
+			-- FareCodeDescription
+			SET cDescription = com.ncl.ais.utils.GetSWCodeFromCache(DefaultChannelPromos || '#' || FareCodeDescCodeType, 
+														   rSailingGrp.fareGroup.fareCode.fareCodeId.cruiseFareCode, 
+														   XC10CacheMap, XC10ConnectionConfig);
+
+			IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+			THEN
+				SET cDescription = com.ncl.ais.utils.LookupSWCodeUsingExternalCode(DefaultChannelPromos, 
+															rSailingGrp.fareGroup.fareCode.fareCodeId.cruiseFareCode, FareCodeDescCodeType);
+				-- trigger cache loader
+				SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannelPromos;
+				SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = FareCodeDescCodeType;			
+				PROPAGATE TO LABEL 'CACHE_LOAD';				
+			END IF;
+			
+			SET rSailInfo.ns:SelectedFare.(XMLNSC.Attribute)FareCodeDescription = COALESCE(NULLIF(SUBSTRING(SUBSTRING(cDescription AFTER '#1#') BEFORE '#2#'),''),
+																			rSailingGrp.fareGroup.fareCode.fareCodeId.cruiseFareCode);
+		END IF;
+			
+		IF cMsgType = 'categoryAvailabilityResponseMessage' THEN
+			IF EXISTS(rSailingGrp.fareGroup.categoryGroup[]) THEN
+				CREATE FIELD rSailInfo.ns:SelectedFare.ns:CategoryOptions AS rCatOptions;
+			END IF;
+			
+			FOR rFareGrp AS rSailingGrp.fareGroup[] DO
+				FOR rCatGrp AS rFareGrp.categoryGroup[] DO
+					
+					DECLARE rCatInfo REFERENCE TO rCatGrp.categoryInfo;
+					
+					CREATE LASTCHILD OF rCatOptions AS rCatOption IDENTITY ns:CategoryOption;
+					
+					SET rCatOption.(XMLNSC.Attribute)BerthedCategoryCode = rCatInfo.categoryId.berthedCategory;
+					
+					-- TODO Need to lookup value in properties file or a shared row (/VXAPILib/vxLocationType_nclota.properties)
+					--SET rCatOption.(XMLNSC.Attribute)CategoryLocation = rCatInfo.categoryDetails.shipLocation;
+					CALL loadCategoryLocations();
+					SET rCatOption.(XMLNSC.Attribute)CategoryLocation = CABINCATEGORY.{rCatInfo.categoryDetails.shipLocation};
+					
+					SET rCatOption.(XMLNSC.Attribute)CatTypeName = com.ncl.ais.utils.LookupCategory(rSailingGrp.sailingDescription.providerDetails.shipCode,
+																									rCatInfo.categoryId.pricedCategory );
+					
+					SET rCatOption.(XMLNSC.Attribute)FareCode = rCatInfo.fareCodeId.cruiseFareCode;
+					
+					-- FareCodeDescription
+					SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannelPromos || '#' || FareCodeDescCodeType, 
+															   rCatInfo.fareCodeId.cruiseFareCode, 
+															   XC10CacheMap, XC10ConnectionConfig);
+
+					IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+					THEN
+						SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannelPromos, 
+																					rCatInfo.fareCodeId.cruiseFareCode, FareCodeDescCodeType);
+						-- trigger cache loader
+						SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannelPromos;
+						SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = FareCodeDescCodeType;			
+						PROPAGATE TO LABEL 'CACHE_LOAD';						
+					END IF;
+				
+					SET rCatOption.(XMLNSC.Attribute)FareCodeDescription = COALESCE(NULLIF(SUBSTRING(SUBSTRING(cDescription AFTER '#1#') BEFORE '#2#'),''),
+																				rCatInfo.fareCodeId.cruiseFareCode);
+					
+					SET rCatOption.(XMLNSC.Attribute)HeldIndicator = rCatInfo.categoryId.heldIndicator;
+					SET rCatOption.(XMLNSC.Attribute)MaxOccupancy = CAST(rCatInfo.categoryDetails.maxCabinOccupancy AS CHARACTER);
+					SET rCatOption.(XMLNSC.Attribute)PricedCategoryCode = rCatInfo.categoryId.pricedCategory;
+					--SET rCatOption.(XMLNSC.Attribute)Status = rCatInfo.statusOrGroupAllocation;
+					-- Status
+					SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannel || '#' || StatusCodeType, 
+															   rCatInfo.statusOrGroupAllocation, 
+															   XC10CacheMap, XC10ConnectionConfig);
+
+					IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+					THEN
+						--SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannel, 
+						--											rCatInfo.statusOrGroupAllocation, 'STS');
+						SET cDescription = com.ncl.ais.utils.LookupSWCodeUsingExternalCode(DefaultChannel, 
+																	rCatInfo.statusOrGroupAllocation, StatusCodeType);
+						-- trigger cache loader
+						SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannel;
+						SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = StatusCodeType;			
+						PROPAGATE TO LABEL 'CACHE_LOAD';				
+					END IF;
+					
+					SET rCatOption.(XMLNSC.Attribute)Status = COALESCE(SUBSTRING(cDescription BEFORE '#1#'),'');
+					
+					IF EXISTS(rCatGrp.priceInfo[]) THEN
+						
+						CREATE LASTCHILD OF rCatOption AS rPriceInfos IDENTITY ns:PriceInfos;
+						FOR rCatPriceInfo AS rCatGrp.priceInfo[] 
+						DO							
+							CREATE LASTCHILD OF rPriceInfos AS rPriceInfo IDENTITY ns:PriceInfo;
+							SET rPriceInfo.(XMLNSC.Attribute)AgeQualifyingCode = rCatPriceInfo.amountDetail.amountQualifierCode;
+							SET rPriceInfo.(XMLNSC.Attribute)Amount = rCatPriceInfo.amountDetail.amount;					
+							SET rPriceInfo.(XMLNSC.Attribute)BreakdownType = rCatPriceInfo.amountDetail.breakdownCode;							
+						END FOR;					
+					END IF;																						
+				END FOR;	
+			END FOR;				
+		END IF;
+		
+		IF cMsgType = 'cabinAvailabilityResponseMessage'  OR cMsgType = 'fastSellResponse'
+		THEN
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode = rSailingGrp.fareGroup.categoryGroup.categoryInfo.categoryId.berthedCategory;
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)CategoryLocation = com.ncl.ais.utils.LookupCabinCategory(rSailingGrp.sailingDescription.providerDetails.shipCode,
+																									rSailingGrp.fareGroup.categoryGroup.categoryInfo.categoryId.pricedCategory );
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)CatTypeName = com.ncl.ais.utils.LookupCategory(rSailingGrp.sailingDescription.providerDetails.shipCode,
+																									rSailingGrp.fareGroup.categoryGroup.categoryInfo.categoryId.pricedCategory );
+			
+			IF cMsgType = 'cabinAvailabilityResponseMessage' AND NOT com.ncl.ais.utils.IsEmpty(rSailingGrp.fareGroup.categoryGroup.categoryInfo.fareCodeId.cruiseFareCode) 
+			THEN
+				SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)FareCode = 	rSailingGrp.fareGroup.categoryGroup.categoryInfo.fareCodeId.cruiseFareCode;
+			
+				-- FareCodeDescription
+				SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannelPromos || '#' || FareCodeDescCodeType, 
+														   rSailingGrp.fareGroup.categoryGroup.categoryInfo.fareCodeId.cruiseFareCode, 
+														   XC10CacheMap, XC10ConnectionConfig);
+
+				IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+				THEN
+					SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannelPromos, 
+																				rSailingGrp.fareGroup.categoryGroup.categoryInfo.fareCodeId.cruiseFareCode, FareCodeDescCodeType);
+					-- trigger cache loader
+					SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannelPromos;
+					SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = FareCodeDescCodeType;			
+					PROPAGATE TO LABEL 'CACHE_LOAD';						
+				END IF;
+			
+				SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)FareCodeDescription = COALESCE(SUBSTRING(SUBSTRING(cDescription AFTER '#1#') BEFORE '#2#'),
+																			rSailingGrp.fareGroup.categoryGroup.categoryInfo.fareCodeId.cruiseFareCode);
+			END IF;
+			
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)HeldIndicator = rSailingGrp.fareGroup.categoryGroup.categoryInfo.categoryId.heldIndicator;
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)MaxOccupancy = com.ncl.ais.utils.LookupMaxOccupancy(rSailingGrp.sailingDescription.providerDetails.shipCode,
+																									rSailingGrp.fareGroup.categoryGroup.categoryInfo.categoryId.pricedCategory );
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode = rSailingGrp.fareGroup.categoryGroup.categoryInfo.categoryId.pricedCategory;
+			SET rSailInfo.ns:SelectedFare.ns:SelectedCategory.(XMLNSC.Attribute)Status = '36';
+			
+			
+			IF cMsgType = 'cabinAvailabilityResponseMessage' THEN
+				-- CabinOptions
+				IF EXISTS(rSailingGrp.fareGroup.categoryGroup.cabinGroup[]) THEN
+					CREATE FIELD rSailInfo.ns:SelectedFare.ns:SelectedCategory.ns:CabinOptions AS rCabinOptions;
+				END IF;
+				
+				FOR rCabinGrp AS rSailingGrp.fareGroup.categoryGroup.cabinGroup[]
+				DO
+					CREATE LASTCHILD OF rCabinOptions AS rCabinOption IDENTITY ns:CabinOption;
+					
+					SET rCabinOption.(XMLNSC.Attribute)BedType = rCabinGrp.cabinInfo.bedDetails.bedType;
+					SET rCabinOption.(XMLNSC.Attribute)CabinNumber = rCabinGrp.cabinInfo.cabinDetails.cabinNbr;
+					SET rCabinOption.(XMLNSC.Attribute)CategoryLocation = com.ncl.ais.utils.ConvertToCamelCase(rCabinGrp.cabinInfo.cabinDescription.categoryLocation);
+					SET rCabinOption.(XMLNSC.Attribute)DeckName = rCabinGrp.cabinInfo.deckPlanName.deckId;
+					SET rCabinOption.(XMLNSC.Attribute)HeldIndicator = rCabinGrp.cabinInfo.cabinDetails.heldIndicator;
+					SET rCabinOption.(XMLNSC.Attribute)MaxOccupancy = rCabinGrp.cabinInfo.cabinDescription.maxOccupancy;
+					SET rCabinOption.(XMLNSC.Attribute)PositionInShip = com.ncl.ais.utils.ConvertToCamelCase(rCabinGrp.cabinInfo.cabinDescription.positionInShip);
+					SET rCabinOption.(XMLNSC.Attribute)ShipSide = com.ncl.ais.utils.ConvertToCamelCase(rCabinGrp.cabinInfo.cabinDescription.cabinSide);
+					
+					FOR rBedConf AS rCabinGrp.cabinInfo.bedDetails.bedConfiguration[]
+					DO
+						CREATE LASTCHILD OF rCabinOption AS rCabinConfig IDENTITY ns:CabinConfiguration;						
+						SET rCabinConfig.(XMLNSC.Attribute)BedConfigurationCode = rBedConf;					
+					END FOR;
+					
+					SET rCabinOption.ns:MeasurementInfo.(XMLNSC.Attribute)UnitOfMeasure = rCabinGrp.cabinMeasurement.measurementDescription.unit;
+					SET rCabinOption.ns:MeasurementInfo.(XMLNSC.Attribute)UnitOfMeasureQuantity = rCabinGrp.cabinMeasurement.measurementDescription.cabinSize;
+					SET rCabinOption.ns:Remark = rCabinGrp.freeCabinDescription.freeFlowInfo.textQualifier;					
+				END FOR;
+			END IF;	
+			
+			-- Selected Cabin
+			IF cMsgType = 'fastSellResponse' 
+			THEN				
+				FOR rFareGrp AS rSailingGrp.fareGroup[] DO
+					FOR rCatGrp AS rFareGrp.categoryGroup[] DO
+						FOR rFSGrp AS rCatGrp.fastSellCabinGroup[] 
+						DO								
+							CREATE LASTCHILD OF rSailInfo.ns:SelectedFare.ns:SelectedCategory AS rSelectedCabin IDENTITY ns:SelectedCabin;
+							
+							SET rSelectedCabin.(XMLNSC.Attribute)BedType = rFSGrp.cabinInfo.bedDetails.bedType;
+							SET rSelectedCabin.(XMLNSC.Attribute)CabinNumber = rFSGrp.cabinInfo.cabinDetails.cabinNbr;
+							SET rSelectedCabin.(XMLNSC.Attribute)CategoryLocation = com.ncl.ais.utils.ConvertToCamelCase(rFSGrp.cabinInfo.cabinDescription.categoryLocation);
+							SET rSelectedCabin.(XMLNSC.Attribute)DeckName = rFSGrp.cabinInfo.deckPlanName.deckId;
+							SET rSelectedCabin.(XMLNSC.Attribute)HeldIndicator = rFSGrp.cabinInfo.cabinDetails.heldIndicator;
+							SET rSelectedCabin.(XMLNSC.Attribute)MaxOccupancy = rFSGrp.cabinInfo.cabinDescription.maxOccupancy;
+							SET rSelectedCabin.(XMLNSC.Attribute)PositionInShip = com.ncl.ais.utils.ConvertToCamelCase(rFSGrp.cabinInfo.cabinDescription.positionInShip);
+							SET rSelectedCabin.(XMLNSC.Attribute)ShipSide = com.ncl.ais.utils.ConvertToCamelCase(rFSGrp.cabinInfo.cabinDescription.cabinSide);
+							
+							FOR rBedConf AS rFSGrp.cabinInfo.bedDetails.bedConfiguration[]
+							DO
+								CREATE LASTCHILD OF rSelectedCabin AS rCabinConfig IDENTITY ns:CabinConfiguration;						
+								SET rCabinConfig.(XMLNSC.Attribute)BedConfigurationCode = rBedConf;	
+								SET rCabinConfig.(XMLNSC.Attribute)BedCount = 1;					
+							END FOR;
+							
+							SET rSelectedCabin.ns:MeasurementInfo.(XMLNSC.Attribute)Code = 'CABIN';
+							SET rSelectedCabin.ns:MeasurementInfo.(XMLNSC.Attribute)UnitOfMeasure = rFSGrp.cabinMeasurement.measurementDescription.unit;
+							SET rSelectedCabin.ns:MeasurementInfo.(XMLNSC.Attribute)UnitOfMeasureQuantity = rFSGrp.cabinMeasurement.measurementDescription.cabinSize;
+							
+							CREATE FIELD rSelectedCabin.ns:CabinHoldInfo AS rCabinHold;	
+							
+							FOR rDiningId AS rSailingGrp.diningDetails.diningIdentification[]	
+							DO
+								CREATE LASTCHILD OF rCabinHold AS rDining IDENTITY ns:Dining;
+								
+								SET rDining.(XMLNSC.Attribute)DiningRoom = 	rDiningId.diningLabel;
+								SET rDining.(XMLNSC.Attribute)Sitting = 	rDiningId.seatingQualifierId;
+								SET rDining.(XMLNSC.Attribute)Status = 	rDiningId.diningStatus;									
+							END FOR;
+							
+							--FOR rInsInfo AS rSailingGrp.insuranceInfo.insuranceList[]	
+							FOR rInsInfo AS rInMsg.insuranceInfo.insuranceList[]	
+							DO
+								CREATE LASTCHILD OF rCabinHold AS rInsurance IDENTITY ns:Insurance;
+								
+								SET rInsurance.(XMLNSC.Attribute)DefaultIndicator = 	rInsInfo.defaultIndicator;
+								SET rInsurance.(XMLNSC.Attribute)InsuranceCode = 	rInsInfo.insuranceCode;								
+							END FOR;
+							
+							--SET rCabinHold.ns:CruiseProfiles.(XMLNSC.Attribute)ProfileTypeIdentifier = rSailingGrp.profileInfo.profileType;
+							SET rCabinHold.ns:CruiseProfiles.(XMLNSC.Attribute)ProfileTypeIdentifier = rInMsg.profileInfo.profileType;						
+							
+							--FOR rProfInfo AS rSailingGrp.profileInfo.attributeInfo[]
+							FOR rProfInfo AS rInMsg.profileInfo.attributeInfo[]		
+							DO
+								CREATE LASTCHILD OF rCabinHold.ns:CruiseProfiles AS rCruiseProf IDENTITY ns:CruiseProfile;
+								
+								SET rCruiseProf.(XMLNSC.Attribute)Code = 	rProfInfo.attributeType;
+								SET rCruiseProf.(XMLNSC.Attribute)MaxQuantity = 	rProfInfo.nbrOfUnitQualifier;								
+							END FOR;
+							
+							CREATE FIELD rCabinHold.ns:AcceptedPayments AS rAccPayments;
+							
+							--FOR rCCInfo AS rSailingGrp.paymentInfo.creditCardInfo[]	
+							FOR rCCInfo AS rInMsg.paymentInfo.creditCardInfo[]
+							DO									
+								CREATE LASTCHILD OF rAccPayments AS rAccPayment IDENTITY ns:AcceptedPayment;
+								
+								SET rAccPayment.ns:PaymentCard.(XMLNSC.Attribute)ExpireDate = 	rCCInfo.creditCardExpiryDate;
+								SET rAccPayment.ns:PaymentCard.(XMLNSC.Attribute)CardCode = 	rCCInfo.creditCardCode;
+								SET rAccPayment.ns:PaymentCard.(XMLNSC.Attribute)CardNumber = 	rCCInfo.creditCardNbr;							
+							END FOR;							
+							
+							--FOR rPayDet AS rSailingGrp.paymentInfo.paymentDetails[]	
+							FOR rPayDet AS rInMsg.paymentInfo.paymentDetails[]
+							DO
+								IF rPayDet.formOfPaymentCode = 'CHK' 
+								THEN
+									CREATE LASTCHILD OF rAccPayments AS rAccPayment IDENTITY ns:AcceptedPayment;
+								
+									SET rAccPayment.ns:BankAcct.(XMLNSC.Attribute)ChecksAcceptedInd = 	TRUE;
+								END IF;								
+							END FOR;								
+						END FOR;
+					END FOR;
+				END FOR;					
+			END IF;																		
+		END IF;			
+	END FOR;
+END;
+
+
+
+CREATE PROCEDURE MapMultipleSailingToOutput(IN rInResp REFERENCE, INOUT rEnv REFERENCE, INOUT rOutMsg REFERENCE, INOUT rOutRoot REFERENCE) 
+BEGIN
+	DECLARE rSailOpts, rSailOpt, rIncPkgOpt, rTrans REFERENCE TO rInResp;
+	DECLARE cDescription CHARACTER '';
+	
+	CREATE FIELD rOutMsg.ns:Success;
+	--CREATE LASTCHILD OF rOutMsg IDENTITY ns:FastSellReturnOptions;
+	CREATE FIELD rOutMsg.ns:FastSellReturnOptions.ns:SailingOptions AS rSailOpts;
+	
+	FOR rSailingGrp AS rInResp.sailingGroup[] 
+	DO
+		CREATE LASTCHILD OF rSailOpts AS rSailOpt IDENTITY ns:SailingOption;
+		
+		SET rSailOpt.(XMLNSC.Attribute)CategoryLocation = rSailingGrp.sailingDescription.sailingDetails.categoryLocation;
+		SET rSailOpt.(XMLNSC.Attribute)MaxCabinOccupancy = rSailingGrp.sailingDescription.sailingDetails.maxNumberOfGuest;
+					
+		SET rSailOpt.ns:SelectedSailing.(XMLNSC.Attribute)Duration = 'P' || rSailingGrp.sailingDescription.sailingDateTime.sailingDuration || 'D';
+		SET rSailOpt.ns:SelectedSailing.(XMLNSC.Attribute)Start = CAST(CAST(rSailingGrp.sailingDescription.sailingDateTime.sailingDepartureDate AS DATE FORMAT 'ddMMyyyy') AS CHARACTER FORMAT 'yyyy-MM-dd');
+		SET rSailOpt.ns:SelectedSailing.(XMLNSC.Attribute)PortsOfCallQuantity =	rSailingGrp.sailingDescription.sailingDetails.numberOfPorts;
+		SET rSailOpt.ns:SelectedSailing.(XMLNSC.Attribute)ShipCode = rSailingGrp.sailingDescription.providerDetails.shipCode;
+		SET rSailOpt.ns:SelectedSailing.(XMLNSC.Attribute)Status = rSailingGrp.sailingDescription.sailingDetails.sailingStatusCode;
+		SET rSailOpt.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID = rSailingGrp.sailingDescription.sailingId.cruiseVoyageNbr; 
+	
+		SET rSailOpt.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)ShipCode = rSailingGrp.sailingDescription.providerDetails.shipCode;
+		SET rSailOpt.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorCode = rSailingGrp.sailingDescription.providerDetails.cruiselineCode;
+		
+		SET rSailOpt.ns:SelectedSailing.ns:Region.(XMLNSC.Attribute)RegionCode = rSailingGrp.sailingDescription.regionDetails.cruiseRegionCode;
+		 
+		-- RegionName
+		SET cDescription = com.ncl.ais.utils.GetSWCodeFromCache(DefaultChannel || '#' || RegionCodeType, 
+												   rSailingGrp.sailingDescription.regionDetails.cruiseRegionCode, 
+												   XC10CacheMap, XC10ConnectionConfig);
+
+		IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+		THEN
+			SET cDescription = com.ncl.ais.utils.LookupSWCodeUsingExternalCode(DefaultChannel, 
+														rSailingGrp.sailingDescription.regionDetails.cruiseRegionCode, RegionCodeType);
+			-- trigger cache loader
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = RegionCodeType;			
+			PROPAGATE TO LABEL 'CACHE_LOAD';				
+		END IF;
+		
+		SET rSailOpt.ns:SelectedSailing.ns:Region.(XMLNSC.Attribute)RegionName = COALESCE(SUBSTRING(cDescription BEFORE '#1#'),'');
+		
+		SET rSailOpt.ns:SelectedSailing.ns:DeparturePort.(XMLNSC.Attribute)LocationCode = rSailingGrp.sailingDescription.arrivalAndDeparturePort[1].portCode;
+		SET rSailOpt.ns:SelectedSailing.ns:ArrivalPort.(XMLNSC.Attribute)LocationCode = rSailingGrp.sailingDescription.arrivalAndDeparturePort[2].portCode;
+		
+		FOR rPkgDesc AS rSailingGrp.packageDescription[] 
+		DO
+			CREATE LASTCHILD OF rSailOpt AS rIncPkgOpt IDENTITY ns:InclusivePackageOption;
+			
+			SET rIncPkgOpt.(XMLNSC.Attribute)CruisePackageCode = rPkgDesc.packageDetails.packageCode;
+			SET rIncPkgOpt.(XMLNSC.Attribute)Duration = 'P' || rPkgDesc.packageDateTime.packageDuration || 'D';
+			SET rIncPkgOpt.(XMLNSC.Attribute)End = CAST(CAST(rPkgDesc.packageDateTime.packageEndDate AS DATE FORMAT 'ddMMyyyy') AS CHARACTER FORMAT 'yyyy-MM-dd');
+			SET rIncPkgOpt.(XMLNSC.Attribute)InclusiveIndicator = rPkgDesc.packageType;
+			SET rIncPkgOpt.(XMLNSC.Attribute)Start = CAST(CAST(rPkgDesc.packageDateTime.packageStartDate AS DATE FORMAT 'ddMMyyyy') AS CHARACTER FORMAT 'yyyy-MM-dd');
+		END FOR;
+		
+		SET rSailOpt.ns:Currency.(XMLNSC.Attribute)CurrencyCode = rSailingGrp.currencyInfo.currencyList.currencyIsoCode;
+		SET rSailOpt.ns:SailingRemarksText.ns:Text = TRIM(rSailingGrp.sailingInformation.textDetails);
+		
+		SET rSailOpt.ns:Dining.(XMLNSC.Attribute)Sitting = rSailingGrp.diningDetails.diningIdentification.diningLabel;
+		SET rSailOpt.ns:Dining.(XMLNSC.Attribute)Status = rSailingGrp.diningDetails.diningIdentification.diningStatus;
+		
+		FOR rModeTrans AS rSailingGrp.modeOfTransportation[] 
+		DO
+			CREATE LASTCHILD OF rSailOpt AS rTrans IDENTITY ns:Transportation;
+			
+			-- RegionName
+			SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannel || '#' || ModeOfTransCodeType, 
+													   rModeTrans.transportationInfo.modeOfTransport, 
+													   XC10CacheMap, XC10ConnectionConfig);
+
+			IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+			THEN
+				SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannel, 
+															rModeTrans.transportationInfo.modeOfTransport, ModeOfTransCodeType);
+				-- trigger cache loader
+				SET rOutRoot.XMLNSC.CacheMetadata.Channel = DefaultChannel;
+				SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = ModeOfTransCodeType;			
+				PROPAGATE TO LABEL 'CACHE_LOAD';				
+			END IF;
+			
+			SET rTrans.(XMLNSC.Attribute)Mode = COALESCE(SUBSTRING(cDescription BEFORE '#1#'),'');
+			
+			SET rTrans.(XMLNSC.Attribute)Status = rModeTrans.transportationInfo.motStatus;
+		END FOR;
+		
+	END FOR;
+END;

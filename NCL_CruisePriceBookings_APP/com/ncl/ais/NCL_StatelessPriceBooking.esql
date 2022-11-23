@@ -1,0 +1,67 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_StatelessPriceBooking_MapToStateful
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruisePriceBookingRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStatefulPriceBookingRQ;
+
+		DECLARE bPayload BLOB;
+				
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulPriceBookingRQ AS rOut; 
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		
+		SET rOut.ns:POS = rIn.*:POS;
+		SET rOut.ns:GuestCounts = rIn.*:GuestCounts;
+		SET rOut.ns:SailingInfo = rIn.*:SailingInfo;
+		SET rOut.ns:ReservationInfo = rIn.*:ReservationInfo;
+		SET rOut.ns:TPA_Extensions = rIn.*:TPA_Extensions;
+		SET rOut.ns:RetrieveInvoiceDetails = rIn.*:RetrieveInvoiceDetails;
+		SET rOut.ns:DisableAutoPromo = rIn.*:DisableAutoPromo;
+		SET rOut.ns:CloneMode = 'Y';
+		SET rOut.ns:ReadMode = rIn.*:ReadMode;
+		SET rOut.ns:IsPriceDrop = rIn.*:IsPriceDrop;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Stateful Price booking request message', 'xml', rEnv);
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_StatelessPriceBooking_CreateResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseStatefulPriceBookingRS;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruisePriceBookingRS;
+		
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Stateful price booking response message', 'xml', rEnv);
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePriceBookingRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		
+		SET rOut.ns:Success = rIn.*:Success;
+		SET rOut.ns:Warnings = rIn.*:Warnings;
+		SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = rIn.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET rOut.ns:SailingInfo = rIn.*:SailingInfo;
+		SET rOut.ns:GuestInfo = rIn.*:GuestInfo;
+		SET rOut.ns:BookingPayment = rIn.*:BookingPayment;
+		SET rOut.ns:InvoiceDetails = rIn.*:InvoiceDetails;
+		SET rOut.ns:Errors = rIn.*:Errors;
+
+		RETURN TRUE;
+	END;
+END MODULE;

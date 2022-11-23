@@ -1,0 +1,170 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE ExtractPortInfo_PrimPackagesReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rReq, rRGuest, rRGuests REFERENCE TO Environment.Variables;
+		DECLARE rLogIn REFERENCE TO InputRoot.XMLNSC.LoginResponse;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+					
+		IF EXISTS(rLogIn.runtimeError[]) OR EXISTS(rLogIn.loginError[])THEN
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+			IF (rLogIn.loginError.(XMLNSC.Attribute)Type) = '' THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;	
+
+		SET rEnv.sessionID = rLogIn.sessionGUID;
+		--SET rEnv.sessionID = '7061812E-F90B-4944-9703-18C735FB0583';
+		SET rEnv.Temp.Endpoint = COALESCE(rLogIn.endpoint,'');
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		-- Build PrimePackages Request
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rReq IDENTITY GetAvailPrimPackages_IN;	
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rReq);
+--      SET rReq.MsgHeader.Version = VersonixAPIVersion;     
+--		SET rReq.MsgHeader.SessionGUID = 	rEnv.sessionID;
+		
+		SET rReq.SearchParams.PackageStartRange.From = FIELDVALUE(rOrgMsg.*:SelectedSailing.(XMLNSC.Attribute)Start);
+		SET rReq.SearchParams.PackageStartRange.To = getEndDate(FIELDVALUE(rOrgMsg.*:SelectedSailing.(XMLNSC.Attribute)Start),
+																FIELDVALUE(rOrgMsg.*:SelectedSailing.(XMLNSC.Attribute)End),
+																FIELDVALUE(rOrgMsg.*:SelectedSailing.(XMLNSC.Attribute)Duration));
+		SET rReq.SearchParams.Ships.Ship = FIELDVALUE(rOrgMsg.*:SelectedSailing.(XMLNSC.Attribute)ShipCode);
+		
+		SET rReq.SearchOptions.IncludeComponents = 'Y';
+		SET rReq.SearchOptions.IncludeSailActivities = 'Y';
+		SET rReq.SearchOptions.IncludeGroups = 'ALL';
+		
+		SET rReq.ResShell.ResHeader.AgencyID = TRIM(SUBSTRING(SUBSTRING(getAgencyInfoFromPCC(rOrgMsg.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, 'SABRE') AFTER '#1#') BEFORE '#2#'));
+		
+		IF EXISTS(rOrgMsg.*:Guest[]) THEN
+			CREATE LASTCHILD OF rReq.ResShell AS rRGuests NAME 'ResGuests';
+		END IF;
+		
+		FOR rGuest AS rOrgMsg.*:Guest[] 
+		DO
+			CREATE LASTCHILD OF rRGuests AS rRGuest NAME 'ResGuest';
+			
+			SET rRGuest.GuestSeqN = FIELDVALUE(rGuest.(XMLNSC.Attribute)GuestRefNumber);
+			SET rRGuest.GuestID = '-1' || FIELDVALUE(rGuest.(XMLNSC.Attribute)GuestRefNumber);
+		END FOR;
+			
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE ExtractPortInfo_ProcessResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rReq, rRGuest, rRGuests, rReturnOpt REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.GetAvailPrimPackages_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rEnvSailInfo REFERENCE TO rEnv.Temp.Message.OutSailingInfo ;
+		DECLARE bDepartPortFound BOOLEAN FALSE;
+		DECLARE cDescription CHARACTER '';
+		
+		-- Populate Env with Information
+		SET rEnv.Temp.Variables.regionCode = rIn.AvailPackages.AvailPackage.Package.Destination;
+		
+		--FOR rAvailPkg AS rIn.AvailPackages.AvailPackage[]
+		--DO
+		DECLARE rAvailPkg REFERENCE TO rIn.AvailPackages.AvailPackage[1];
+		
+		FOR rSActivity AS rAvailPkg.SailActivities.SailActivity[]
+		DO
+			IF rSActivity.ActivityType = 'ARRIVE-DOCK' OR rSActivity.ActivityType = 'ARRIVE' THEN
+				-- Will keep getting overwritten until we find the last one
+				SET rEnv.Temp.Variables.arrivalPort = rSActivity.Port;
+				SET rEnv.Temp.Variables.arrivalTime = rSActivity.DateTime;
+			END IF;
+			
+			IF bDepartPortFound = FALSE AND rSActivity.ActivityType = 'DEPART'  THEN
+				-- Gets the first instance
+				SET rEnv.Temp.Variables.departurePort = rSActivity.Port;
+				SET rEnv.Temp.Variables.departureTime = rSActivity.DateTime;
+				SET bDepartPortFound = TRUE;
+			END IF;				
+		END FOR;
+		--END FOR;
+		
+		-- Update Env SailOptions with port Information		
+		-- Region Code (External)
+		SET cDescription = com.ncl.ais.utils.GetExternalCodeFromCache(DefaultChannel || '#' || RegionCodeType, 
+												   rEnv.Temp.Variables.regionCode, 
+												   XC10CacheMap, XC10ConnectionConfig);
+
+		IF COALESCE(cDescription, '') = '' OR STARTSWITH(cDescription, 'ERROR') 
+		THEN
+			SET cDescription = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(DefaultChannel, 
+														rEnv.Temp.Variables.regionCode, RegionCodeType);
+			-- trigger cache loader
+			SET OutputRoot.XMLNSC.CacheMetadata.Channel = DefaultChannel;
+			SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = RegionCodeType;			
+			PROPAGATE TO LABEL 'CACHE_LOAD';				
+		END IF;
+		
+		--DECLARE rRegion REFERENCE TO rEnvSailInfo.*:SailingInfo.*:Region;
+		
+		--IF NOT LASTMOVE(rRegion) THEN
+		--	CREATE FIELD rEnvSailInfo.*:SailingInfo.*:Region AS rRegion;
+		--END IF;
+		
+		SET rEnvSailInfo.ns:SailingInfo.ns:SelectedSailing.ns:Region.(XMLNSC.Attribute)RegionCode = COALESCE(SUBSTRING(cDescription BEFORE '#1#'),'');
+		--SET rRegion.(XMLNSC.Attribute)RegionCode = COALESCE(SUBSTRING(cDescription BEFORE '#1#'),'');
+		
+		--SET rEnvSailInfo.ns:SailingInfo.ns:Region.(XMLNSC.Attribute)RegionCode = rEnv.Temp.Variables.regionCode;
+		SET rEnvSailInfo.ns:SailingInfo.ns:SelectedSailing.ns:Region.(XMLNSC.Attribute)RegionName = rEnv.Temp.Variables.regionCode;
+		--SET rRegion.(XMLNSC.Attribute)RegionName = rEnv.Temp.Variables.regionCode;
+			
+		SET rEnvSailInfo.ns:SailingInfo.ns:SelectedSailing.ns:DeparturePort.(XMLNSC.Attribute)LocationCode = rEnv.Temp.Variables.departurePort;
+		SET rEnvSailInfo.ns:SailingInfo.ns:SelectedSailing.ns:DeparturePort.(XMLNSC.Attribute)LocationActionTime = rEnv.Temp.Variables.departureTime;
+		
+		SET rEnvSailInfo.ns:SailingInfo.ns:SelectedSailing.ns:ArrivalPort.(XMLNSC.Attribute)LocationCode = rEnv.Temp.Variables.arrivalPort;
+		SET rEnvSailInfo.ns:SailingInfo.ns:SelectedSailing.ns:ArrivalPort.(XMLNSC.Attribute)LocationActionTime = rEnv.Temp.Variables.arrivalTime;
+		
+		SET rEnvSailInfo.ns:SailingInfo.ns:Currency.(XMLNSC.Attribute)CurrencyCode = TRIM(SUBSTRING(getAgencyInfoFromPCC(rOrgMsg.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, 'SABRE') BEFORE '#1#'));
+		
+		
+		
+		IF EXISTS(rEnvSailInfo.*:SailingInfo.*:SelectedFare.*:SelectedCategory.*:CabinOptions.*:CabinOption.(XMLNSC.Attribute)CabinNumber[])  
+		THEN
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'No Cabin Options', rEnv);
+		-- Prepare Final response and dispatch
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseFastSellRS;	
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		CREATE LASTCHILD OF rOut IDENTITY ns:Success;
+		
+		CREATE LASTCHILD OF rOut AS rReturnOpt IDENTITY ns:FastSellReturnOptions;
+
+		SET rReturnOpt.ns:SailingInfo = rEnvSailInfo.*:SailingInfo;		
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);		
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;

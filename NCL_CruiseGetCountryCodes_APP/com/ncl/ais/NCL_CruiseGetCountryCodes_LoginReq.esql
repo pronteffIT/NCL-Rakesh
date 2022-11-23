@@ -1,0 +1,50 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_GET_COUNTRY_CODES_RESP';
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetCountryCodes_LoginReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv; 
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InpReq';
+		
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+			
+		SET rEnv.InpReq = InputRoot.XMLNSC.*:NCL_CruiseGetCountryCodesRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetCountryCodesRQ;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		SET rEnv.RequestorID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);		
+		
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		
+		DECLARE Requestor,BookingChannel CHARACTER;
+		
+		SET Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,'','','',rEnv);
+		
+		--SET rEnv.setParllelMode = 'Y';
+		SET rOut.VerifyAgencyRequest.source.BookingChannel.CompanyName.(XMLNSC.Attribute)Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rOut.VerifyAgencyRequest.source.RequestorID.(XMLNSC.Attribute)ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rOut.VerifyAgencyRequest.source.(XMLNSC.Attribute)PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;		
+		
+		
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

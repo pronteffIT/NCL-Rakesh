@@ -1,0 +1,298 @@
+version: '3'
+services:
+  is_tap01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_TAP01
+    hostname: is_tap01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=TAP01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7600:7600'
+      - '7800:7800'
+      - '7900:7900'
+      - '9012:9012'
+      - '9400:9483'
+      - '8000:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_TAP01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_TAP01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/ccdt/:/home/aceuser/ace-server/ccdt/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_TAP01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_reservation01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_RESERVATION01
+    hostname: is_reservation01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=RESERVATION01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7601:7600'
+      - '7801:7800'
+      - '7901:7900'
+      - '9401:9483'
+      - '8001:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_RESERVATION01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_RESERVATION01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_RESERVATION01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_reports01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_REPORTS01
+    hostname: is_reports01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=REPORTS01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7602:7600'
+      - '7802:7800'
+      - '7902:7900'
+      - '9402:9483'
+      - '8002:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_REPORTS01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_REPORTS01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps'
+      - $HOME/Docker_Config/IS_REPORTS01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_packages01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_PACKAGES01
+    hostname: is_packages01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=PACKAGES01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7603:7600'
+      - '7803:7800'
+      - '7903:7900'
+      - '9403:9483'
+      - '8003:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_PACKAGES01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_PACKAGES01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies/:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_PACKAGES01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_clntmgt01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_CLNTMGT01
+    hostname: is_clntmgt01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=CLNTMGT01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7604:7600'
+      - '7804:7800'
+      - '7904:7900'
+      - '9404:9483'
+      - '8004:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_CLNTMGT01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_CLNTMGT01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_CLNTMGT01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped    
+  is_casino01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_CASINO01
+    hostname: is_casino01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=CASINO01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7605:7600'
+      - '7805:7800'
+      - '7905:7900'
+      - '9405:9483'
+      - '8005:8005'
+    volumes:
+      - $HOME/Docker_Config/IS_CASINO01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_CASINO01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_CASINO01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_booking01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_BOOKING01
+    hostname: is_booking01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=BOOKING01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7606:7600'
+      - '7806:7800'
+      - '7906:7900'
+      - '9406:9483'
+      - '8006:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_BOOKING01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_BOOKING01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_BOOKING01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_apps02:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_APPS02
+    hostname: is_apps02
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=APPS02
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7607:7600'
+      - '7807:7800'
+      - '7907:7900'
+      - '9407:9483'
+      - '8007:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_APPS02/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_APPS02/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_APPS02/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_apps01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_APPS01
+    hostname: is_apps01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=APPS01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7608:7600'
+      - '7808:7800'
+      - '7908:7900'
+      - '9408:9483'
+      - '8008:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_APPS01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_APPS01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_APPS01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped
+  is_amenities01:
+    image: 'ace-12.6:latest'
+    container_name: ACE2_AMENITIES01
+    hostname: is_amenities01
+    privileged: true
+    cap_drop:
+      - ALL
+    environment:
+      - LICENSE=accept
+      - ACE_SERVER_NAME=AMENITIES01
+      - ACE_ENABLE_METRICS=true
+    ports:
+      - '7609:7600'
+      - '7809:7800'
+      - '7909:7900'
+      - '9409:9483'
+      - '8009:8000'
+    volumes:
+      - $HOME/Docker_Config/IS_AMENITIES01/server.conf.yaml:/home/aceuser/ace-server/server.conf.yaml
+      - $HOME/Docker_Config/IS_AMENITIES01/bars:/home/aceuser/initial-config/bars
+      - $HOME/Docker_Config/COMMON/agent/:/home/aceuser/initial-config/agent
+      - $HOME/Docker_Config/COMMON/NCLDefaultPolicies:/home/aceuser/initial-config/policy/
+      - $HOME/Docker_Config/COMMON/shared-classes/:/home/aceuser/ace-server/shared-classes/
+      - $HOME/Docker_Config/COMMON/odbcini:/home/aceuser/initial-config/odbcini
+      - $HOME/Docker_Config/COMMON/setdbparms:/home/aceuser/initial-config/setdbparms
+      - $HOME/Docker_Config/COMMON/truststores:/home/aceuser/truststores
+      - $HOME/Docker_Config/COMMON/ConfigFiles:/var/mqsi/app_data/apps
+      - $HOME/Docker_Config/IS_AMENITIES01/run:/home/aceuser/ace-server/run
+    restart: unless-stopped   
+networks:
+  default:
+    external:
+      name: ace_dev_env

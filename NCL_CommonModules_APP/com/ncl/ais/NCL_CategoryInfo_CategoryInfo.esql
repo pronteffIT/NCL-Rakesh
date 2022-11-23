@@ -1,0 +1,137 @@
+
+
+
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CategoryInfo_CategoryInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- This module is designed for serving the purpose of the cabinlookup and categoryinfo.
+		-- The request sent to this callable flow, needs to pass the operation name which should be triggered i.e categoryInfo or cabinLookup
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		-- Check the input request for the operation which is to be performed.
+		CASE
+
+		WHEN EXISTS(InputRoot.XMLNSC.CabinLookupCategoryInfo.CabinCategoryInfoReq[]) THEN
+			-- Executing the code for the Category info
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Executing the Cabin Category Info logic', rEnv);
+			DECLARE rEnvCatInputReq REFERENCE TO rEnv.XMLNSC.CabinLookupCategoryInfo.CabinCategoryInfoReq;
+			--CREATE FIELD rEnv.XMLNSC.CabinLookupCategoryInfo.CabinCategoryInfoReq AS rEnvCatInputReq;
+
+			DECLARE categoryLookupSqlQuery CHARACTER 'select CCGL.CABIN_CATEGORY AS CATEGORY,CCGL.cabin_Category_generic AS LOCATION,CCC.COMMENTS AS DESCRIPTION,
+			b.MaxOccupancy from cabin_Category_generic ccg,cabin_Cat_gen_lnk_cabin_cat ccgl,cabin_category_comments ccc,
+			(select SHIP_CODE,CABIN_CATEGORY,max(CABIN_CAPACITY) as MaxOccupancy from SHIP_CABIN_CTG_LINK where ship_code=?
+			and EFF_SAIL_TO >=? GROUP BY SHIP_CODE,CABIN_CATEGORY)b
+			where ccgl.cabin_category_generic =ccg.cabin_category_generic and CCC.CABIN_CATEGORY= CCGL.CABIN_CATEGORY and
+			CCC.SHIP_CODE= CCGL.SHIP_CODE and ccgl.ship_code=? and b.ship_code=ccgl.ship_code
+			AND b.CABIN_CATEGORY = CCGL.CABIN_CATEGORY and CCGL.CABIN_CATEGORY!=?';
+
+			DECLARE fetchSailInfoSqlQuery CHARACTER 'select ship_code,to_char(sail_date_from,''yyyy-mm-dd'') as sail_date_from ,
+			to_char(sail_date_to,''yyyy-mm-dd'') as sail_date_to
+			from SEA.package_definition a, sail_header b where package_id=? and a.sail_id=b.sail_id';
+
+
+			IF EXISTS(rEnvCatInputReq.VoyageId[]) AND (rEnvCatInputReq.ShipCode IS NULL OR rEnvCatInputReq.SailEndDate IS NULL) THEN
+				-- DECLARE VoyageId CHARACTER ''||rEnvCatInputReq.VoyageId;
+				SET rEnv.DBResults.FetchSailInfo.Details[] = PASSTHRU(fetchSailInfoSqlQuery VALUES(rEnvCatInputReq.VoyageId));
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Successfully executed the fetch sail info query', rEnv);
+				SET rEnvCatInputReq.SailEndDate = rEnv.DBResults.FetchSailInfo.Details.sail_date_to;
+				IF rEnvCatInputReq.ShipCode = '' OR NOT EXISTS(rEnvCatInputReq.ShipCode[]) THEN
+					SET rEnvCatInputReq.ShipCode = rEnv.DBResults.FetchSailInfo.Details.SHIP_CODE;
+				END IF;
+			END IF;
+			-- Check if the sailEndDate is retrieved from the above query or not. if not then pass the current date as a query param to the next query
+			IF rEnvCatInputReq.SailEndDate IS NOT NULL AND rEnvCatInputReq.SailEndDate <> '' THEN
+				SET rEnvCatInputReq.SailEndDate = CAST(rEnvCatInputReq.SailEndDate AS DATE FORMAT 'yyyy-MM-dd');
+			ELSE
+				SET rEnvCatInputReq.SailEndDate = CURRENT_DATE;
+			END IF;
+
+			SET rEnv.DBResults.categoryLookup.Details[] = PASSTHRU(categoryLookupSqlQuery VALUES(rEnvCatInputReq.ShipCode,rEnvCatInputReq.SailEndDate,rEnvCatInputReq.ShipCode,'XX'));
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Successfully executed the Category Info Query', rEnv);
+			-- create a response structure for the category which has multiple occurences of the category summary and category summary will have
+			-- category, location, description, maxoccupancy
+			CREATE LASTCHILD OF OutputRoot.XMLNSC NAME 'CategorySummaryList';
+			DECLARE categories REFERENCE TO OutputRoot.XMLNSC.CategorySummaryList;
+			
+			FOR source AS rEnv.DBResults.categoryLookup.Details[] DO
+				CREATE LASTCHILD OF OutputRoot.XMLNSC.CategorySummaryList AS categories NAME 'CategorySummary';
+				SET categories.Category = source.CATEGORY;
+
+				IF ENDSWITH(source.LOCATION,'.') THEN
+					SET categories.Location = SUBSTRING(source.LOCATION FROM 1 FOR LENGTH(source.LOCATION)-1);
+					-- SET OutputRoot.XMLNSC.CategorySummaryList.CategorySummary[i].Location = RIGHT(source.LOCATION,1);
+				ELSE
+					SET categories.Location = source.LOCATION;
+				END IF;
+
+				IF LENGTH(categories.Location)>2 THEN
+					SET categories.Location = UPPER(SUBSTRING(categories.Location FROM 1 FOR 1)) || LOWER(SUBSTRING(categories.Location FROM 2 FOR LENGTH(categories.Location)));
+				END IF;
+				SET categories.Description = source.DESCRIPTION;
+				SET categories.MaxOccupancy = source.MAXOCCUPANCY;
+
+			END FOR;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Completed the execution of the Cabin Category Info', rEnv);
+
+END CASE;
+
+END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CategoryInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE NCL_CategoryInfo_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.CategoryInfoResponse;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+
+		CREATE FIELD OutputRoot.XMLNSC.CategoryInfoResponse AS rResp;
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET rResp.runtimeError.(XMLNSC.Attribute)Code = '12228';
+		SET rResp.runtimeError.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET rResp.runtimeError.(XMLNSC.Attribute)Type = '3';
+		SET rResp.runtimeError = cErrorText;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+

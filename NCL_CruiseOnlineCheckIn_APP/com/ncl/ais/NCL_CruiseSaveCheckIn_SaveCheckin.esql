@@ -1,0 +1,228 @@
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 1500;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_SAVE_CHECKIN_RESP';
+
+CREATE COMPUTE MODULE NCL_CruiseSaveCheckIn_SaveCheckin
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSaveCheckInRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		-- add metadata to log event
+	--	CALL com.ncl.iib.log.CreateMetaData('BookingChannel', COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''), 'Channel', rEnv);
+	--	CALL com.ncl.iib.log.CreateMetaData('EntityId', COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''), 'Requestor Id', rEnv);
+	--	CALL com.ncl.iib.log.CreateMetaData('ReservationId', COALESCE(rIn.*:ReservationId, ''), 'ReservationId', rEnv);
+	--	CALL com.ncl.iib.log.CreateMetaData('SailId', COALESCE(rIn.*:SailId, ''), 'SailId', rEnv);
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationId, ''),	
+												COALESCE(rIn.*:ClientId, ''),
+												'',rEnv);
+		
+		-- Adding PayLoad Event
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Save CheckIn Request', 'xml', rEnv);
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseSaveCheckInRQ = rIn;
+		
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseSaveCheckInRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+
+		SET rEnv.ReservationID = FIELDVALUE(rIn.*:ReservationId);
+		SET rEnv.BkingChnlCompCd = UPPER(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code));
+
+		DECLARE RecordId,GuestId INTEGER 0;
+		DECLARE DateTime TIMESTAMP CAST(CURRENT_TIMESTAMP AS TIMESTAMP FORMAT 'yyyy-MM-dd hh:mm:ss');
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSaveCheckInRS AS rOut;
+
+		SET GuestId = THE(SELECT ITEM rg.guest_id from Database.res_header AS rh, Database.res_guest AS rg, Database.sail_header AS sh where rh.res_id=rg.res_id and sh.ship_code=rh.SHIP_CODE and sh.sail_date_from = rh.sail_date_From
+						and rh.res_id = rEnv.ReservationID and rg.client_id= rIn.*:ClientId and sh.sail_id= rIn.*:SailId);
+
+		IF GuestId >0 THEN
+
+			SET RecordId = THE(SELECT ITEM A.record_id FROM Database.ncl_check_in AS A where A.res_id= rEnv.ReservationID and A.client_id= rIn.*:ClientId and A.sail_id= rIn.*:SailId);							
+			DECLARE SQLQry CHARACTER;
+			
+			-- If record Exists then Perform a Update else do a INSERT for the retrived RecordId
+			-------select statement to get records
+			SET rEnv.ResultSet.Record[] =SELECT A.RECORD_ID FROM Database.NCLSEA.NCL_CHECK_IN AS A WHERE A.RECORD_ID = RecordId;
+			---check whether select is succesfull
+
+			IF SQLCODE = 0 THEN
+
+				IF EXISTS(rEnv.ResultSet.Record[]) THEN
+
+					SET SQLQry = 'UPDATE NCL_CHECK_IN  P SET SAIL_ID =?,RES_ID =?,CLIENT_ID =?,DATE_TIME_STAMP =?,MODIFIED_DATE =?,CHECK_IN_DATE_TIME = ?,
+					TERMINAL =?, GUEST_ID=? WHERE P.RECORD_ID = ?';
+
+					PASSTHRU( SQLQry , rIn.*:SailId,rEnv.ReservationID,rIn.*:ClientId,DateTime,DateTime,rIn.*:CheckInDateTime,rIn.*:Terminal,GuestId,RecordId);
+					PASSTHRU('COMMIT');
+				ELSE
+					-- Record Not exist then Do a INSERT
+					INSERT INTO Database.NCL_CHECK_IN (RECORD_ID ,SAIL_ID,RES_ID,CLIENT_ID, DATE_TIME_STAMP ,MODIFIED_DATE,CHECK_IN_DATE_TIME,TERMINAL,GUEST_ID)
+					VALUES (RecordId,rIn.*:SailId,rEnv.ReservationID,rIn.*:ClientId,DateTime,DateTime,rIn.*:CheckInDateTime,rIn.*:Terminal,GuestId);
+					PASSTHRU('COMMIT');
+				END IF;
+
+				IF SQLCODE = 0 THEN				
+					COMMIT;
+					CREATE LASTCHILD OF rEnv.Results DOMAIN 'XMLNSC' NAME 'CheckInDetls';
+					SET rEnv.Results.CheckInDetls[] = PASSTHRU('Select * FROM NCL_CHECK_IN  C WHERE C.CLIENT_ID =? AND C.RES_ID=? ',rIn.*:ClientId,rEnv.ReservationID);
+					SET rOut.(XMLNSC.Attribute)PrimaryLangID = 'EN';
+					SET rOut.(XMLNSC.Attribute)Version = '1.0';
+				--	CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+					CREATE FIELD rOut.ns:Success ;
+					DECLARE rCheckin REFERENCE TO rEnv.Results.CheckInDetls;
+					SET rOut.ns:RecordId = COALESCE(rCheckin.RECORD_ID,'');
+					SET rOut.ns:SailId = COALESCE(rCheckin.SAIL_ID,'');
+					SET rOut.ns:ReservationId = COALESCE(rCheckin.RES_ID,'');
+					SET rOut.ns:ClientId = COALESCE(rCheckin.CLIENT_ID,'');
+					SET rOut.ns:CheckInDateTime =  COALESCE(rCheckin.CHECK_IN_DATE_TIME,'');
+					SET rOut.ns:CreationDateTime = CAST(CAST(rCheckin.DATE_TIME_STAMP AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ss.S') AS CHARACTER FORMAT 'yyyy-MM-dd'' ''HH:mm:ss');
+					SET rOut.ns:ModifiedDateTime = CAST(CAST(rCheckin.MODIFIED_DATE AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ss.S') AS CHARACTER FORMAT 'yyyy-MM-dd'' ''HH:mm:ss');
+					SET rOut.ns:Terminal = COALESCE(rCheckin.TERMINAL,'');
+					SET rOut.ns:GuestId = COALESCE(rCheckin.GUEST_ID,'');
+
+				END IF;
+
+			END IF;
+			
+			--SQLERRORTEXT
+		ELSE
+			
+			-- Invalid Request
+
+			SET rOut.(XMLNSC.Attribute)PrimaryLangID = 'EN';
+			SET rOut.(XMLNSC.Attribute)TimeStamp = CAST(CURRENT_TIMESTAMP AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss');
+			SET rOut.(XMLNSC.Attribute)Version = '1.0';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '90001';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Reservation or sailing info not found';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';	
+
+		END IF;
+		-- End for Guest ID Scope
+		IF SQLCODE <> 0  THEN
+		
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SQLERRORTEXT;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			SET rOut.ns:Warnings.ns:Warning = SQLERRORTEXT;			
+			
+		END IF;
+		
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseSaveCheckIn_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+
+		CALL CopyMessageHeaders();
+		
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;		
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			
+			--creating IIB Log Event
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Save CheckIn Request', 'xml', rEnv);
+			
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseSaveCheckInRS;
+		
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.InReq.*:NCL_CruiseSaveCheckInRQ[]) THEN
+			
+			DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseSaveCheckInRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+			
+		END IF;
+ 
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';		
+			
+		-- Add response msg to log event
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Save CheckIn Response message', 'xml', rEnv);
+
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;				
+
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+	
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+	
+END MODULE;

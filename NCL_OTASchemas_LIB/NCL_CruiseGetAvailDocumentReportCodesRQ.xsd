@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="3.2" id="OTA2006A">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+        <xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseGetAvailDocumentReportCodesRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+Returns list of applicable reports from the system classified by Guest,Agent and Agency.
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="EntityType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Denotes the entity for which the document report types are requested.Only FIT is supported for now. For FSGroup there are two standard FS Group reports which are sent to the agent by default</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:enumeration value="FIT"/>
+							<xs:enumeration value="FSGroup"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="RecipientType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Denotes the recipient for which the document report types are requested.ALL return the applicable document types for Client,Agent and Agency</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:enumeration value="CLIENT"/>
+							<xs:enumeration value="AGENT"/>
+							<xs:enumeration value="AGENCY"/>
+							<xs:enumeration value="ALL"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

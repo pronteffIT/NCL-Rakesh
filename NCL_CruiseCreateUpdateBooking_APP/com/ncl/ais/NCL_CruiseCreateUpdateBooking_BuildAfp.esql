@@ -1,0 +1,56 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_BuildAfp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv  REFERENCE TO Environment.Variables;
+		DECLARE rOutFinalPymnt REFERENCE TO OutputRoot;
+		DECLARE rInPay REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInPymntOptions REFERENCE TO rEnv.PayReq.*:ReservationInfo.*:PaymentOptions;
+		
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		
+		
+		CREATE FIELD OutputRoot.XMLNSC.AutoFinalPayment_IN AS rOutFinalPymnt;
+		SET rOutFinalPymnt.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rOutFinalPymnt.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		SET rOutFinalPymnt.MsgHeader.MessageID = rEnv.MessageID;
+		SET rOutFinalPymnt.MsgHeader.Language = 'ENG';		
+		CREATE FIELD rOutFinalPymnt.MsgHeader.CallerInfo.UserInfo.Internal;
+		DECLARE dAmount DECIMAL ;
+		
+		SET dAmount = CAST(rInPay.*:AFP.*:AmoutToChargeAtFinalPayment AS DECIMAL (10,2))/100;
+		
+		SET rOutFinalPymnt.ResID			= rEnv.ResID;
+		SET rOutFinalPymnt.ClientID			= FIELDVALUE(rEnv.ClientIds.{'1'});
+		SET rOutFinalPymnt.AFPOption		= 'CREATE';
+		SET rOutFinalPymnt.Amount			= 	dAmount;	
+		SET rOutFinalPymnt.CreditCard.CCData = rEnv.CCData;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateBooking_AfpResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;		
+		DECLARE rReqIn REFERENCE TO InputRoot.XMLNSC.AutoFinalPayment_OUT;
+		DECLARE cErrorText CHARACTER;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		IF EXISTS(rReqIn.Errors.Error[]) OR EXISTS(InputExceptionList.RecoverableException[]) THEN
+			SET rEnv.AFPStatus = 'FAILED';			
+			SET rEnv.AFPErrorMessage = COALESCE(cErrorText,rReqIn.Errors.Error.ErrorMessage);						
+		ELSE
+			SET rEnv.AFPStatus = rReqIn.Status;
+		END IF;
+		RETURN TRUE;		
+	END;
+
+END MODULE;

@@ -1,0 +1,62 @@
+BROKER SCHEMA com.ncl.iib.utils
+
+/* ------------------------------------------------------------------------------------
+ *  COMPANY           :     NCL
+ *  PROJECT           :     WESB-IIB Migration
+ *  ESQL NAME         :     CommonUtils.esql
+ * 	DESCRIPTION       :    	This ESQL File contains a set of re-usable and commonly
+ 							invokable procedures and functions used as a part of the
+ 							Common Components Implementation.
+ *-------------------------------------------------------------------------------------    
+ * ******************        MODIFICATION HISTORY   ***********************************
+ * ------------------------------------------------------------------------------------
+ * VERSION  CRNUM   DATE(MM/DD/CCYY)   Author                       Comments
+ * 1.0              03/08/2014        Prolifics					Initial Creation
+ * -----------------------------------------------------------------------------------*/
+
+ 	/* -------------------------------------------------------------------------------- 
+     * Func/Proc Name  : getExceptionSummary
+     * Description     : This procedure will extract error details from exception trace
+	 * --------------------------------------------------------------------------------*/
+	CREATE PROCEDURE getExceptionSummary(IN rEnv REFERENCE, IN rExcpList REFERENCE) 
+	BEGIN
+    	DECLARE rPtrException REFERENCE TO rExcpList.*[1];
+		DECLARE cExceptionType CHARACTER '';
+		DECLARE iError INTEGER;
+		DECLARE cErrorMsg CHARACTER '';
+		DECLARE cLabel CHARACTER '';
+		DECLARE iSeverity INTEGER 0;
+		
+    	-- Loop for getting the exception type, The last child of exception list tree gives you the type of that exception
+    	WHILE LASTMOVE(rPtrException) DO
+    		IF (rPtrException.Number  IS NOT  NULL) THEN
+    			IF rPtrException.Label IS NOT NULL AND rPtrException.Label <> '' THEN
+        			SET cLabel = rPtrException.Label;
+    			END IF;
+    			
+    			SET cExceptionType = FIELDNAME(rPtrException);
+        		SET iError = rPtrException.Number;
+        		SET iSeverity = rPtrException.Severity;
+        		
+        		IF (NOT CONTAINS(rPtrException.Text, 'rethrowing')) AND (NOT CONTAINS(rPtrException.Text, 'Node throwing exception')) THEN
+        			SET cErrorMsg = cErrorMsg || COALESCE(rPtrException.Text, '') || ': ';
+        		END IF;
+        		
+        		FOR rInsert AS rPtrException.Insert[] DO
+        			IF rInsert.Text <> '' AND rInsert.Type < 12 THEN
+        				SET cErrorMsg = cErrorMsg || rInsert.Text || ', ';
+        			END IF;
+        		END FOR;
+        	END IF;
+        	
+			MOVE rPtrException LASTCHILD;
+    	END WHILE;
+	
+		CREATE LASTCHILD OF rEnv NAME 'ErrorSummary';
+		DECLARE rEnvError REFERENCE TO rEnv.ErrorSummary;
+		
+		SET rEnvError.LabelName = cLabel;
+		SET rEnvError.ExceptionType = cExceptionType;
+    	SET rEnvError.ErrorCode = iError;
+		SET rEnvError.ErrorText	= cErrorMsg;
+	END;

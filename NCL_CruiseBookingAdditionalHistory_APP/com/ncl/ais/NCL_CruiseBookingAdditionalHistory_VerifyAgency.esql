@@ -1,0 +1,177 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_BKNG_ADDL_HISTORY_RESP'; 
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER 'XC10ConnectionConfig';
+DECLARE AgencyMap EXTERNAL CHARACTER '';
+
+
+CREATE COMPUTE MODULE NCL_CruiseBookingAdditionalHistory_VerifyAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, refOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseBookingAdditionalHistoryRQ;
+ 		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv; 
+		
+		-- save frequently used elements in environment tree
+		SET rEnv.Temp.ReservationId = rIn.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+ 		SET rEnv.Temp.agencyID = FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID);
+		SET rEnv.Temp.PCC = COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '');
+		SET rEnv.Temp.SystemName = COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'QUEST_INTERNAL');
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+					
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseBookingAdditionalHistoryRQ = rIn;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- removing default namespace declaration
+  		SET rEnv.Temp.Message.NCL_CruiseBookingAdditionalHistoryRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+--		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+--		RETURN TRUE; 
+
+		CALL com.ncl.ais.utils.LookupAgencyInfo(rEnv.Temp.agencyID, rEnv.Temp.PCC, rEnv.Temp.SystemName, AgencyMap, XC10ConnectionConfig, rEnv);
+		
+		IF EXISTS(rEnv.Temp.AgencyInfoError[]) THEN
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+			
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseBookingAdditionalHistoryRS AS refOut;
+			
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rIn, refOut);
+			
+			-- Construct The Error Response from Verify Agecncy Response
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rEnv.Temp.AgencyInfoError, refOut);
+			
+			PROPAGATE TO TERMINAL 'out1';
+			
+			RETURN FALSE;
+			
+		ELSE
+			PROPAGATE TO TERMINAL 'out';
+			
+			RETURN FALSE;
+			
+		END IF;
+	
+	END;
+	
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseBookingAdditionalHistory_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+-- 		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+--		CALL CopyMessageHeaders();  
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;		
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+ 
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseBookingAdditionalHistoryRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.Temp.Message.*:NCL_CruiseBookingAdditionalHistoryRQ[]) THEN
+			DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseBookingAdditionalHistoryRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+ 
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';		
+		
+		RETURN TRUE;
+	END;
+
+END MODULE; 
+
+CREATE COMPUTE MODULE NCL_CruiseBookingAdditionalHistory_SetEndpoint 
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Endpoint;
+		
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseBookingAdditionalHistory_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseBookingAdditionalHistoryRQ; 
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.NCL_CruiseBookingAdditionalHistoryRS;
+
+ 		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+ 		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+ 		END IF;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseBookingAdditionalHistoryRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

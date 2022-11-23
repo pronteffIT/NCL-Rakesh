@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://nclapi/schemas" version="2.1" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/OTA_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseRegistrationRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Cruise Registration Request message requests Travel Agency information stored by the Cruise Vendor
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="RegistrationAction">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">contains an action associated with the Cruise Line registration process</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element minOccurs="1" name="RegistrationActionCode">
+								<xs:annotation>
+									<xs:documentation xml:lang="en">This code represents a Cruise Line registration action.
+									Valid Codes:  1 = Request Travel Agency registration information
+														 2 = Denied by the Home Pseudo City Code 
+														 3 = Denied by the Branch Pseudo City Code 
+														 5 = Accepted by the Home Pseudo City Code 
+														 6 = Accepted by the Branch Pseudo City Code</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element minOccurs="0" name="AgencyPhoneNumber" type="StringLength1to32"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

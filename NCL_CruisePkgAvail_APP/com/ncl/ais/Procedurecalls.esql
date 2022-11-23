@@ -1,0 +1,138 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+CREATE PROCEDURE CreateWarningRespForVXErrors(INOUT rEnv REFERENCE, INOUT rOrgMsg REFERENCE, IN rVxError REFERENCE, INOUT rOutRoot REFERENCE)
+BEGIN
+	DECLARE rOut REFERENCE TO rOutRoot;
+	DECLARE rWarn REFERENCE TO rEnv;
+
+	DECLARE channel CHARACTER FIELDVALUE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+	DECLARE cCode CHARACTER '';	
+	DECLARE cExternalCodeInfo , cErrorMsg CHARACTER '';
+    DECLARE sessionValid BOOLEAN FALSE;
+	DECLARE WARNMSG ROW;
+	
+	CREATE LASTCHILD OF WARNMSG DOMAIN('XMLNSC') NAME 'Warnings';
+	
+	FOR rError AS rVxError.Errors.Error[] DO
+		SET cCode = rError.ErrorCode; 
+		CREATE LASTCHILD OF WARNMSG.Warnings AS rWarn IDENTITY sc:Warning; 
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(channel || '#' || ExternalCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+	
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+--			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			-- trigger cache loader
+--			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+--			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+--		
+--			PROPAGATE TO LABEL 'CACHE_LOAD';
+		
+			CALL CreateWarningResp('', channel, cCode, ExternalCodeType, rError, rWarn);
+		ELSE
+			CALL CreateWarningResp(cExternalCodeInfo, channel, cCode, ExternalCodeType, rError, rWarn);
+		END IF;
+	END FOR;
+	
+	-- create response message
+	CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	CREATE LASTCHILD OF rOutRoot.XMLNSC AS rOut IDENTITY sc:NCL_CruisePkgAvailRS;
+	
+	CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+	SET rOut.sc:Warnings = WARNMSG.Warnings; 
+	
+--	IF COALESCE(rEnv.Temp.ValidatePayment, '') = 'Y' THEN
+--		FOR rWarning AS rOut.*:Warnings.*:Warning[] DO
+--			SET rWarning.(XMLNSC.Attribute)Type = '2';
+--		END FOR;
+--	END IF;
+END;
+
+
+CREATE PROCEDURE CreateWarningResp(IN cExternalCodeDetails CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+									IN rVxError REFERENCE, INOUT rWarn REFERENCE) 
+BEGIN
+	DECLARE cAdvCode, cErrorMsg, cExternalCode CHARACTER '';
+	DECLARE defAdvCode CHARACTER '12228';
+	DECLARE defErrorMsg CHARACTER 'System error from backend Try Later';
+	
+	SET cExternalCode = cExternalCodeDetails;
+	
+	IF cExternalCode = '' THEN		
+		IF (cErrorCode = '' OR cChannel = '') THEN
+			SET cAdvCode = defAdvCode;
+			SET cErrorMsg = defErrorMsg;
+		ELSE
+			SET cExternalCode = com.ncl.ais.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+			
+			SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+			SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+		END IF;
+	ELSE
+		SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+	END IF;
+		
+	IF COALESCE(cAdvCode, '') = '' THEN
+		SET rWarn.(XMLNSC.Attribute)Code = defAdvCode;
+		SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(defErrorMsg FROM 1 FOR 64);
+	ELSE
+		SET rWarn.(XMLNSC.Attribute)Code = cAdvCode;
+		SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);
+	END IF;
+	
+	IF rVxError.ErrorSeverity IN('W', 'I') THEN
+		SET rWarn.(XMLNSC.Attribute)Type = '2';
+	ELSE
+		SET rWarn.(XMLNSC.Attribute)Type = '3';
+	END IF;
+		
+	SET rWarn = FIELDVALUE(rVxError.ErrorMessage);
+END;
+
+CREATE PROCEDURE StoreErrorsAsWarnings(IN rVxErrors REFERENCE, INOUT rOrgMsg REFERENCE,  INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) 
+BEGIN	
+	DECLARE rWarnings, rWarning REFERENCE TO rEnv;	
+	DECLARE cChannel CHARACTER FIELDVALUE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+	
+	IF NOT EXISTS(rEnv.Temp.Warnings[]) THEN	
+		CREATE FIELD rEnv.Temp.Warnings AS rWarnings;
+	ELSE
+		MOVE rWarnings TO rEnv.Temp.Warnings;
+	END IF;
+	
+	FOR rError AS rVxErrors.Error[] DO
+		CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY sc:Warning;
+		DECLARE cCode CHARACTER rError.ErrorCode;
+		DECLARE cAdvCode, cErrorMsg, cExternalCodeInfo CHARACTER '';
+		
+		-- get external error code from cache
+		SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || ExternalCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+	
+		IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+			SET cExternalCodeInfo = com.ncl.ais.LookupExternalCodeUsingSWCode(cChannel, cCode, ExternalCodeType);	
+			-- trigger cache loader
+--			SET rOutRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+--			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+--		
+--			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+
+		SET cAdvCode = SUBSTRING(cExternalCodeInfo BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCodeInfo AFTER '#1#') BEFORE '#2#');
+		
+		SET rWarning = FIELDVALUE(rError.ErrorMessage);
+		SET rWarning.(XMLNSC.Attribute)Code = cAdvCode;
+		SET rWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);			
+		
+		IF COALESCE(rEnv.Temp.ValidatePayment, '') = 'Y' THEN
+			SET rWarning.(XMLNSC.Attribute)Type = '2';
+		ELSE
+			IF rError.ErrorSeverity IN('W', 'I') THEN
+				SET rWarning.(XMLNSC.Attribute)Type = '2';
+			ELSE
+				SET rWarning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+		END IF;		
+	END FOR;
+END;	

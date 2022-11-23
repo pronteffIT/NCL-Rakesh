@@ -1,0 +1,112 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_GET_AVAIL_SHOREX_RESP';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+--DECLARE vagncy NAMESPACE 'http://NCL_ValidateBookingLib';
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailShorexPackages_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv; 
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InpReq';
+		
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+			
+		SET rEnv.InpReq = InputRoot.XMLNSC.*:NCL_CruiseGetAvailShorexPackagesRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetAvailShorexPackagesRQ;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		SET rEnv.RequestorID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);		
+		
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		IF LogPayload THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get Avail Shorex Request Message', 'xml', rEnv);
+		END IF;
+		
+		DECLARE Requestor,BookingChannel,ReservationId CHARACTER;
+		
+		SET Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		SET ReservationId = COALESCE(FIELDVALUE(rIn.*:ReservationID.(XMLNSC.Attribute)ID),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,ReservationId,'','',rEnv);
+		
+		--SET rEnv.setParllelMode = 'Y';
+		/*SET rOut.VerifyAgencyRequest.source.BookingChannel.CompanyName.(XMLNSC.Attribute)Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rOut.VerifyAgencyRequest.source.RequestorID.(XMLNSC.Attribute)ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rOut.VerifyAgencyRequest.source.(XMLNSC.Attribute)PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;*/		
+		
+		SET rOut.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailShorexPackages_ComputeStateless
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+				DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB;
+		
+		-- set the endpoint of the VX server
+		-- SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';		
+		
+		DECLARE RefOutShorex REFERENCE TO OutputRoot.XMLNSC;
+		SET RefOutShorex.GetAvailShorex_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET RefOutShorex.GetAvailShorex_IN.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		CREATE FIELD RefOutShorex.GetAvailShorex_IN.MsgHeader.CallerInfo.UserInfo.Internal;
+		SET RefOutShorex.GetAvailShorex_IN.SearchParams.PackageStartRange.From = FIELDVALUE(rEnv.InpReq.*:PackageDateRange.*:PackageStartDate);
+		SET RefOutShorex.GetAvailShorex_IN.SearchParams.PackageStartRange.To = FIELDVALUE(rEnv.InpReq.*:PackageDateRange.*:PackageEndDate);
+		SET RefOutShorex.GetAvailShorex_IN.SearchParams.PackageTypes.PackageType = FIELDVALUE(rEnv.InpReq.*:ShorexPackage);
+		SET RefOutShorex.GetAvailShorex_IN.SearchParams.ComponentTypes.ComponentType = FIELDVALUE(rEnv.InpReq.*:PackageType);
+
+		IF FIELDVALUE(rEnv.InpReq.*:CalculatePrice) <> '' THEN
+			
+			SET RefOutShorex.GetAvailShorex_IN.SearchOptions.CalcPrices = FIELDVALUE(rEnv.InpReq.*:CalculatePrice);
+			
+		ELSE
+			SET RefOutShorex.GetAvailShorex_IN.SearchOptions.CalcPrices = 'N';
+			
+		END IF;
+
+		SET RefOutShorex.GetAvailShorex_IN.ResShellRef = CAST(FIELDVALUE(rEnv.InpReq.*:ReservationID.*:ID) AS INTEGER);
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailShorexPackages_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.endPoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;

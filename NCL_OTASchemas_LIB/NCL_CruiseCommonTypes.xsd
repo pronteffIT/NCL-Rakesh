@@ -1,0 +1,678 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" id="OTA2005B" targetNamespace="http://nclapi/schemas" version="1.000" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA specification are made available according to the terms defined by the OTA License Agreement at http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:attributeGroup name="DateTimeDescriptionGroup">
+		<xs:annotation>
+			<xs:documentation>Specifies details about the activitiy on a particular date/time.</xs:documentation>
+		</xs:annotation>
+		<xs:attribute name="DateTimeQualifier" use="required">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">This is an enumerated field specifying a code indicating the type of activity. 
+
+The enumerated codes are :
+A - Arrival Qualifier
+D - Departure Qualifier
+S - Stay Qualifier
+B - Boarding Qualifier</xs:documentation>
+			</xs:annotation>
+			<xs:simpleType>
+				<xs:restriction base="AlphaLength1">
+					<xs:enumeration value="A"/>
+					<xs:enumeration value="D"/>
+					<xs:enumeration value="S"/>
+					<xs:enumeration value="B"/>
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:attribute>
+		<xs:attribute name="DateTimeDetails" type="DateOrDateTimeType" use="required">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">This field contains the actual date/time of the above activity.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:attributeGroup>
+	<xs:complexType name="CruiseItinInfoType">
+		<xs:annotation>
+			<xs:documentation>Used to specify detailed Cruise Itinerary Information</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element maxOccurs="9" name="DateTimeDescription">
+				<xs:annotation>
+					<xs:documentation>Specifies the event Date time</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="DateTimeDescriptionGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="Remarks" type="ParagraphType">
+				<xs:annotation>
+					<xs:documentation>Specifies the remarks</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+		<xs:attributeGroup ref="LocationInfoGroup"/>
+	</xs:complexType>
+	<!--  added MoreResponseType  10/03/05  ler  -->
+	<xs:attributeGroup name="UserLoginInfoGroup">
+		<xs:annotation>
+			<xs:documentation>Specifies the User Login info for an agent or consumer</xs:documentation>
+		</xs:annotation>
+		<xs:attribute name="UserType" type="StringLength1to16" use="optional">
+			<xs:annotation>
+				<xs:documentation>Specifies the User Type (E.g Agent Or Consumer)</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="UserLoginName" type="StringLength1to64" use="optional">
+			<xs:annotation>
+				<xs:documentation>Specifies the Web User Login Name</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="Password" type="StringLength1to64" use="optional">
+			<xs:annotation>
+				<xs:documentation>Specifies the Web Login Password</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:attributeGroup>
+	<xs:complexType name="GuestInfoType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+Contains guest information for the specified sailing.
+</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element minOccurs="0" name="ReservationID">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the reservation control information or the guest's booking ID in modification mode (e.g. PNR Record Locator and/or Vendor Confirmation Number).</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="UniqueID_Type">
+							<xs:attributeGroup ref="ReservationStatusGroup">
+								<xs:annotation>
+									<xs:documentation xml:lang="en">Provides the synch date and the reservation status.</xs:documentation>
+								</xs:annotation>
+							</xs:attributeGroup>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GuestDetails">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the guests' information.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="9" name="GuestDetail" type="GuestDetailType">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Specifies the Guest information</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="PaymentOptions">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Collection of payment choices.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="9" name="PaymentOption">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Payment choice.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="PaymentDetailType">
+										<xs:attribute name="ExtendedIndicator" type="xs:boolean" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">When true, indicates payment will be made over an extended time. When false, the payment isn't extended.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+										<xs:attribute name="PaymentPurpose" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Specifies payment for a gift order or reservsation.</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:NMTOKEN">
+													<xs:enumeration value="GiftOrder"/>
+													<xs:enumeration value="Reservation"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+										<xs:attribute name="ExtendedDepositDate" type="DateOrDateTimeType" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Specifies the Extended Deposit Date for the check form of payment.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+										<xs:attribute name="ReferenceNumber" type="StringLength1to16" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Specifies the Gift Order Reference/Form of Payment Number.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="GuestDetailType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+Provides the detail data associated with the guest for a particular sailing.
+</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element maxOccurs="9" minOccurs="0" name="SelectedFareCode">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the fare code and the group code if any. Fare codes are specific to cruise lines.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="FareGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element maxOccurs="3" minOccurs="0" name="ContactInfo">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the guest contact address and phone number as well as the emergency contact.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="ContactPersonType">
+							<xs:attributeGroup ref="GuestInfoGroup">
+								<xs:annotation>
+									<xs:documentation xml:lang="en">Specifies group information.</xs:documentation>
+								</xs:annotation>
+							</xs:attributeGroup>
+							<xs:attribute name="Mode" use="optional">
+								<xs:simpleType>
+									<xs:restriction base="xs:NMTOKEN">
+										<xs:enumeration value="Add"/>
+										<xs:enumeration value="Update"/>
+										<xs:enumeration value="Remove"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:attribute>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element maxOccurs="2" minOccurs="0" name="GuestTransportation" type="GuestTransportationType">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Selected guest mode of transportation.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element maxOccurs="5" minOccurs="0" name="LoyaltyInfo">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Used to define a guest's loyalty programs.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="CustomerLoyaltyGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element maxOccurs="5" minOccurs="0" name="TravelDocument" type="DocumentType">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Used for passport, visa, other travel type documents.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element maxOccurs="2" minOccurs="0" name="SelectedDining">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the dining info</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="CruiseDiningGroup">
+						<xs:annotation>
+							<xs:documentation xml:lang="en">Specifies dining criteria.</xs:documentation>
+						</xs:annotation>
+					</xs:attributeGroup>
+				</xs:complexType>
+			</xs:element>
+			<xs:element maxOccurs="9" minOccurs="0" name="SelectedInsurance">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the insurance information</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="CruiseInsuranceGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="SelectedPackages">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the selected packages.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="SelectedPackage">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Specifies the package information such as Pre/Post/Shorex/Bus/Transfer.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="CruisePackageType">
+										<xs:sequence>
+											<xs:element minOccurs="0" name="AirInfo" type="AirInfoType">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">Specifies the air travel information for the transfer.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="SelectedSpecialServices">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the Special Services information</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="10" minOccurs="0" name="SelectedSpecialService" type="SpecialServiceType">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Specifies the Special Service information</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="AirAccomodations">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">A collection of air accomodations.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="10" minOccurs="0" name="AirAccomodation">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Specifies guest air accomodation information.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="AirInfoType">
+										<xs:attribute name="Comment" type="StringLength1to128" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Used for additional info regarding the flight deviation.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+										<xs:attribute name="AirAccomodationType" type="StringLength1to16" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Identifies the type of air accomodation (e.g., Regular, Premium, Deviation).</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="MiscCharges">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="0" name="Surcharge">
+							<xs:complexType>
+								<xs:attribute name="Amount" type="Money" use="optional">
+									<xs:annotation>
+										<xs:documentation xml:lang="en">The price associated with the specified code.</xs:documentation>
+									</xs:annotation>
+								</xs:attribute>
+							</xs:complexType>
+						</xs:element>
+						<xs:element minOccurs="0" name="PortCharges">
+							<xs:complexType>
+								<xs:attribute name="Amount" type="Money" use="optional">
+									<xs:annotation>
+										<xs:documentation xml:lang="en">The price associated with the specified code.</xs:documentation>
+									</xs:annotation>
+								</xs:attribute>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="SessionTokenType">
+		<xs:sequence>
+			<xs:element name="SessionToken">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:whiteSpace value="collapse"/>
+						<xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="StdDiningType">
+		<xs:sequence>
+			<xs:element maxOccurs="99" name="Dining">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Ship" type="StringLength1to16">
+							<xs:annotation>
+								<xs:documentation>Name of the Ship on which the dining is requested</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="RestaurantName" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>Name of the Restaurant</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="StartDateTime" type="DateOrDateTimeType">
+							<xs:annotation>
+								<xs:documentation>Start Date and Time of the dining selected</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="GuestDetails">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element maxOccurs="9" name="Guest">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="LoyaltyMembershipID" type="StringLength1to32">
+													<xs:annotation>
+														<xs:documentation>Unique client ID that allows the guests to be tied to a membership program and rewards</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element minOccurs="0" name="AdditionalGuestCount">
+													<xs:annotation>
+														<xs:documentation>Additional guest count that can be associated to the main guest who books the dining</xs:documentation>
+													</xs:annotation>
+													<xs:simpleType>
+														<xs:restriction base="xs:nonNegativeInteger">
+															<xs:maxInclusive value="15"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:element>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="mode" use="optional">
+						<xs:annotation>
+							<xs:documentation>Denotes the mode,which idenitifes whether dining components are to be added,updated or removed from the booking
+ 							Update is supported only to update the AdditionalGuestCount element. If a guest has an additional guests ,the Update mode can change the value to anything greater than or equal to zero.
+ 							A value of zero indicates that there are no additioanl guests.
+ 							Add mode is to add the standard dining components and Remove removes them. Every Dining node must send this based on the selection.
+							</xs:documentation>
+						</xs:annotation>
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="Add"/>
+								<xs:enumeration value="Remove"/>
+								<xs:enumeration value="Update"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="LocType">
+		<xs:sequence>
+			<xs:element name="From">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Type" type="LocCodeType"/>
+						<xs:element name="Code" type="StringLength1to16"/>
+						<xs:element name="DateTime" type="DateOrTimeOrDateTimeType"/>
+						<xs:element minOccurs="0" name="Desc" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="To">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Type" type="LocCodeType"/>
+						<xs:element name="Code" type="StringLength1to16"/>
+						<xs:element name="DateTime" type="DateOrTimeOrDateTimeType"/>
+						<xs:element minOccurs="0" name="Desc" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="LocCodeType">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="CITY"/>
+			<xs:enumeration value="PORT"/>
+			<xs:enumeration value="AIRPORT"/>
+			<xs:enumeration value="HOTEL"/>
+			<xs:enumeration value="AIR-HOTEL"/>
+			<xs:enumeration value="SHIP"/>
+			<xs:enumeration value="BUS STOP"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="TransferType">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="AIR-OUT"/>
+			<xs:enumeration value="AIR-RET"/>
+			<xs:enumeration value="AIRPORT TO HTL"/>
+			<xs:enumeration value="AIRPORT TO PORT"/>
+			<xs:enumeration value="HTL TO AIRPORT"/>
+			<xs:enumeration value="HTL TO PORT"/>
+			<xs:enumeration value="HTL TO PORT"/>
+			<xs:enumeration value="PORT TO AIRPORT"/>
+			<xs:enumeration value="PORT TO HTL"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="ResComponentsType">
+		<xs:sequence>
+			<xs:element name="Type" type="TransferType"/>
+			<xs:element minOccurs="0" name="Location" type="LocType"/>
+			<xs:element name="Code" type="StringLength1to16"/>
+			<xs:element minOccurs="0" name="DateTime" type="DateOrTimeOrDateTimeType"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PackageDefinition">
+		<xs:sequence>
+			<xs:element name="Type" type="PackageType">
+				<xs:annotation>
+					<xs:documentation>Determins the type of the package (ENTERTAINMENT,SHOREX,SPA,DINING,TRANSFER)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Name" type="StringLength1to64">
+				<xs:annotation>
+					<xs:documentation>Name of the package.For Dining it will be the name of the Restaurant</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element minOccurs="0" name="Code" type="StringLength1to32">
+				<xs:annotation>
+					<xs:documentation>Unique code of package that varies based on the package type</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element minOccurs="0" name="Comments" type="StringLength1to64">
+				<xs:annotation>
+					<xs:documentation>Detailed description of the package</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DateRange" type="PackageDateRangeType">
+				<xs:annotation>
+					<xs:documentation>Lists the package start date and end date.The duration of the package will be the difference between end date and start date</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Price" type="PackagePriceType">
+				<xs:annotation>
+					<xs:documentation>List the price of each package for each guest who chose the package</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="Location" type="ShorexLocationType">
+				<xs:annotation>
+					<xs:documentation>This is returned only for Shorex packages and Land packages.It gives information on the shorex location and the components tied to a Land package (PRE or POST)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element minOccurs="0" name="TableSize" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:documentation>Size of the table for accomodating the guests.This is returned only for DINING packages</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+		<xs:attributeGroup ref="IdentifierGroup"/>
+		<xs:attribute name="PackageTypeCode"/>
+	</xs:complexType>
+	<xs:complexType name="CruiseReservationInfoType">
+		<xs:sequence>
+			<xs:element name="ReservationID" type="UniqueID_Type">
+				<xs:annotation>
+					<xs:documentation>Contains the Reservation ID of a booking</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AgencyInfoType">
+		<xs:sequence>
+			<xs:element name="ID" type="StringLength1to64"/>
+			<xs:element name="Type" type="StringLength1to64"/>
+			<xs:element name="Name" type="StringLength0to64"/>
+			<xs:element maxOccurs="4" name="Phone" type="PhoneType"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="ProfileInfoType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="NotModifiable">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" name="Code" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="Modifiable">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" name="Code" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="Mandatory">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" name="Code" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="CurrencyType">
+		<xs:sequence>
+			<xs:element name="CurrencyCode" type="xs:string"/>
+			<xs:element name="Decimals" type="xs:positiveInteger"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="CabinConfigurationType">
+		<xs:sequence>
+			<xs:element name="GuestRefNumber" type="xs:positiveInteger"/>
+			<xs:element name="Code" type="xs:string"/>
+			<xs:element name="Quantity" type="xs:positiveInteger"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="ResPackageType">
+		<xs:sequence>
+			<xs:element name="GuestRefNumber" type="xs:positiveInteger"/>
+			<xs:element name="ID" type="xs:string"/>
+			<xs:element name="Type" type="xs:string"/>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element minOccurs="0" name="Description" type="xs:string"/>
+			<xs:element minOccurs="0" name="Restaurant" type="xs:string"/>
+			<xs:element minOccurs="0" name="TableSize" type="xs:positiveInteger"/>
+			<xs:element minOccurs="0" name="DateTimeFrom" type="xs:string"/>
+			<xs:element minOccurs="0" name="DateTimeTo" type="xs:string"/>
+			<xs:element minOccurs="0" name="Duration" type="xs:duration"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AirType">
+		<xs:sequence>
+			<xs:element name="Gateway" type="xs:string"/>
+			<xs:element name="GatewayCityName" type="xs:string"/>
+			<xs:element maxOccurs="99" minOccurs="0" name="ItineraryDetails" type="AirItineraryType"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AirItineraryType">
+		<xs:sequence>
+			<xs:element name="Seq" type="xs:positiveInteger"/>
+			<xs:element name="Carrier" type="xs:string"/>
+			<xs:element minOccurs="0" name="Flight" type="xs:string"/>
+			<xs:element minOccurs="0" name="DeparturePort" type="xs:string"/>
+			<xs:element minOccurs="0" name="DepartureTime" type="xs:string"/>
+			<xs:element minOccurs="0" name="ArrivalPort" type="xs:string"/>
+			<xs:element minOccurs="0" name="ArrivalTime" type="xs:string"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="SpecialServicesType">
+		<xs:sequence>
+			<xs:element name="GuestRefNumber" type="xs:positiveInteger"/>
+			<xs:element name="Code" type="xs:string"/>
+			<xs:element name="Description" type="xs:string"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PhoneType">
+		<xs:sequence>
+			<xs:element name="PhoneUsageType">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Type" type="xs:string"/>
+						<xs:element name="PhoneNumber" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="FSGroupInfoType">
+		<xs:sequence>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="FSGroup">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ID" type="StringLength1to32">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">FSGroup number if the booking is attached to a collection.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Name" type="StringLength1to64">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Name of the FSGroup.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element minOccurs="0" name="Comments" type="StringLength1to64">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Comments of the FSGroup.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AirSegmentType">
+		<xs:sequence>
+			<xs:element name="Sequence" type="xs:nonNegativeInteger"/>
+			<xs:element name="Carrier" type="xs:string"/>
+			<xs:element name="Flight" type="xs:string"/>
+			<xs:element name="DepartureAirport" type="xs:string"/>
+			<xs:element name="DepartureTime" type="xs:string"/>
+			<xs:element name="ArrivalAirport" type="xs:string"/>
+			<xs:element name="ArrivalTime" type="xs:string"/>
+		</xs:sequence>
+	</xs:complexType>
+		<xs:simpleType name="RecordID">
+		<xs:annotation>
+			<xs:documentation>Uniquely identifies record in the set of similar records. Refers to an existing record in Seaware database.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:integer">
+			<xs:totalDigits value="9"/>
+			<xs:fractionDigits value="0"/>
+		</xs:restriction>
+	</xs:simpleType>
+
+</xs:schema>

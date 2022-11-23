@@ -1,0 +1,321 @@
+BROKER SCHEMA com.ncl.ais
+
+--DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayload2 EXTERNAL BOOLEAN FALSE;
+DECLARE DEFAULT_ReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_AUTO_FINAL_PYMT_ENROLL_RESP';
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentEnroll_VerifyAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE bPayload BLOB;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseAutoFinalPaymentEnrollRQ;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InpReq';
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		SET rEnv.MessageID = cLocalTranId;
+
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.InpReq = InputRoot.XMLNSC.*:NCL_CruiseAutoFinalPaymentEnrollRQ;
+		--SET rEnv.Temp.InpReq = InputRoot.XMLNSC.*[1];
+		SET rEnv.Temp.BookChannel = FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rEnv.Temp.CompanyCode = FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rEnv.Temp.ResID = rIn.*:ValidateAFP.*:ReservationID;
+		SET rEnv.Temp.ClientID = rIn.*:ValidateAFP.*:ClientID;
+		SET rEnv.Temp.BerthedCategory = FIELDVALUE(rIn.*:SailingInfo.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode);
+		SET rEnv.Temp.PricedCategory = FIELDVALUE(rIn.*:SailingInfo.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode);
+		SET rEnv.Temp.Cabin = FIELDVALUE(rIn.*:SailingInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ClientID, ''),
+		'','',rEnv);
+		
+		-- log payload
+		IF LogPayload2 THEN
+			DECLARE bPayload BLOB ASBITSTREAM(rEnv.InpReq CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Auto Final Payment Enroll Request', 'xml', rEnv);
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api request', 'xml', rEnv);
+		END IF;
+		
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_ReplyQ;
+		END IF;
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling verify agency service to get session ...', rEnv);
+		-- create verify agency request
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		SET OutputRoot.XMLNSC.*:VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentEnroll_CheckAFP
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rOutPay REFERENCE TO Environment.Variables;
+		DECLARE rInReq REFERENCE TO rEnv.InpReq.*:ReservationInfo;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+
+		IF EXISTS(rVAIn.*:agencyID[]) THEN
+			SET rEnv.Temp.SessionGUID = rVAIn.*:sessionGUID;
+			SET rEnv.Temp.agencyID = rVAIn.*:agencyID;
+			SET rEnv.Temp.agencyCurrency = rVAIn.*:agencyCurrency;
+			SET rEnv.Temp.Endpoint = COALESCE(rVAIn.*:endpoint,'');
+			DECLARE resID CHARACTER;
+			SET resID = COALESCE(rEnv.Temp.ResID,'');
+
+			IF LENGTH(resID) = 0 THEN
+				-- Call UpdateBooking
+				SET OutputRoot = InputRoot;
+
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+			ELSE
+				-- Call AFP Directly
+				SET OutputRoot = InputRoot;
+				RETURN TRUE;
+			END IF;
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseAutoFinalPaymentEnrollRS AS rOutPay;
+			MOVE rInReq TO rEnv.InpReq;
+			CALL com.ncl.ais.utils.CopyAttributes (rInReq,rOutPay);
+
+			IF EXISTS(rVAIn.agencyNotFound[]) OR EXISTS(rVAIn.loginError[]) THEN
+				IF EXISTS(rVAIn.agencyNotFound[]) THEN
+					SET rOutPay.ns:Warnings.ns:Warning = rVAIn.agencyNotFound;
+				ELSE
+					SET rOutPay.ns:Warnings.ns:Warning = rVAIn.loginError;
+				END IF;
+			ELSEIF EXISTS(rVAIn.runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+				SET rOutPay.ns:Errors.ns:Error = rVAIn.runtimeError;
+			END IF;
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;			
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentEnroll_BuildUpdateBkg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.InpReq;
+		DECLARE rSailInfo REFERENCE TO rOrgMsg.*:SailingInfo;
+		DECLARE rUpdtBkngReq,rResGuest,rResPkg,rResPromo,rResShipReq REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rUpdtBkngReq;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionGUID,rUpdtBkngReq);
+		SET rUpdtBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.BookChannel;
+		SET rUpdtBkngReq.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResTransportations ResShipRequests';
+		SET rUpdtBkngReq.ResShell.ResHeader.AgencyID = rEnv.Temp.agencyID;
+		SET rUpdtBkngReq.ResShell.ResHeader.SourceCode = rEnv.Temp.BookChannel;
+		DECLARE cLookupCode CHARACTER '';
+		FOR rGuestDtl AS rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+			-- create Res guests
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResGuests AS rResGuest NAME 'ResGuest';
+			
+			SET rResGuest.FName = rGuestDtl.*:ContactInfo.*:PersonName.*:GivenName;
+			SET rResGuest.GuestSeqN = rGuestDtl.*:ContactInfo.*:GuestRefNumber;
+			SET rResGuest.GuestAge = rGuestDtl.*:ContactInfo.*:Age;
+			SET rResGuest.ClientID = rGuestDtl.*:ContactInfo.*:LoyaltyMembershipID;
+	
+			-- get SW code from cache
+--			IF LENGTH(COALESCE(rGuestDtl.*:SelectedInsurance.*:InsuranceCode, '')) > 0 THEN
+--				SET cLookupCode = com.ncl.ais.utils.XrefSWCodes(rEnv.Temp.Channel, 'Insurance', rGuestDtl.*:SelectedInsurance.*:InsuranceCode, rEnv, OutputRoot);
+--				SET rResGuest.Insurance = cLookupCode;
+--			ELSE
+--				SET rResGuest.Insurance = 'NO';
+--			END IF;
+			
+			SET rResGuest.Gender = rGuestDtl.*:ContactInfo.*:Gender;
+			
+			FOR rSelPkg AS rGuestDtl.*:SelectedPackages.*:SelectedPackage[] DO
+				-- map secondary packages
+				CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rResPkg NAME 'ResPackage';
+				
+				SET rResPkg.PackageID = rSelPkg.*:CruisePackageCode;
+				SET rResPkg.GuestRefs = rGuestDtl.*:ContactInfo.*:GuestRefNumber;
+			END FOR;
+		END FOR;
+			
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rResPkg NAME 'ResPackage';
+		SET rResPkg.PackageID = 	rOrgMsg.*:SailingInfo.*:SelectedSailing.*:VoyageID;
+		SET rResPkg.PriceCategory = rEnv.Temp.BerthedCategory;
+		SET rResPkg.BerthCategory = rEnv.Temp.PricedCategory;
+		
+		CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResShipRequests AS rResShipReq NAME 'ResShipRequest';
+		SET rResShipReq.Category = rEnv.Temp.PricedCategory;
+		SET rResShipReq.InventoryReqType = COALESCE(rEnv.Temp.Cabin,'GTY ONLY');
+			
+		-- map promotions. No booking in request.
+--		FOR rEnvPromo AS rEnv.Temp.Objects.VXPromotions.Promotions[] DO
+--			IF COALESCE(rEnvPromo.Mode, '') <> 'EXCLUDED' THEN
+--				CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPromotions AS rResPromo NAME 'ResPromotion';
+--				
+--				SET rResPromo.GuestRefs = rEnvPromo.GuestRefs;
+--	
+--				-- get SW code from cache
+--				SET cLookupCode = com.ncl.ais.utils.XrefSWCodesWithDefault(rEnv.Temp.Channel, 'PromosToDisplay', rEnvPromo.PromoCode, rEnv, OutputRoot);			
+--				SET rResPromo.PromoCode = cLookupCode;
+--				
+--				--SET rResPromo.Mode = rEnvPromo.Mode;
+--				IF COALESCE(rEnvPromo.Mode,'') = '' THEN
+--				 SET rResPromo.Mode = 'FORCED';
+--				END IF;
+--			END IF;
+--		END FOR;
+		
+		RETURN TRUE;
+	END;
+
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentEnroll_BuildAFP
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE bPayload BLOB;
+		DECLARE rEnv,rOut,rOutPay,rOutFinalPymnt REFERENCE TO Environment.Variables;
+		DECLARE rInReq REFERENCE TO rEnv.InpReq.*:ReservationInfo;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.*:UpdateBooking_OUT;
+		DECLARE BookingChannel CHARACTER;
+		SET BookingChannel = COALESCE(FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		SET rEnv.ReqID.CompanyCode = FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+		DECLARE reqResId, reqClientID CHARACTER;
+		SET reqResId = COALESCE(rEnv.Temp.ResID,'');
+		SET reqClientID = rEnv.Temp.ClientID;
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.AutoFinalPayment_IN AS rOutFinalPymnt;
+		SET rOutFinalPymnt.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rOutFinalPymnt.MsgHeader.SessionGUID = rEnv.Temp.SessionGUID;
+		SET rOutFinalPymnt.MsgHeader.MessageID = rEnv.MessageID;
+		SET rOutFinalPymnt.MsgHeader.Language = 'ENG';
+		IF LENGTH(reqResId) = 0 THEN
+			SET rOutFinalPymnt.ResID = rVAIn.*:ResShell.*:ResHeader.*:ResID;
+		ELSE
+			SET rOutFinalPymnt.ResID = reqResId;
+		END IF;		
+		SET rOutFinalPymnt.ClientID	= COALESCE(reqClientID,0);
+		SET rOutFinalPymnt.AFPOption = 'GET STATUS';
+	END;
+	
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentEnroll_BuildFinalRS
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOutPay,rAutoFinalPay,rErrResp REFERENCE TO Environment.Variables;
+		DECLARE rInPay REFERENCE TO rEnv.InpReq;
+		DECLARE rReqIn REFERENCE TO InputRoot.XMLNSC.AutoFinalPayment_OUT;
+		DECLARE inStatusCnt,i INTEGER;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.Endpoint;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAutoFinalPaymentEnrollRS AS rOutPay;
+		CALL com.ncl.ais.utils.CopyAttributes(rInPay,rOutPay);
+		
+		IF EXISTS(rReqIn.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'AutoFinalPayment returned errors ...', rEnv);
+			SET rOutPay.ns:Status = rReqIn.Status;
+			CALL com.ncl.ais.utils.getAdvisoryCode(rReqIn.Errors.Error.ErrorCode,rEnv.BookChannel,rEnv);
+			FOR rError AS rReqIn.Errors.Error[] DO
+				CREATE LASTCHILD OF  rOutPay.ns:Warnings AS rErrResp NAMESPACE ns NAME 'Warning';
+				IF rEnv.Temp.FinalResp.EXTERNAL_CODE IS NULL THEN
+					SET rErrResp.(XMLNSC.Attribute)Code = rError.ErrorCode;
+					SET rErrResp.(XMLNSC.Attribute)ShortText = SUBSTRING(rError.ErrorMessage FROM 1 FOR 64);
+					SET rErrResp = FIELDVALUE(rError.ErrorMessage);
+				ELSE
+					SET rErrResp = rError.ErrorMessage;
+					SET rErrResp.(XMLNSC.Attribute)Code = rEnv.Temp.FinalResp.EXTERNAL_CODE;
+					SET rErrResp.(XMLNSC.Attribute)ShortText = rEnv.Temp.FinalResp.DESCRIPTION;
+				END IF;
+				IF rError.ErrorSeverity IN('W', 'I') THEN
+					SET rErrResp.(XMLNSC.Attribute)Type = '2';
+				ELSE
+					SET rErrResp.(XMLNSC.Attribute)Type = '3';
+				END IF;
+				
+			END FOR;
+	
+			PROPAGATE TO TERMINAL 'out';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Log Out..', rEnv);
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionGUID;
+
+			PROPAGATE TO TERMINAL 'out2';
+			
+			RETURN FALSE;
+		ELSE
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+			IF LogPayload2 THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AutoFinalPayment  Response..', 'xml', rEnv);
+			END IF;
+			
+			SET rOutPay.ns:Status = rReqIn.Status;
+			SET rOutPay.ns:Amount =  rReqIn.Amount;
+			SET rOutPay.ns:DueDate = CAST(CAST(rReqIn.DueDate AS DATE FORMAT 'MM/dd/yyyy') AS CHARACTER FORMAT 'yyyy-MM-dd');
+			MOVE rReqIn TO rReqIn.AFPTransactions.Transaction;
+			IF  rReqIn.TransID IS NOT NULL    THEN 
+				CREATE FIELD rOutPay.ns:AFPTransactions.ns:Transaction AS rOutPay;
+				SET rOutPay.ns:TransID= rReqIn.TransID;
+				SET rOutPay.ns:SrcEntity.ns:ClientID	= rReqIn.SrcEntity.ClientID;
+				SET rOutPay.ns:DestEntity.ns:ResID		= rReqIn.DestEntity.ResID;
+				SET rOutPay.ns:Status			= rReqIn.Status;
+				SET rOutPay.ns:FormOfTrans = rReqIn.FormOfTrans;
+				SET rOutPay.ns:Type = rReqIn.Type;
+				SET rOutPay.ns:ExternalIdent = rReqIn.ExternalIdent;
+				SET rOutPay.ns:Currency = rReqIn.Currency;
+				SET rOutPay.ns:Amount = rReqIn.Amount;
+				SET rOutPay.ns:CCTransID = rReqIn.CCTransID;
+				SET rOutPay.ns:Timestamp = rReqIn.Timestamp;
+				SET rOutPay.CreatedBy = rReqIn.CreatedBy;
+				SET rOutPay.ns:CCMerchant = rReqIn.CCMerchant;
+				SET rOutPay.ns:Comments= rReqIn.Comments;
+				SET rOutPay.ns:CCServerResponse = rReqIn.CCServerResponse;
+				SET rOutPay.ns:CVVResponse = rReqIn.CVVResponse;
+				SET rOutPay.ns:AVSResponse= rReqIn.AVSResponse;
+			END IF;
+			PROPAGATE TO TERMINAL 'out';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, ' Agency Log Out..', rEnv);
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionGUID;
+
+			PROPAGATE TO TERMINAL 'out2';
+			
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;
+

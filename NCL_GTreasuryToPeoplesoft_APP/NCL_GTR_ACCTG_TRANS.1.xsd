@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?><schema xmlns="http://www.w3.org/2001/XMLSchema" targetNamespace="http://xmlns.oracle.com/Enterprise/Tools/services/NCL_GTR_ACCTG_TRANS.1" xmlns:NCL_GTR_ACCTG_TRANS.V1="http://xmlns.oracle.com/Enterprise/Tools/schemas/NCL_GTR_ACCTG_TRANS.V1" xmlns:plnk="http://schemas.xmlsoap.org/ws/2003/05/partner-link/" xmlns:tns="http://xmlns.oracle.com/Enterprise/Tools/services/NCL_GTR_ACCTG_TRANS.1" xmlns:wsp="http://schemas.xmlsoap.org/ws/2002/12/policy">
+  <import namespace="http://schemas.xmlsoap.org/soap/envelope/" schemaLocation="IBMdefined/org/xmlsoap/schemas/soap/envelope/soapenv11.xsd"/>
+  <import namespace="http://xmlns.oracle.com/Enterprise/Tools/schemas/NCL_GTR_ACCTG_TRANS.V1" schemaLocation="NCL_GTR_ACCTG_TRANS.1_InlineSchema1.xsd"/>
+
+<!-- BEGIN Global group petaining to all wsdl:message definitions -->
+<!-- END Global group -->
+
+
+<!-- BEGIN Message Definitions for the wsdl:operations  -->
+<!-- END Message Definitions -->
+
+
+</schema>

@@ -1,0 +1,252 @@
+BROKER SCHEMA com.ncl.iib.log
+
+/* ------------------------------------------------------------------------------------
+ *  COMPANY           :     NCL
+ *  PROJECT           :     WESB-IIB Migration
+ *  ESQL NAME         :     LogUtils.esql
+ * 	DESCRIPTION       :    	This ESQL File contains a set of re-usable and commonly
+ 							invokable procedures and functions used as a part of the
+ 							GTM logging implementation.
+ *-------------------------------------------------------------------------------------    
+ * ******************        MODIFICATION HISTORY   ***********************************
+ * ------------------------------------------------------------------------------------
+ * VERSION  CRNUM   DATE(MM/DD/CCYY)   	Author                      Comments
+ * 1.0              10/30/2017        	Prolifics					Initial Creation
+ *																	
+ * -----------------------------------------------------------------------------------*/
+
+ 	/* ------------------------------------------------------------------------------ 
+       * Func/Proc Name  : CreateAuditLogEvent
+       * Description     : This procedure is used to create the audit log event.
+                                   
+       * Modification History:
+       * DATE (MM/DD/CCYY)     Author                       Comments
+       * 10/30/2017            Prolifics				    Initial Creation
+	* -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE CreateAuditLogEvent(INOUT rEnv REFERENCE, IN cLTranId CHARACTER, IN cPTranId CHARACTER, IN cGTranId CHARACTER)
+	BEGIN
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE cLocalTranId CHARACTER cLTranId;
+		
+		IF CONTAINS(cLTranId, '''') THEN
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		END IF;
+		
+		-- Create intermediate GTM Log message
+		SET rEnv.GTM = NULL;
+		SET rEnv.GTM.CodedCharSetId = 437;
+		SET rEnv.GTM.Encoding = 546;
+		
+		CREATE FIELD rEnv.GTM.LogEvent AS rLog;
+				
+		-- Adding Global Transaction ID
+		SET rLog.LocalTransactionId = cLocalTranId;
+		SET rLog.ParentTransactionId = cPTranId;
+		SET rLog.GlobalTransactionId = cGTranId;
+		
+		SET rLog.StatusCode = 0;
+		SET rLog.ResponseMsg = 'Successful Transaction';
+		SET rLog.FlowStartTime = CURRENT_GMTTIMESTAMP;
+		
+		CALL SetByteCount(0, rEnv);
+		
+		-- Create Meta data for Job Name
+		CALL CreateMetaData('com.ibm.wmqfte.JobName', MessageFlowLabel, 'MessageFlowName', rEnv);
+	END;
+
+	/* ------------------------------------------------------------------------------ 
+       * Func/Proc Name  : AddLogEvent
+       * Description     : This procedure is used to create log events.
+                                   
+       * Modification History:
+       * DATE (MM/DD/CCYY)     Author                       Comments
+       * 10/30/2017            Prolifics				    Initial Creation
+	* -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE AddLogEvent_New(IN cNodeName CHARACTER, IN cLogDescr CHARACTER, INOUT rEnv REFERENCE)
+	BEGIN
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE rEvent REFERENCE TO rEnv;
+		
+		CREATE LASTCHILD OF rLog.Events AS rEvent NAME 'Event';
+		SET rEvent.EventTimeStamp = CAST(CURRENT_GMTTIMESTAMP AS CHARACTER);
+		SET rEvent.EventTimeStamp = SUBSTRING (rEvent.EventTimeStamp FROM 15 FOR 10)||'T'|| SUBSTRING (rEvent.EventTimeStamp FROM 26 FOR 12 )||'Z';
+		SET rEvent.NodeName = cNodeName;
+		SET rEvent.LogDescription = cLogDescr;
+	END;
+
+	/* ------------------------------------------------------------------------------ 
+       * Func/Proc Name  : AddLogEvent
+       * Description     : This procedure is used to create log events.
+                                   
+       * Modification History:
+       * DATE (MM/DD/CCYY)     Author                       Comments
+       * 10/30/2017            Prolifics				    Initial Creation
+	* -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE AddLogEvent(IN cNodeName CHARACTER, IN cLogDescr CHARACTER, INOUT rEnv REFERENCE)
+	BEGIN
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE rEvntMsg REFERENCE TO rEnv;
+		
+		CREATE LASTCHILD OF rLog.EventMessages AS rEvntMsg NAME 'EventMessage';
+		SET rEvntMsg.EventTimeStamp = CAST(CURRENT_GMTTIMESTAMP AS CHARACTER);
+		SET rEvntMsg.EventTimeStamp = SUBSTRING (rEvntMsg.EventTimeStamp FROM 15 FOR 10)||'T'|| SUBSTRING (rEvntMsg.EventTimeStamp FROM 26 FOR 12 )||'Z';
+		SET rEvntMsg.NodeName = cNodeName;
+		SET rEvntMsg.LogDescription = cLogDescr;
+	END;
+
+	/* ------------------------------------------------------------------------------ 
+       * Func/Proc Name  : AddPayloadLogEvent
+       * Description     : This procedure is used to create payload log events.
+                                   
+       * Modification History:
+       * DATE (MM/DD/CCYY)     Author                       Comments
+       * 10/30/2017            Prolifics				    Initial Creation
+	* -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE AddPayloadLogEvent_New (IN rMsgPayload REFERENCE, IN cNodeName CHARACTER, IN cLogDescr CHARACTER, IN cLogFormat CHARACTER, INOUT rEnv REFERENCE)
+	BEGIN
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;		
+		DECLARE rEvntMsg REFERENCE TO rEnv;
+		
+		CREATE LASTCHILD OF rLog.EventMessages AS rEvntMsg NAME 'EventMessage';
+		
+		SET rEvntMsg.EventTimeStamp = CAST(CURRENT_GMTTIMESTAMP AS CHARACTER);
+		SET rEvntMsg.EventTimeStamp = SUBSTRING (rEvntMsg.EventTimeStamp FROM 15 FOR 10)||'T'|| SUBSTRING (rEvntMsg.EventTimeStamp FROM 26 FOR 12 )||'Z';
+		SET rEvntMsg.NodeName = cNodeName;
+		SET rEvntMsg.LogDescription = cLogDescr;		
+		SET rEvntMsg.LogFormat = cLogFormat;
+		SET rEvntMsg.LogMessage = rMsgPayload;
+	END;
+	
+	/* ------------------------------------------------------------------------------ 
+       * Func/Proc Name  : AddPayloadLogEvent
+       * Description     : This procedure is used to create payload log events.
+                                   
+       * Modification History:
+       * DATE (MM/DD/CCYY)     Author                       Comments
+       * 10/30/2017            Prolifics				    Initial Creation
+	* -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE AddPayloadLogEvent(IN rMsgPayload REFERENCE, IN cNodeName CHARACTER, IN cLogDescr CHARACTER, IN cLogFormat CHARACTER, INOUT rEnv REFERENCE)
+	BEGIN
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE rEvntMsg REFERENCE TO rLog;
+		
+		-- Add log event
+		CALL AddLogEvent(cNodeName, cLogDescr, rEnv);
+		MOVE rEvntMsg TO rLog.EventMessages;
+		MOVE rEvntMsg LASTCHILD;
+		
+		SET rEvntMsg.LogFormat = cLogFormat;
+		SET rEvntMsg.LogMessage = rMsgPayload;
+	END;
+
+	/* ------------------------------------------------------------------------------ 
+     * Func/Proc Name  		: CreateMetaData
+	 * Description     		: This procedure is used to create Meta data..
+	 						  	
+	 * Modification History	:
+	 * DATE (MM/DD/CCYY)     Author         			Comments
+     * 10/30/2017            Prolifics				    Initial Creation
+	 * -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE CreateMetaDataSet(IN requestor CHARACTER, IN channel CHARACTER, IN resId CHARACTER, IN clientId CHARACTER, IN voyageId CHARACTER, IN rEnv REFERENCE) BEGIN
+		
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE rMetaData REFERENCE TO rEnv;
+		
+		-- MetaData Info
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = 'SourceId';
+		SET rMetaData.Value = COALESCE(NULLIF(requestor, ''), 'NA');
+		SET rMetaData.Name = 'RequestorId/PCC';
+
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = 'Channel';
+		SET rMetaData.Value = COALESCE(NULLIF(channel, ''), 'NA');
+		SET rMetaData.Name = 'Booking Channel';
+
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = 'ReservationId';
+		SET rMetaData.Value = COALESCE(NULLIF(resId, ''), 'NA');
+		SET rMetaData.Name = 'Reservation ID';
+
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = 'ClientId';
+		SET rMetaData.Value = COALESCE(NULLIF(clientId, ''), 'NA');
+		SET rMetaData.Name = 'Client ID';
+
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = 'VoyageId';
+		SET rMetaData.Value = COALESCE(NULLIF(voyageId, ''), 'NA');
+		SET rMetaData.Name = 'Voyage ID';
+
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = 'DocType';
+		
+		IF CONTAINS(MessageFlowLabel, '_') THEN
+			SET rMetaData.Value = SUBSTRING(MessageFlowLabel AFTER '_');
+		ELSEIF CONTAINS(MessageFlowLabel, '.') THEN
+			SET rMetaData.Value = SUBSTRING(MessageFlowLabel FROM POSITION('.' IN MessageFlowLabel REPEAT -1) + 1);
+		ELSE
+			SET rMetaData.Value = MessageFlowLabel;
+		END IF;
+		
+		SET rMetaData.Name = 'Document Type';
+	END;
+		
+	/* ------------------------------------------------------------------------------ 
+     * Func/Proc Name  		: CreateMetaData
+	 * Description     		: This procedure is used to create Meta data..
+	 						  	
+	 * Modification History	:
+	 * DATE (MM/DD/CCYY)     Author         			Comments
+     * 10/30/2017            Prolifics				    Initial Creation
+	 * -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE CreateMetaData(IN cKey CHARACTER, IN cValue CHARACTER, IN cKeyDecr CHARACTER, IN rEnv REFERENCE) BEGIN
+		
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE rMetaData REFERENCE TO rEnv;
+		
+		-- MetaData Info
+		CREATE LASTCHILD OF rLog.MetaDataSet AS rMetaData NAME 'MetaData';
+		SET rMetaData.Key = cKey;
+		SET rMetaData.Value = COALESCE(cValue, 'NA');
+		SET rMetaData.Name = cKeyDecr;
+	END;
+
+	/* ------------------------------------------------------------------------------ 
+     * Func/Proc Name  		: 	SetByteCount
+	 * Description     		: 	This procedure is used add lengh of the message which IIB
+	 							is sending to target system under audit log message.
+	 						  	
+	 * Modification History	:
+	 * DATE (MM/DD/CCYY)     Author         			Comments
+     * 10/30/2017            Prolifics				    Initial Creation
+	 * -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE SetByteCount(IN iByteCount INTEGER, IN rEnv REFERENCE)
+	BEGIN
+		SET rEnv.GTM.LogEvent.MessageByteCount = iByteCount;
+	END;
+
+ 	/* ------------------------------------------------------------------------------ 
+       * Func/Proc Name  : 	UpdateAuditLogEventWithError
+       * Description     : 	This procedure is used to update the audit log with error
+       						details.
+                                   
+       * Modification History:
+       * DATE (MM/DD/CCYY)     Author                       Comments
+       * 10/30/2017            Prolifics				    Initial Creation
+	* -------------------------------------------------------------------------------*/
+	CREATE PROCEDURE UpdateAuditLogEventWithError (IN cExceptionList CHARACTER, INOUT rEnv REFERENCE)
+	BEGIN
+		DECLARE rError REFERENCE TO rEnv.ErrorSummary;
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		
+		-- Update intermediate GTM Log message		
+		SET rLog.StatusCode = 1;
+		SET rLog.ResponseMsg = rError.ExceptionType;
+		
+		-- Error Message Info
+		CREATE LASTCHILD OF rLog.ErrorDetails NAME 'ErrorMessage' VALUE 'ExceptionType' || ': ' || COALESCE(rError.ExceptionType, '');
+		CREATE LASTCHILD OF rLog.ErrorDetails NAME 'ErrorMessage' VALUE 'ErrorCode' || ': ' || CAST(rError.ErrorCode AS CHARACTER);
+		CREATE LASTCHILD OF rLog.ErrorDetails NAME 'ErrorMessage' VALUE 'ErrorText' || ': ' || COALESCE(rError.ErrorText, '');
+		CREATE LASTCHILD OF rLog.ErrorDetails NAME 'ExceptionListDetails' VALUE COALESCE(cExceptionList, '');
+	END;

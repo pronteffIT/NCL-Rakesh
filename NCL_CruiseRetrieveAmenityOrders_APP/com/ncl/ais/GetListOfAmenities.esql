@@ -1,0 +1,296 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE GetListOfAmenities_RemoveDuplicates
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rResp,rEnvXmlNsc,rOutResp, rEnvInAttr REFERENCE TO Environment.Variables;
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE bPayload BLOB;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.GetListOfAmenityOrders_OUT;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+		
+		-- Log the GetListOfAmenityOrders Response payload
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'GetListOfAmenityOrders response message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from GetListOfAmenityOrders service ...', rEnv);
+		
+		-- Check if Error was returned and process response message accrodingly
+		IF EXISTS(rIn.Errors.Error.ErrorMessage[]) 
+		THEN
+			-- Prepare to call generic Warning subflow
+			CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+			-- Set the MQMD header details from the Environment
+			SET OutputRoot.MQMD = Environment.MQMD;
+			--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+
+			-- Pass the attributes to the stored proc
+			CREATE FIELD rEnv.XMLNSC.sc:NCL_CruiseRetrieveAmenityOrdersRQ AS rEnvInAttr; 
+			CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg,rEnvInAttr);
+		
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+			-- if errors exist in response then propagate to the generic warning node to handle the error.
+   			SET OutputRoot.XMLNSC.Body.Errors = rIn.Errors;
+   			SET OutputRoot.XMLNSC.Body.Code = rEnvInMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+   			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseRetrieveAmenityOrdersRS';
+   			-- To generate generic warning subflow
+   			PROPAGATE TO TERMINAL 'out1';
+   			
+   			IF NOT rEnv.callableReq THEN
+   				-- Logout of the session
+   				PROPAGATE TO TERMINAL 'out2';
+   			END IF;	 			
+ 			RETURN FALSE;
+ 			
+		ELSEIF EXISTS(rIn.AmenityOrders.AmenityOrder[]) THEN
+			
+			-- Amenity Order Found. Prepare message for enrichment
+			DECLARE rInAmenityOrders REFERENCE TO rIn.AmenityOrders;
+			
+		--	SET OutputLocalEnvironment.CallableFlow.EndPoint = rEnv.Temp.Endpoint;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY sc:enrichAmenityOrders;		
+			CREATE LASTCHILD OF rResp AS rOutResp IDENTITY sc:NCL_CruiseRetrieveAmenityOrdersRS;
+			CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rOutResp);
+			-- Create the session ID and reservation ID
+			CREATE LASTCHILD OF rResp IDENTITY sc:sessionGUID VALUE rEnv.sessionID;
+			CREATE LASTCHILD OF rResp IDENTITY sc:reservationID VALUE rEnvInMsg.*:ReservationID.(XMLNSC.Attribute)ID;
+	
+			SET rResp.sc:Endpoint = COALESCE(rEnv.Temp.Endpoint,'');
+			CREATE LASTCHILD OF rOutResp IDENTITY sc:Success;
+			
+			CALL BuildEnrichAmenityMsg(rInAmenityOrders,rEnv,rOutResp);
+			
+			--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'EnrichAmenityOrders request message', 'xml', rEnv);
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking EnrichAmenityOrders service ...', rEnv);
+				
+			-- Send the message for further enrichment
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+		ELSE			
+			-- Amenity Order not found. Generate a generic warning message and logout
+			DECLARE rOutWarnings, rOutWarning REFERENCE TO Environment.Variables;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+			-- Set the MQMD header details from the Environment
+			SET OutputRoot.MQMD = Environment.MQMD;			
+			--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY sc:NCL_CruiseRetrieveAmenityOrdersRS;			
+			CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rResp);
+			
+			CREATE LASTCHILD OF rResp AS rOutWarnings IDENTITY sc:Warnings;
+			CREATE LASTCHILD OF rOutWarnings AS rOutWarning IDENTITY sc:Warning;		
+			
+			SET rOutWarning = 'Amenity Order not found';
+			SET rOutWarning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutWarning.(XMLNSC.Attribute)Type = '3';
+			
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveAmenityOrders response message', 'xml', rEnv);
+			
+			PROPAGATE TO TERMINAL 'out3';			
+			-- Logout of the session
+						
+   			IF NOT rEnv.callableReq THEN
+   				-- Logout of the session
+   				PROPAGATE TO TERMINAL 'out2';
+   			END IF;	
+   			
+   			--PROPAGATE TO TERMINAL 'out2'; 			
+ 			RETURN FALSE;
+		END IF;
+		
+		RETURN FALSE;	-- Unreachable code	
+	END;
+	
+	-- Procedure to build the EnrichAmenityOrders Request message
+	CREATE PROCEDURE BuildEnrichAmenityMsg(IN rInMsgAmenityOrders REFERENCE, INOUT rEnv REFERENCE, INOUT rOut REFERENCE ) 
+	BEGIN
+		DECLARE rOutAmenityOrders,rRequesterInfo,rRecipientInfo,rGiftCardInfo,rAmenityOrderInfo,rCurrency,rEnvDedup REFERENCE TO rEnv;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+		CREATE LASTCHILD OF rOut AS rOutAmenityOrders IDENTITY sc:AmenityOrders;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+		DECLARE resID CHARACTER rEnvInMsg.*:ReservationID.(XMLNSC.Attribute)ID;
+		DECLARE XSD_DATE_TIME_FORMAT CHARACTER  'yyyy-MM-dd''T''HH:mm:ss.SSS';				
+		--Get Sail Date to calculate item delivery time		
+		SET rEnv.SAIL_DATE_FROM = THE (SELECT ITEM R.SAIL_DATE_FROM FROM Database.SEA.RES_HEADER AS R where R.res_id=resID);
+		
+		FOR rInMsgAmenityOrder AS rInMsgAmenityOrders.AmenityOrder[] 
+		DO	
+			DECLARE rOutAmenityOrder REFERENCE TO rEnv;
+			DECLARE rInAmOrderHeader REFERENCE TO rInMsgAmenityOrder.AmOrderHeader;
+			CREATE LASTCHILD OF rOutAmenityOrders AS rOutAmenityOrder IDENTITY sc:AmenityOrder;			
+			
+			DECLARE code CHARACTER COALESCE(rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC');
+			
+			SET rOutAmenityOrder.(XMLNSC.Attribute)ID = rInAmOrderHeader.OrderID;
+			SET rOutAmenityOrder.(XMLNSC.Attribute)OrderDate = rInAmOrderHeader.OrderDate || 'Z';			
+			SET rOutAmenityOrder.(XMLNSC.Attribute)Status = com.ncl.ais.utils.FindExternalCode(rInAmOrderHeader.OrderStatus, code);
+			
+			CREATE LASTCHILD OF rOutAmenityOrder AS rRequesterInfo IDENTITY sc:RequestorInfo;
+			SET rRequesterInfo.(XMLNSC.Attribute)ID = rInAmOrderHeader.RequesterID;
+			SET rRequesterInfo.(XMLNSC.Attribute)OriginatorType = rInAmOrderHeader.RequesterType;
+			SET rRequesterInfo.sc:Name.sc:GivenName = rInAmOrderHeader.RequesterName;
+			-- TODO Might need to map Surname as well. Check latest code
+			SET rRequesterInfo.sc:Phone = NULLIF(rInAmOrderHeader.RequesterPhone, '');
+
+			CREATE LASTCHILD OF rOutAmenityOrder AS rRecipientInfo IDENTITY sc:RecipientInfo;
+			SET rRecipientInfo.(XMLNSC.Attribute)ID = rInAmOrderHeader.RecipientID;
+			SET rRecipientInfo.(XMLNSC.Attribute)Status = com.ncl.ais.utils.FindExternalStatus(rInAmOrderHeader.RecipientStatus, code);
+			SET rRecipientInfo.(XMLNSC.Attribute)Type = 'FIT';
+			
+			CREATE LASTCHILD OF rOutAmenityOrder AS rGiftCardInfo IDENTITY sc:GiftCardInfo;
+			SET rGiftCardInfo.sc:GiftCardComplimentsOf = rInAmOrderHeader.ComplimentsOf;
+			SET rGiftCardInfo.sc:GiftCardTo.sc:Surname = rInAmOrderHeader.GiftCardTo;
+			SET rGiftCardInfo.sc:GiftCardMessage = rInAmOrderHeader.GiftCardMessage;
+			
+			CREATE LASTCHILD OF rOutAmenityOrder AS rAmenityOrderInfo IDENTITY sc:AmenityOrderInfo;
+			CREATE LASTCHILD OF rAmenityOrderInfo IDENTITY sc:OrderDescription VALUE rInAmOrderHeader.OrderDescription;
+			CREATE LASTCHILD OF rAmenityOrderInfo AS rCurrency IDENTITY sc:Currency;
+			SET rCurrency.(XMLNSC.Attribute)CurrencyCode = rInAmOrderHeader.CurrencyCode;
+			
+			SET rAmenityOrderInfo.sc:ISOrderValid = rInAmOrderHeader.OrderValid;
+			SET rAmenityOrderInfo.sc:ISDispatchedOK = rInAmOrderHeader.DispatchedOK;
+			SET rAmenityOrderInfo.sc:ISTerminationCompleted = rInAmOrderHeader.TerminationCompleted;
+			SET rAmenityOrderInfo.sc:ISInvoiceValid = rInAmOrderHeader.InvoiceValid;
+			SET rAmenityOrderInfo.sc:ISRefundDoneAfterCancellation = COALESCE(rInAmOrderHeader.RefundDoneAfterCancellation, 'N');
+			
+			-- Remove Duplicate Invoice Items and store in Env for mapping later on
+			IF EXISTS (rInMsgAmenityOrder.AmInvoiceItems.AmInvoiceItem[])
+			THEN
+				DECLARE rInAmInvoiceItems REFERENCE TO rInMsgAmenityOrder.AmInvoiceItems;
+				--CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'DedupInvoiceItems';	
+				CREATE FIELD rEnv.DedupInvoiceItems;
+				CALL RemoveDuplicateInvoiceItems(rInAmInvoiceItems, rEnv.DedupInvoiceItems, rEnv);						
+			END IF;
+		
+			-- Populate Amenity Order Items only if they exist
+			IF EXISTS (rInMsgAmenityOrder.AmOrderItems.AmOrderItem[]) 
+			THEN
+				DECLARE rInAmOrderItems REFERENCE TO rInMsgAmenityOrder.AmOrderItems;
+				DECLARE rAmenityItemDelivery,rAmenityOrderItemsInfo,rAmenityOrderItems,rAmenityOrderItem, rAmenityInvoiceItems REFERENCE TO rEnv;
+				CREATE LASTCHILD OF rOutAmenityOrder AS rAmenityOrderItemsInfo IDENTITY sc:AmenityOrderItemsInfo;
+				CREATE LASTCHILD OF rAmenityOrderItemsInfo AS rAmenityOrderItems IDENTITY sc:AmenityOrderItems;
+				
+				FOR rInAmOrderItem AS rInAmOrderItems.AmOrderItem[] 
+				DO	
+					CREATE LASTCHILD OF rAmenityOrderItems AS rAmenityOrderItem IDENTITY sc:AmenityOrderItem;
+					SET rAmenityOrderItem.(XMLNSC.Attribute)AmenityType = rInAmOrderItem.AmenityType;
+					SET rAmenityOrderItem.(XMLNSC.Attribute)ID = rInAmOrderItem.AmenityOrderItemID;
+
+					SET rAmenityOrderItem.sc:AmenityCategory = rInAmOrderItem.AmCategory;
+					SET rAmenityOrderItem.sc:AmenityCode = rInAmOrderItem.AmenityCode;
+					SET rAmenityOrderItem.sc:AmenitySubCode = COALESCE(rInAmOrderItem.AmenitySubCode,'');
+					SET rAmenityOrderItem.sc:AmenityName = rInAmOrderItem.AmenityName;
+					SET rAmenityOrderItem.sc:Quantity = rInAmOrderItem.Quantity;
+					SET rAmenityOrderItem.sc:AmenityPlaceCode = rInAmOrderItem.AmPlaceCode;
+					
+					CREATE LASTCHILD OF rAmenityOrderItem AS rAmenityItemDelivery IDENTITY sc:AmenityItemDeliveryInfo;
+					SET rAmenityItemDelivery.sc:DeliveryType = rInAmOrderItem.AmDeliveryType;
+					SET rAmenityItemDelivery.sc:DayDeliveryBasis = rInAmOrderItem.DayDeliveryBasis;
+					SET rAmenityItemDelivery.sc:ItemDeliveryDay = rInAmOrderItem.ItemDeliveryDay;
+										
+					DECLARE cDate DATE	CAST(rEnv.SAIL_DATE_FROM AS DATE) + CAST(rInAmOrderItem.ItemDeliveryDay AS INTERVAL DAY);
+					DECLARE cDateStr CHARACTER ;
+					IF NOT EXISTS(rInAmOrderItem.ItemDeliveryTime[]) THEN							
+						SET cDateStr = CAST(cDate AS CHARACTER FORMAT XSD_DATE_TIME_FORMAT);
+					ELSE
+						DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE'%' 
+						BEGIN
+							 SET cDateStr = CAST(cDate AS CHARACTER FORMAT XSD_DATE_TIME_FORMAT);
+						END;
+						DECLARE cTime  TIMESTAMP CAST( rInAmOrderItem.ItemDeliveryTime AS TIMESTAMP FORMAT XSD_DATE_TIME_FORMAT);
+						IF CAST(cTime AS DATE) < CAST(rEnv.SAIL_DATE_FROM AS DATE) THEN
+							SET cDateStr = CAST(cDate AS CHARACTER FORMAT 'yyyy-MM-dd') || 'T' ||CAST(cTime AS CHARACTER FORMAT 'HH:mm:ss.SSS');
+						ELSE
+							SET cDateStr = rInAmOrderItem.ItemDeliveryTime;	
+						END IF;								
+					END IF;
+					IF NOT ENDSWITH(cDateStr,'Z') THEN
+						SET cDateStr = cDateStr || 'Z'; 
+					END IF;
+					SET rAmenityItemDelivery.sc:ItemDeliveryDate =cDateStr; 	
+					
+					SET rAmenityOrderItem.sc:Guest.(XMLNSC.Attribute)LoyaltyMembershipID = rInAmOrderItem.GuestID;
+					SET rAmenityOrderItem.sc:Comments.sc:Text = rInAmOrderItem.Comments;
+				
+					CREATE LASTCHILD OF rAmenityOrderItem AS rAmenityInvoiceItems IDENTITY sc:AmenityInvoiceItems;
+					
+					-- Loop through InvoiceItems and populate the relevant output message section after eliminating the 
+					-- duplicate InvoiceItems	
+					--IF EXISTS (rInMsgAmenityOrder.AmInvoiceItems.AmInvoiceItem[])
+					IF EXISTS (rEnv.DedupInvoiceItems.AmInvoiceItem[])
+					THEN
+						--DECLARE rInAmInvoiceItems REFERENCE TO rInMsgAmenityOrder.AmInvoiceItems;
+						--DECLARE rInAmInvoiceItems REFERENCE TO rEnv.DedupInvoiceItems;
+						
+						--CALL MapInvoiceItems(rInAmInvoiceItems, rAmenityInvoiceItems, rEnv); 
+						CALL MapInvoiceItems(rInAmOrderItem, rEnv.DedupInvoiceItems, rAmenityInvoiceItems, rEnv);
+												
+					END IF;											
+				END FOR;
+			END IF;	
+		DETACH rEnv.DedupInvoiceItems;			
+		END FOR;
+	
+	END;
+	
+
+	-- Procedure to eliminate duplicate Invoice Items
+	CREATE PROCEDURE MapInvoiceItems(IN rInMsgAmOrderItem REFERENCE, IN rInMsgAmInvoiceItems REFERENCE, INOUT rOutAmenityInvoiceItems REFERENCE, INOUT rEnv REFERENCE ) 
+	BEGIN
+		DECLARE rOutAmenityInvoiceItem REFERENCE TO rEnv;
+		DECLARE ENVFIELD CHARACTER;
+		FOR rAmInvoiceItem AS rInMsgAmInvoiceItems.AmInvoiceItem[] 
+		DO
+			-- Check if the invoice item matches the AmenityOrderItem
+			IF rInMsgAmOrderItem.AmenityCode = rAmInvoiceItem.AmenityCode AND rInMsgAmOrderItem.Quantity = rAmInvoiceItem.Quantity
+			THEN
+				CREATE LASTCHILD OF rOutAmenityInvoiceItems AS rOutAmenityInvoiceItem IDENTITY sc:AmenityInvoiceItem;
+				SET rOutAmenityInvoiceItem.sc:AmenityCode = rAmInvoiceItem.AmenityCode;
+				SET rOutAmenityInvoiceItem.sc:AmenityInvoiceItemType = rAmInvoiceItem.AmInvoiceItemType;
+				SET rOutAmenityInvoiceItem.sc:AmentyInvoiceItemSubType = rAmInvoiceItem.AmInvoiceItemSubtype;
+				SET rOutAmenityInvoiceItem.sc:PromoCode = rAmInvoiceItem.PromoCode;
+				SET rOutAmenityInvoiceItem.sc:AmenityItemTotal = rAmInvoiceItem.ItemTotal;
+				SET rOutAmenityInvoiceItem.sc:Quantity = rAmInvoiceItem.Quantity;
+				SET rOutAmenityInvoiceItem.sc:ISItemValid = rAmInvoiceItem.ItemValid;	
+			END IF;
+		END FOR;
+	END;	
+	
+	
+	-- Procedure to eliminate duplicate Invoice Items
+	CREATE PROCEDURE RemoveDuplicateInvoiceItems(IN rInMsgAmInvoiceItems REFERENCE, INOUT rDedupInvoiceItems REFERENCE, INOUT rEnv REFERENCE ) 
+	BEGIN
+		DECLARE rDedupInvoiceItem REFERENCE TO rEnv;
+		DECLARE ENVFIELD CHARACTER;
+		FOR rAmInvoiceItem AS rInMsgAmInvoiceItems.AmInvoiceItem[] 
+		DO
+			SET ENVFIELD = COALESCE(rAmInvoiceItem.AmenityCode, '')||'#'||COALESCE(rAmInvoiceItem.AmInvoiceItemType,'')||'#'||
+											COALESCE(CAST(rAmInvoiceItem.Quantity AS CHAR), '')||'#'||COALESCE(rAmInvoiceItem.AmInvoiceItemSubtype, '');
+			-- Check if this invoice item already exists
+			IF EXISTS (rEnv.InvoiceItems.*[]) 
+			THEN				
+				IF NOT EXISTS (rEnv.InvoiceItems.{ENVFIELD}[])
+				THEN
+					-- Tree copy items to Env
+					--CREATE LASTCHILD OF rDedupInvoiceItems NAME 'AmInvoiceItem' VALUE rAmInvoiceItem;
+					CREATE LASTCHILD OF rDedupInvoiceItems AS rDedupInvoiceItem NAME 'AmInvoiceItem';
+					SET rDedupInvoiceItem = rAmInvoiceItem;						
+					CREATE FIELD rEnv.InvoiceItems.{ENVFIELD};	
+				END IF;
+			ELSE
+				-- Just add the field to rEnv and create the InvoiceItem in Env message
+				--SET rDedupInvoiceItems.AmInvoiceItem = rAmInvoiceItem;	
+				CREATE LASTCHILD OF rDedupInvoiceItems AS rDedupInvoiceItem NAME 'AmInvoiceItem';
+				SET rDedupInvoiceItem = rAmInvoiceItem;					
+				CREATE FIELD rEnv.InvoiceItems.{ENVFIELD};					
+			END IF;
+		END FOR;
+		-- Remove the environment details
+		DETACH rEnv.InvoiceItems;	
+	END;
+	
+END MODULE;

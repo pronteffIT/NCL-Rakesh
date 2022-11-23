@@ -1,0 +1,50 @@
+<profile:monitoringProfile xmlns:profile="http://www.ibm.com/xmlns/prod/websphere/messagebroker/6.1.0.3/monitoring/profile" profile:version="2.0">
+	<profile:eventSource profile:eventSourceAddress="ProcessSearchResp.terminal.out" profile:enabled="true">
+		<profile:eventPointDataQuery>
+			<profile:eventIdentity>
+				<profile:eventName profile:literal="ProcessSearchResp.OutTerminal"/>
+			</profile:eventIdentity>
+			<profile:eventCorrelation>
+				<profile:localTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/LocalTransactionId" profile:sourceOfId="query"/>
+				<profile:parentTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/ParentTransactionId" profile:sourceOfId="query"/>
+				<profile:globalTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/GlobalTransactionId" profile:sourceOfId="query"/>
+			</profile:eventCorrelation>
+			<profile:eventFilter profile:queryText="$Environment/Variables/Temp/HouseholdSFId = 'No Match Found'  and $Environment/Variables/Temp/HouseholdSFId = 'No Match Found'"/>
+			<profile:eventUOW profile:unitOfWork="independent"/>
+		</profile:eventPointDataQuery>
+		<profile:applicationDataQuery/>
+		<profile:bitstreamDataQuery profile:bitstreamContent="body" profile:encoding="base64Binary"/>
+	</profile:eventSource>
+	<profile:eventSource profile:eventSourceAddress="ProcessSearchResp.terminal.out1" profile:enabled="true">
+		<profile:eventPointDataQuery>
+			<profile:eventIdentity>
+				<profile:eventName profile:literal="ProcessSearchResp.Out1Terminal"/>
+			</profile:eventIdentity>
+			<profile:eventCorrelation>
+				<profile:localTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/LocalTransactionId" profile:sourceOfId="query"/>
+				<profile:parentTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/ParentTransactionId" profile:sourceOfId="query"/>
+				<profile:globalTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/GlobalTransactionId" profile:sourceOfId="query"/>
+			</profile:eventCorrelation>
+			<profile:eventFilter profile:queryText="$Environment/Variables/Temp/HouseholdSFId = 'No Match Found'  and $Environment/Variables/Temp/HouseholdSFId = 'No Match Found'"/>
+			<profile:eventUOW profile:unitOfWork="independent"/>
+		</profile:eventPointDataQuery>
+		<profile:applicationDataQuery/>
+		<profile:bitstreamDataQuery profile:bitstreamContent="body" profile:encoding="base64Binary"/>
+	</profile:eventSource>
+	<profile:eventSource profile:eventSourceAddress="ProcessSearchResp.terminal.out2" profile:enabled="true">
+		<profile:eventPointDataQuery>
+			<profile:eventIdentity>
+				<profile:eventName profile:literal="ProcessSearchResp.Out2Terminal"/>
+			</profile:eventIdentity>
+			<profile:eventCorrelation>
+				<profile:localTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/LocalTransactionId" profile:sourceOfId="query"/>
+				<profile:parentTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/ParentTransactionId" profile:sourceOfId="query"/>
+				<profile:globalTransactionId profile:queryText="$Environment/Variables/GTM/LogEvent/GlobalTransactionId" profile:sourceOfId="query"/>
+			</profile:eventCorrelation>
+			<profile:eventFilter profile:queryText="$Environment/Variables/Temp/HouseholdSFId = 'No Match Found'  and $Environment/Variables/Temp/HouseholdSFId = 'No Match Found'"/>
+			<profile:eventUOW profile:unitOfWork="independent"/>
+		</profile:eventPointDataQuery>
+		<profile:applicationDataQuery/>
+		<profile:bitstreamDataQuery profile:bitstreamContent="body" profile:encoding="base64Binary"/>
+	</profile:eventSource>
+</profile:monitoringProfile>

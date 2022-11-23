@@ -1,0 +1,31 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+
+
+CREATE COMPUTE MODULE TrustOne_UpdateRegStatus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.JSON.Data;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cErrorMsg CHARACTER;
+		FOR refItem AS  rIn.references.Item[] 
+		DO
+			DECLARE guestID DECIMAL CAST(refItem.reference AS DECIMAL DEFAULT 0.0); 
+			IF guestID > 0 THEN
+				CALL ncl_upd_manifest_exch_log(CAST(refItem.reference AS DECIMAL),'EUROFINS',NULL,NULL,refItem.status,'Y',NULL,NULL,NULL,cErrorMsg);
+			END IF;
+		END FOR;
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE ncl_upd_manifest_exch_log (
+	    IN p_guest_id    DECIMAL,
+	    IN p_provider_cd  CHARACTER,
+	    IN p_ref_txt      CHARACTER,
+	    IN p_reason_txt   CHARACTER,
+	    IN p_process_cd   CHARACTER,
+	    IN p_is_registered_cd CHARACTER,
+	    IN p_email_sent_cd CHARACTER,
+	    IN p_last_email_sent_dt DATE,
+	    IN p_email_txt  CHARACTER,
+	    OUT p_error_txt   CHARACTER
+	)	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.ncl_upd_manifest_exch_log";	
+END MODULE;

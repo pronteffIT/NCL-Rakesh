@@ -1,0 +1,45 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveLCB_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveLCBRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS;
+		
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		DECLARE bPayload BLOB;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+		
+        SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.Temp.Headers.MQMD.ReplyToQ;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveLCB api response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+		
+	END;
+END MODULE;

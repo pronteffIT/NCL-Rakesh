@@ -1,0 +1,15 @@
+# eclipse specific git ignore
+#.project
+.metadata
+*.tmp
+*.bak
+*.swp
+*~.nib
+#.classpath
+.settings/
+GeneratedBarFiles/
+.loadpath
+*.bar
+TEST_LIB*
+VXAPI_LIB*
+/NCL_CruisePriceBooking_APP/

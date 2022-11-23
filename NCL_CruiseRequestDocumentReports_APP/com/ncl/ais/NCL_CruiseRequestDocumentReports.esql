@@ -1,0 +1,378 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CacheMap EXTERNAL CHARACTER 'EXTERNAL_ERROR_CODE.LUT';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER 'XC10ConnectionConfig';
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_DOCUMENT_REPORTS_RESP';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE MASTER_CHANNELS EXTERNAL CHARACTER '';
+
+
+CREATE COMPUTE MODULE NCL_CruiseRequestDocumentReports_CreateLoginReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRequestDocumentReportsRQ;
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		DECLARE bPayload BLOB;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.ID, COALESCE(rIn.*:POS.*:Source.PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.Code, ''),
+												COALESCE(rIn.*:ReservationId, COALESCE(rIn.*:GroupID, rIn.*:CollectionID)),
+												COALESCE(rIn.*:Entity.*:AgencyID, COALESCE(rIn.*:Entity.*:AgentID, rIn.*:Entity.*:ClientID)),
+												'',
+											 	rEnv);
+
+		-- required during fanout
+		SET rEnv.Temp.ReportValidationErrors = 'N';
+
+		-- saving input msg as string for later use
+		SET rEnv.Temp.InputMsg = CAST(ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546) AS CHARACTER CCSID 1208 ENCODING 546);
+		SET rEnv.Temp.InputMsg = '<![CDATA[' || REPLACE(rEnv.Temp.InputMsg, 'NCL_CruiseRequestDocumentReportsRQ', 'NCL_CruiseRequestDocumnetRQ') || ']]>';
+
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Document report request message', 'xml', rEnv);
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling login service ...', rEnv);
+		
+		-- create verify agency request
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.XMLNSC.LoginRequest.source = rIn.*:POS.*:Source;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Login api request', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRequestDocumentReports_CheckContactInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLoginResp REFERENCE TO InputRoot.XMLNSC.LoginResponse;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS;
+		
+		DECLARE bPayload BLOB;
+		
+		SET rEnv.Temp.SessionID = rLoginResp.sessionGUID;
+		SET rEnv.Temp.EndPoint = rLoginResp.endpoint;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Login api response', 'xml', rEnv);
+		END IF;
+
+		IF EXISTS(rLoginResp.runtimeError[]) OR EXISTS(rLoginResp.loginError[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Login failed ...', rEnv);
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = COALESCE(rLoginResp.runtimeError.(XMLNSC.Attribute)ShortText, 
+																			   rLoginResp.loginError.(XMLNSC.Attribute)ShortText);
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+			IF EXISTS(rLoginResp.runtimeError[]) THEN
+				SET rOut.ns:Errors.ns:Error = FIELDVALUE(rLoginResp.runtimeError);
+			ELSE
+				SET rOut.ns:Errors.ns:Error = FIELDVALUE(rLoginResp.loginError);
+			END IF;
+			
+			RETURN TRUE;
+		ELSE
+			IF NOT(LENGTH(COALESCE(rOrgMsg.*:EmailAddress, '')) > 0 OR LENGTH(COALESCE(rOrgMsg.*:FaxNumber.(XMLNSC.Attribute)PhoneNumber, '')) > 0) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling DB Search to get contact details ...', rEnv);
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.EndPoint;
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut NAME 'DbSearch_IN';
+				
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rOut);
+--				SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--				SET rOut.MsgHeader.SessionGUID = rEnv.Temp.SessionID;
+				
+				IF LENGTH(rOrgMsg.*:Entity.*:AgencyID) > 0 THEN
+					SET rOut.PreferredContacts.EntityType = 'AGENCY';
+				ELSEIF LENGTH(rOrgMsg.*:Entity.*:AgentID) > 0 THEN
+					SET rOut.PreferredContacts.EntityType = 'AGENT';
+				ELSEIF LENGTH(rOrgMsg.*:Entity.*:ClientID) > 0 THEN
+					SET rOut.PreferredContacts.EntityType = 'CLIENT';
+				END IF;
+				
+				SET rOut.PreferredContacts.EntityID = rOrgMsg.*:Entity.*[1];
+				
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search api request message to get contact details', 'xml', rEnv);
+				END IF;
+				
+				PROPAGATE TO TERMINAL 'out1';
+			ELSE
+				IF LENGTH(FIELDVALUE(rOrgMsg.*:EmailAddress)) > 0 THEN
+					SET rEnv.Temp.Contact.Email = rOrgMsg.*:EmailAddress;
+				ELSE
+					SET rEnv.Temp.Contact.Fax = rOrgMsg.*:FaxNumber.(XMLNSC.Attribute)PhoneNumber;
+				END IF;
+				
+				PROPAGATE TO TERMINAL 'out2';
+			END IF;			
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRequestDocumentReports_FanOutReportReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS;
+		DECLARE rEnvReport REFERENCE TO rEnv;
+		DECLARE rWarn REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS.ns:Warnings.ns:Warning;
+		
+		DECLARE channel, resId, collectionId, groupId, agencyId, agentId, clientId, report, lang CHARACTER '';
+		DECLARE statusCode INTEGER 0;
+		DECLARE bPayload BLOB;
+		DECLARE subject,cMessageTxt CHARACTER;
+		 
+		SET channel = COALESCE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		SET resId = COALESCE(rOrgMsg.*:ReservationID, '');
+		SET collectionId = COALESCE(rOrgMsg.*:CollectionID, '');
+		SET groupId = COALESCE(rOrgMsg.*:GroupID, '');
+		SET agencyId = COALESCE(rOrgMsg.*:Entity.*:AgencyID, '');
+		SET agentId = COALESCE(rOrgMsg.*:Entity.*:AgentID, '');
+		SET clientId = COALESCE(rOrgMsg.*:Entity.*:ClientID, '');
+		SET lang = COALESCE(rOrgMsg.*:Language, '');
+		SET subject = rOrgMsg.*:Subject;
+		SET cMessageTxt = rOrgMsg.*:Message;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Fan out of document reports ...', rEnv);
+		
+		FOR rReport AS rOrgMsg.*:Reports[] DO
+			CREATE LASTCHILD OF rEnv.Temp.Message.Reports AS rEnvReport NAME 'Report';
+			SET rEnvReport.name = rReport.*:ReportCode;
+			SET rEnvReport.status = '';
+			SET rEnvReport.errCode = '0';
+			SET rEnvReport.errMsg = '';
+			SET rEnvReport.sourceErrCode = '';
+			
+			SET statusCode = ValidateDocumentReport(channel, resId, collectionId, groupId, agencyId, agentId, clientId, lang, rReport.*:ReportCode);
+			
+			-- check for errors
+			IF statusCode > 0 THEN
+				SET rEnv.Temp.ReportValidationErrors = 'Y';
+				
+				SET rEnvReport.status = 'ERROR';
+				SET rEnvReport.errCode = '25074';
+				SET rEnvReport.sourceErrCode = rEnvReport.errCode;
+				SET rEnvReport.errMsg = GenerateDocumentErrMsg(CAST(statusCode AS CHARACTER), rReport.*:ReportCode);
+			ELSE
+				-- call issue docs API
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.EndPoint;
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut NAME 'IssueDocs_IN';
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rOut);
+--				SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--				SET rOut.MsgHeader.SessionGUID = rEnv.Temp.SessionID;
+				SET rOut.MsgHeader.Language = lang;
+				IF LENGTH(resId)> 0 THEN
+					SET rOut.Entity.ResID = resId;
+				END IF;
+				IF LENGTH(groupId)> 0 THEN
+					SET rOut.Entity.GroupID = groupId;
+				END IF;
+				IF LENGTH(collectionId)> 0 THEN
+					SET rOut.Entity.CollectionID = collectionId;
+				END IF;
+				IF LENGTH(clientId)> 0 THEN
+					SET rOut.Recipient.ClientID = clientId;
+				END IF;
+				IF LENGTH(agentId)> 0 THEN
+					SET rOut.Recipient.AgentID = agentId;
+				END IF;
+				IF LENGTH(agencyId)> 0 THEN
+					SET rOut.Recipient.AgencyID = agencyId;
+				END IF;
+				
+				SET rOut.Delivery.EMail = rEnv.Temp.Contact.Email;
+				SET rOut.Delivery.Fax.PhoneNumber = rEnv.Temp.Contact.Fax;
+
+				SET rOut.Document.DocHeader.Subject = COALESCE(subject ,rReport.*:ReportCode);
+				SET rOut.Document.Attachment.Instance.DocCode = rReport.*:ReportCode;
+				
+				IF COALESCE(cMessageTxt,'') <> '' THEN
+					SET rOut.Document.DocHeader.Message = cMessageTxt;
+				END IF;
+
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Issue docs api request', 'xml', rEnv);
+				END IF;
+				
+				PROPAGATE TO TERMINAL 'out1';
+			END IF;
+		END FOR;
+		
+		-- build the final response
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		IF rEnv.Temp.ReportValidationErrors = 'N' THEN
+			CREATE FIELD rOut.ns:Success;
+		ELSE
+			FOR rReport AS rEnv.Temp.Message.Reports.Report[] DO
+				IF rReport.status = 'ERROR' THEN
+					CREATE LASTCHILD OF rOut.ns:Warnings AS rWarn NAMESPACE ns NAME 'Warning';
+					
+					SET rWarn.(XMLNSC.Attribute)Code = rReport.errCode;
+					SET rWarn.(XMLNSC.Attribute)ShortText = SUBSTRING(rReport.errMsg FROM 1 FOR 64);
+					SET rWarn.(XMLNSC.Attribute)Type = '3';
+				END IF;
+			END FOR;
+		END IF;
+		
+		RETURN TRUE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRequestDocumentReports_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRequestDocumentReports_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRequestDocumentReports_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Document report response message', 'xml', rEnv);
+		END IF;
+		
+	--	SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.EndPoint;
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+		
+		-- send the response to queue
+		PROPAGATE;
+		
+		-- call API to logout from session
+		IF EXISTS(rEnv.Temp.SessionID[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+			SET OutputRoot = NULL;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.EndPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionID;
+			
+			PROPAGATE TO LABEL 'LOGOUT'; 
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

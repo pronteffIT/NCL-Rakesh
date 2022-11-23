@@ -1,0 +1,157 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_LAT_CLIENT_JRN_RESP';
+
+CREATE COMPUTE MODULE NCL_LatitudesJourney
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+--		CALL CopyMessageHeaders();
+
+		DECLARE currDateTime CHARACTER CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmmssSS');
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cTransId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE cRcdId, cErrorCode, cErrorMsg CHARACTER '';
+		DECLARE bPayLoad BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE rInLatJrn REFERENCE TO InputRoot.XMLNSC.*:NCL_LATITUDES_CLIENT_JRN_REQ;
+		
+		CREATE FIELD Environment.Variables;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) =0 THEN
+				SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_JRN_RESP.TRANSACTIONS = '';
+		DECLARE rOutLatJrn REFERENCE TO OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_JRN_RESP;
+		DECLARE rOutLatJrnTrns,rOutLatJrnTrn REFERENCE TO rOutLatJrn.TRANSACTIONS;
+		DECLARE totalQty DECIMAL 0;
+
+		
+		
+		
+		
+		SET cTransId = SUBSTRING(REPLACE(cTransId,'''','')FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cTransId, '', '');
+		IF (LogPayLoad) THEN
+			DECLARE bPayLoad BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayLoad, NodeLabel, 'Latitude journey request message', 'xml', rEnv);
+		END IF;
+		-- add metadata to log event
+		--CALL com.ncl.iib.log.CreateMetaData('ClientId', rInLatJrn.CLIENT_ID, 'Client ID', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('ReservationId', COALESCE(rIn.RES_ID, ''), 'Reservation ID', rEnv);
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet('','','',COALESCE(rInLatJrn.CLIENT_ID,''),'',rEnv);
+
+		SET rEnv.clientId = rInLatJrn.CLIENT_ID;
+
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored procedure to return values from Journey Table', rEnv);
+		--Call to Stored Procedure for Journey Details
+		CALL LatitudeGetJrn (rEnv.clientId,rEnv.errorcode,rEnv.errormsg,rEnv.ResultSet[]);
+		--Loop through the Result Set and Creating Journey Response
+
+		FOR cursor AS rEnv.ResultSet[] DO
+			CREATE LASTCHILD OF rOutLatJrnTrns AS rOutLatJrnTrn NAME 'TRANSACTION';
+			SET rOutLatJrnTrn.RECORD_ID = cursor.RECORD_ID;
+			SET rOutLatJrnTrn.RES_ID = cursor.RES_ID;
+			SET rOutLatJrnTrn.SHIP_NAME = cursor.SHIP_NAME;
+			SET rOutLatJrnTrn.SAIL_DATE_FROM = SUBSTRING(CAST(cursor.SAIL_DATE_FROM AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss') FROM 1 FOR 10);
+			SET rOutLatJrnTrn.SAIL_DATE_TO = SUBSTRING(CAST(cursor.SAIL_DATE_TO AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss') FROM 1 FOR 10);
+			SET rOutLatJrnTrn.ACTIVITY_DESC = cursor.ACTIVITY_DESC;
+			SET rOutLatJrnTrn.META_CAT = cursor.META_CATEGORY;
+			SET rOutLatJrnTrn.RES_INIT_DATE = SUBSTRING(CAST(cursor.RES_INIT_DATE AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss') FROM 1 FOR 10);
+			SET rOutLatJrnTrn.POINTS = CAST(cursor.TOTAL_POINTS_QTY AS INTEGER);
+			SET rOutLatJrnTrn.DATE_TIME = SUBSTRING(CAST(cursor.DATE_TIME_STAMP AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss') FROM 1 FOR 10);
+			SET rOutLatJrnTrn.USER = cursor.USER_ID;
+			SET totalQty = cursor.TOTAL_POINTS_QTY + totalQty;
+		END FOR;
+
+		SET rOutLatJrn.CLIENT_ID = rEnv.clientId;
+		SET rOutLatJrn.TOTAL_POINTS = CAST(totalQty AS INTEGER) ;
+		--Check for error message and error code
+
+
+	IF SQLCODE = 0 THEN 
+		IF EXISTS(rEnv.ResultSet[]) THEN
+			SET rOutLatJrn.ERROR_MSG = '';
+			SET rOutLatJrn.ERROR_CODE = '';
+			
+		ELSE
+			SET rOutLatJrn.ERROR_MSG = 'Client not found';
+			SET rOutLatJrn.ERROR_CODE = '9001';
+			
+		END IF;
+		
+	ELSE 
+			SET rOutLatJrn.CLIENT_ID = rEnv.clientId;
+			SET rOutLatJrn.TOTAL_POINTS = 0;
+			SET rOutLatJrn.ERROR_CODE = '9002';
+			SET rOutLatJrn.ERROR_MSG = SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]');	
+	END IF;
+	-- add response msg to log event
+	SET bPayLoad = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+	CALL com.ncl.iib.log.AddPayloadLogEvent(bPayLoad, NodeLabel, 'Latitude Journey response message', 'xml', rEnv);
+	--Request and Response for Lat Trans Log
+	SET rEnv.Latlog.RecordId = uuid;
+	SET rEnv.Latlog.SourceCode = rInLatJrn.SOURCE;
+	SET rEnv.Latlog.RequestTs = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss');
+	SET rEnv.Latlog.RequestTypeCode = 'JRNREQ';
+	SET rEnv.Latlog.ResponseTs = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss');
+	SET rEnv.Latlog.RequestMsg = CAST(ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546) AS CHARACTER CCSID 1208 ENCODING 546);
+	SET rEnv.Latlog.ResponseMsg = CAST(ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546) AS CHARACTER CCSID 1208 ENCODING 546);
+
+	PROPAGATE;
+
+	SET OutputRoot.XMLNSC.Latlog = rEnv.Latlog;
+
+	PROPAGATE TO LABEL 'LATLOG';
+
+	RETURN FALSE;
+END;
+--Procedure to invoke Database Stored Procedure
+CREATE PROCEDURE LatitudeGetJrn (IN p_client_id CHARACTER,OUT p_ErrorCode CHARACTER,OUT p_ErrorMsg CHARACTER)
+LANGUAGE DATABASE
+DYNAMIC RESULT SETS 1
+EXTERNAL NAME "NCLSEA.NCL_LAT_GET_JRN";
+
+CREATE PROCEDURE CopyMessageHeaders() BEGIN
+	DECLARE I INTEGER 1;
+	DECLARE J INTEGER;
+	SET J = CARDINALITY(InputRoot.*[]);
+	WHILE I < J DO
+		SET OutputRoot.*[I] = InputRoot.*[I];
+		SET I = I + 1;
+	END WHILE;
+END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_LatitudeJourney_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Latitude journey request message', 'xml', rEnv);
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;

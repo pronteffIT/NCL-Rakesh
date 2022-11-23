@@ -1,0 +1,118 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseNextCouponsScheduler_getCoupons
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE outRef, outCustRcrd, outCustHdr REFERENCE TO OutputRoot;
+		DECLARE p_Agent_web_login,p_isSupervisor,p_couponType CHARACTER;		
+
+
+		SET rEnv.Temp.Coupons.CouponInfo[] = SELECT * FROM Database.NCL_CRUISE_NEXT_COUPONS_TBL AS C WHERE C.IS_COMPLETE_TXT = 'N';
+
+		DECLARE NewTime,putTime TIMESTAMP;
+		DECLARE TimeDiff INTEGER;
+
+		IF EXISTS(rEnv.Temp.Coupons.CouponInfo[] ) THEN
+			FOR inRef AS rEnv.Temp.Coupons.CouponInfo[] DO
+				--DECLARE CoupnCnt INTEGER;
+				SET rEnv.StartTime = CAST(CAST( CURRENT_TIME AS CHARACTER FORMAT 'ss')AS Integer);
+				SET rEnv.CouponType = inRef.COUPON_TYPE;
+				SET putTime = CURRENT_TIMESTAMP; -- start time of store poc
+				SET p_Agent_web_login = UPPER(inRef.AGENT_WEB_LOGIN_TXT);
+				SET p_isSupervisor = inRef.IS_SUPERVISOR_TXT;
+				SET p_couponType = inRef.COUPON_TYPE;
+				-- Calling store proc for available coupons
+				CALL GetCoupons(p_Agent_web_login,p_isSupervisor, p_couponType, rEnv.Temp.DBCursor.p_Cursor[]);
+
+				CREATE LASTCHILD OF outRef DOMAIN('DFDL') NAME 'DFDL';
+				MOVE outRef TO OutputRoot.DFDL;
+
+				IF outRef.Coupons.header IS NULL THEN
+					-- Build the CSV header
+					CREATE LASTCHILD OF outRef.Coupons AS outCustHdr NAME 'header';
+					SET outCustHdr.COUPON_ID ='COUPON_ID';
+					SET outCustHdr.VALID_FROM ='VALID_FROM';
+					SET outCustHdr.VALID_TO ='VALID_TO';
+					SET outCustHdr.AMOUNT ='AMOUNT';
+					SET outCustHdr.AMOUNT_LEFT ='AMOUNT_LEFT';
+					SET outCustHdr.IS_ACTIVE ='IS_ACTIVE';
+					SET outCustHdr.COMMENTS ='COMMENTS';
+					SET outCustHdr.COUPON_CLASS ='COUPON_CLASS';
+					SET outCustHdr.OFFICE_CODE ='OFFICE_CODE';
+					SET outCustHdr.RES_ID ='RES_ID';
+					SET outCustHdr.GEN_LINK_ID ='GEN_LINK_ID';
+					SET outCustHdr.CLIENT_TYPE ='CLIENT_TYPE';
+					SET outCustHdr.CLIENT_ID ='CLIENT_ID';
+					SET outCustHdr.IS_USED ='IS_USED';
+					SET outCustHdr.TEMP_RES_ID ='TEMP_RES_ID';
+					SET outCustHdr.PAP_CODE ='PAP_CODE';
+					SET outCustHdr.GRANTED_TO_CLIENT_ID ='GRANTED_TO_CLIENT_ID';
+					SET outCustHdr.CURRENCY_CODE ='CURRENCY_CODE';
+					SET outCustHdr.FREQUENT_PGM_POINTS ='FREQUENT_PGM_POINTS';
+					SET outCustHdr.REASON_CODE ='REASON_CODE';
+					SET outCustHdr.EFFECTIVE_FROM ='EFFECTIVE_FROM';
+					SET outCustHdr.EFFECTIVE_TO ='EFFECTIVE_TO';
+					SET outCustHdr.FIRST_NAME ='FIRST_NAME';
+					SET outCustHdr.LAST_NAME ='LAST_NAME';
+					SET outCustHdr.EMAIL ='EMAIL';
+					SET outCustHdr.AGENT_FNAME ='AGENT_FNAME';
+					SET outCustHdr.AGENT_LNAME ='AGENT_LNAME';
+				END IF;
+				-- Creating a record for each coupon
+				FOR inCoupns AS rEnv.Temp.DBCursor.p_Cursor[] DO
+
+					CREATE LASTCHILD OF outRef.Coupons AS outCustRcrd NAME 'record';
+					SET outCustRcrd.COUPON_ID =COALESCE(inCoupns.COUPON_ID, '');
+					SET outCustRcrd.VALID_FROM =COALESCE(inCoupns.VALID_FROM, '');
+					SET outCustRcrd.VALID_TO =COALESCE(inCoupns.VALID_TO, '');
+					SET outCustRcrd.AMOUNT =COALESCE(inCoupns.AMOUNT, '');
+					SET outCustRcrd.AMOUNT_LEFT =COALESCE(inCoupns.AMOUNT_LEFT, '');
+					SET outCustRcrd.IS_ACTIVE =COALESCE(inCoupns.IS_ACTIVE, '');
+					SET outCustRcrd.COMMENTS =COALESCE(inCoupns.COMMENTS, '');
+					SET outCustRcrd.COUPON_CLASS =COALESCE(inCoupns.COUPON_CLASS, '');
+					SET outCustRcrd.OFFICE_CODE =COALESCE(inCoupns.OFFICE_CODE, '');
+					SET outCustRcrd.RES_ID =COALESCE(inCoupns.RES_ID, '');
+					SET outCustRcrd.GEN_LINK_ID =COALESCE(inCoupns.GEN_LINK_ID, '');
+					SET outCustRcrd.CLIENT_TYPE =COALESCE(inCoupns.ENTITY_TYPE, '');
+					SET outCustRcrd.CLIENT_ID =COALESCE(inCoupns.ENTITY_ID, '');
+					SET outCustRcrd.IS_USED =COALESCE(inCoupns.IS_USED, '');
+					SET outCustRcrd.TEMP_RES_ID =COALESCE(inCoupns.TEMP_RES_ID, '');
+					SET outCustRcrd.PAP_CODE =COALESCE(inCoupns.PAP_CODE, '');
+					SET outCustRcrd.GRANTED_TO_CLIENT_ID =COALESCE(inCoupns.GRANTED_TO_CLIENT_ID, '');
+					SET outCustRcrd.CURRENCY_CODE =COALESCE(inCoupns.CURRENCY_CODE, '');
+					SET outCustRcrd.FREQUENT_PGM_POINTS =COALESCE(inCoupns.FREQUENT_PGM_POINTS, '');
+					SET outCustRcrd.REASON_CODE =COALESCE(inCoupns.REASON_CODE, '');
+					SET outCustRcrd.EFFECTIVE_FROM =COALESCE(inCoupns.EFFECTIVE_FROM, '');
+					SET outCustRcrd.EFFECTIVE_TO =COALESCE(inCoupns.EFFECTIVE_TO, '');
+					SET outCustRcrd.FIRST_NAME =COALESCE(inCoupns.FIRST_NAME, '');
+					SET outCustRcrd.LAST_NAME =COALESCE(inCoupns.LAST_NAME, '');
+					SET outCustRcrd.EMAIL =COALESCE(inCoupns.EMAIL, '');
+					SET outCustRcrd.AGENT_FNAME =COALESCE(inCoupns.AGENT_FNAME, '');
+					SET outCustRcrd.AGENT_LNAME =COALESCE(inCoupns.AGENT_LNAME, '');
+				END FOR;
+
+				SET rEnv.Temp.CurntWebLogDetails.Email = inRef.EMAIL_TXT;
+				SET rEnv.Temp.CurntWebLogDetails.WebLogInTxt = inRef.AGENT_WEB_LOGIN_TXT;
+				SET rEnv.Temp.CurntWebLogDetails.CreationTime = inRef.CREATE_TS;
+				SET rEnv.Temp.CurntWebLogDetails.CoupnCnt = CARDINALITY(OutputRoot.DFDL.Coupons.record[]);
+
+				DELETE FIELD rEnv.Temp.DBCursor;
+
+				PROPAGATE TO TERMINAL 'out';
+			END FOR;
+		ELSE
+			RETURN FALSE;
+		END IF;
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE GetCoupons (IN p_Agent_web_login CHARACTER ,IN p_isSupervisor CHARACTER, IN p_couponType CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_NEXT_COUPONS";
+
+
+END MODULE;

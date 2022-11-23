@@ -1,0 +1,24 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseBookingPayment_AfpResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;		
+		DECLARE rReqIn REFERENCE TO InputRoot.XMLNSC.AutoFinalPayment_OUT;
+		DECLARE cErrorText CHARACTER;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		IF EXISTS(rReqIn.Errors.Error[]) OR EXISTS(InputExceptionList.RecoverableException[]) THEN
+			SET rEnv.AFPStatus = 'FAILED';			
+			SET rEnv.AFPErrorMessage = COALESCE(cErrorText,rReqIn.Errors.Error.ErrorMessage);						
+		ELSE
+			SET rEnv.AFPStatus = rReqIn.Status;
+		END IF;
+		RETURN TRUE;
+	END;
+	
+END MODULE;

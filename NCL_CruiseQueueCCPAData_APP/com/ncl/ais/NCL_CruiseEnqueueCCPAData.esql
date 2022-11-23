@@ -1,0 +1,99 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER 3000;
+DECLARE REPLY_Q EXTERNAL CHARACTER '';
+DECLARE ARCHIVE_Q EXTERNAL CHARACTER '';
+DECLARE STORE_Q EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_CruiseEnqueueCCPAData_StoreInfoToQueue
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseEnqueueCCPADataRQ;
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		SET rEnv.Temp.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.InputMsg = rIn;
+		
+		IF TRIM(InputRoot.MQMD.ReplyToQ) = '' THEN
+			SET rEnv.Temp.MQMD.ReplyToQ = REPLY_Q;
+		END IF;
+		
+		SET rEnv.Temp.MQMD.Expiry = MSG_EXPIRY;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+											   COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+											   '',
+											   rIn.*:Client.*:LatitudesNumber,
+											   '',
+											   rEnv);
+		
+		SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = STORE_Q;
+		SET OutputLocalEnvironment.Destination.MQ.DestinationData[2].queueName = ARCHIVE_Q;
+		
+		-- output message
+		SET OutputRoot.MQMD.Persistence = MQPER_PERSISTENT;
+		SET OutputRoot.XMLNSC.sc:CCPAData.sc:Client = rIn.*:Client;
+		SET OutputRoot.XMLNSC.sc:CCPAData.sc:Client.sc:UniqueID = UUIDASBLOB;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseEnqueueCCPAData_CreateResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.NCL_CruiseEnqueueCCPADataRS;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.InputMsg;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		-- output message
+		SET OutputRoot.MQMD = rEnv.Temp.MQMD;
+		
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseEnqueueCCPADataRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			
+			SET rOut.sc:Errors.sc:Error = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)Code= '12228';
+			SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)ShortText = 'System error try Again Later';
+			SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			CREATE FIELD rOut.sc:Success;
+		END IF;
+			
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseEnqueueCCPAData_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

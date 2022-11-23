@@ -1,0 +1,297 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE BaseURL_US EXTERNAL CHARACTER '';
+DECLARE BaseURL_CA EXTERNAL CHARACTER '';
+DECLARE BaseURL_INTL EXTERNAL CHARACTER '';
+DECLARE ServiceKey_US EXTERNAL CHARACTER '';
+DECLARE ServiceKey_CA EXTERNAL CHARACTER '';
+DECLARE ServiceKey_INTL EXTERNAL CHARACTER '';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+DECLARE Update_HouseholdAddress EXTERNAL BOOLEAN False;
+DECLARE Process_INTL EXTERNAL BOOLEAN TRUE;
+DECLARE Process_CA EXTERNAL BOOLEAN TRUE;
+
+CREATE COMPUTE MODULE NCL_ValidateAddress_ServiceReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE bPayload BLOB;
+		DECLARE query CHARACTER '';
+		DECLARE uri CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE dbUsr CHARACTER DataSourceUserId;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Input message', 'xml', rEnv);
+		END IF;
+		
+		SET query = 'SELECT A.HOUSEHOLD_ID, A.HOUSEHOLD_ADDR_ID, A.ADDRESS_LINE1, A.ADDRESS_LINE2, A.ADDRESS_LINE3, A.ADDRESS_LINE4, A.STATE_CODE, A.ADDRESS_CITY, A.ZIP, A.COUNTRY_CODE
+    					FROM SEA.HOUSEHOLD_ADDRESS A
+    					WHERE A.HOUSEHOLD_ADDR_ID = ? 
+      						AND A.COUNTRY_CODE IS NOT NULL
+      						AND ((A.ADDRESS_LINE1 IS NOT NULL AND A.ZIP IS NOT NULL) OR (A.ADDRESS_LINE1 IS NOT NULL AND A.STATE_CODE IS NOT NULL AND A.ADDRESS_CITY IS NOT NULL))
+      						AND A.ADDRESS_TYPE NOT IN(?, ?, ?)';
+      	
+      	SET rEnv.Address[] = PASSTHRU(query VALUES(rIn.HouseholdAddrId, 'E MAIL', 'SUPPRESS', 'BAD ADDRESS'));
+      	
+      	IF EXISTS(rEnv.Address[]) THEN
+			IF CONTAINS(UPPER(rEnv.Address.ADDRESS_LINE1), 'CORPORATE') AND rEnv.Address.ZIP = '33126' THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Ignoring NCL corporate office address ...', rEnv);
+				
+				PROPAGATE TO TERMINAL 'out1';
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling rest service to validate address ...', rEnv);
+	      		
+	      		IF rEnv.Address.COUNTRY_CODE = 'US' THEN
+	      			SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address = rEnv.Address.ADDRESS_LINE1;
+	      			
+	      			IF COALESCE(rEnv.Address.ADDRESS_LINE2, '') <> '' THEN
+	      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address2 = rEnv.Address.ADDRESS_LINE2;
+	      			END IF;
+	
+	      			IF COALESCE(rEnv.Address.ADDRESS_CITY, '') <> '' THEN
+	      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.City = rEnv.Address.ADDRESS_CITY;
+	      			END IF;
+	
+	      			IF COALESCE(rEnv.Address.STATE_CODE, '') <> '' THEN
+	      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.State = rEnv.Address.STATE_CODE;
+	      			END IF;
+	
+	      			IF COALESCE(rEnv.Address.ZIP, '') <> '' THEN
+	      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.PostalCode = rEnv.Address.ZIP;
+	      			END IF;
+	
+	  				SET OutputLocalEnvironment.Destination.HTTP.QueryString.LicenseKey = ServiceKey_US;
+	  				
+	  				SET OutputLocalEnvironment.Destination.HTTP.RequestURL = BaseURL_US;
+	  				
+	  				PROPAGATE;
+	      		ELSEIF rEnv.Address.COUNTRY_CODE = 'CA' THEN
+	      			IF Process_CA THEN
+		      			SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address = rEnv.Address.ADDRESS_LINE1;
+		      			
+		      			IF COALESCE(rEnv.Address.ADDRESS_LINE2, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address2 = rEnv.Address.ADDRESS_LINE2;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.ADDRESS_CITY, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Municipality = rEnv.Address.ADDRESS_CITY;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.STATE_CODE, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Province = rEnv.Address.STATE_CODE;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.ZIP, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.PostalCode = rEnv.Address.ZIP;
+		      			END IF;
+		
+						SET OutputLocalEnvironment.Destination.HTTP.QueryString.Language = 'EN';
+		  				SET OutputLocalEnvironment.Destination.HTTP.QueryString.LicenseKey = ServiceKey_CA;
+		  				
+		  				SET OutputLocalEnvironment.Destination.HTTP.RequestURL = BaseURL_CA;
+		  				
+		  				PROPAGATE;
+	      			ELSE
+	      				-- add audit trail
+						CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Canada address validation is not enabled ...', rEnv);
+				
+						PROPAGATE TO TERMINAL 'out1';
+	      			END IF;
+	      		ELSE
+	      			IF Process_INTL THEN
+		      			SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address1 = rEnv.Address.ADDRESS_LINE1;
+		      			
+		      			IF COALESCE(rEnv.Address.ADDRESS_LINE2, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address2 = rEnv.Address.ADDRESS_LINE2;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.ADDRESS_LINE3, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address3 = rEnv.Address.ADDRESS_LINE3;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.ADDRESS_LINE4, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Address4 = rEnv.Address.ADDRESS_LINE4;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.ADDRESS_CITY, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.Locality = rEnv.Address.ADDRESS_CITY;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.STATE_CODE, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.AdministrativeArea = rEnv.Address.STATE_CODE;
+		      			END IF;
+		
+		      			IF COALESCE(rEnv.Address.ZIP, '') <> '' THEN
+		      				SET OutputLocalEnvironment.Destination.HTTP.QueryString.PostalCode = rEnv.Address.ZIP;
+		      			END IF;
+		
+						SET OutputLocalEnvironment.Destination.HTTP.QueryString.Country = rEnv.Address.COUNTRY_CODE;
+						SET OutputLocalEnvironment.Destination.HTTP.QueryString.OutputLanguage  = 'ENGLISH';
+		  				SET OutputLocalEnvironment.Destination.HTTP.QueryString.LicenseKey = ServiceKey_INTL;
+		  				
+		  				SET OutputLocalEnvironment.Destination.HTTP.RequestURL = BaseURL_INTL;
+		  				
+		  				PROPAGATE;
+	      			ELSE
+	      				-- add audit trail
+						CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'International address validation is not enabled ...', rEnv);
+				
+						PROPAGATE TO TERMINAL 'out1';
+	      			END IF;
+	  			END IF;
+			END IF;
+      	ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Household id ' || rIn.HouseholdAddrId || ' does not have valid address ...', rEnv);
+      		
+      		PROPAGATE TO TERMINAL 'out1';
+      	END IF;
+      	
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_ValidateAddress_ProcessResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE status, retVal, updateFlag CHARACTER '';
+		DECLARE bPayload BLOB;
+		DECLARE addrLine1, addrLine2, addrLine3, addrLine4, city, state, zip, country, dpv,dpvDesc, dpvNotesDesc, resolLevel, errType, errDesc CHARACTER NULL;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Service response', 'xml', rEnv);
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Received response from rest service ...', rEnv);
+		END IF;
+		
+		IF Update_HouseholdAddress THEN
+			SET updateFlag = 'Y';
+		ELSE
+			SET updateFlag = 'N';
+		END IF;
+		
+		IF rEnv.Address.COUNTRY_CODE = 'US' THEN
+			DECLARE rAddr REFERENCE TO InputRoot.XMLNSC.*:BestMatchesResponse.*:Addresses.*:Address;
+			DECLARE rError REFERENCE TO InputRoot.XMLNSC.*:BestMatchesResponse.*:Error;
+
+			IF LASTMOVE(rAddr) THEN
+				IF STARTSWITH(rAddr.*:DPVDesc, 'No') THEN
+					SET status = 'invalid';
+				ELSE
+					SET status = 'valid';
+				END IF;
+				
+				SET addrLine1 = rAddr.*:Address1;
+				SET addrLine2 = rAddr.*:Address2;
+				SET city = rAddr.*:City;
+				SET state = rAddr.*:State;
+				SET zip = rAddr.*:Zip;
+				SET country = rEnv.Address.COUNTRY_CODE;
+				SET dpv = rAddr.*:DPV;
+				SET dpvDesc = rAddr.*:DPVDesc;
+				SET dpvNotesDesc = SUBSTRING(rAddr.*:DPVNotesDesc FROM 1 FOR 400);
+				
+				/*INSERT INTO Database.NCLSEA.NCL_HOUSEHOLD_ADDR_STG(HOUSEHOLD_ADDR_ID, HOUSEHOLD_ID, ADDRESS_LINE1_TXT, ADDRESS_LINE2_TXT, CITY_CD, STATE_CD, ZIP_CD, COUNTRY_CD, DPV_DESC_TXT, 
+					DPV_NOTES_DESC_TXT, STATUS_TXT)
+					VALUES(rEnv.Address.HOUSEHOLD_ADDR_ID, rEnv.Address.HOUSEHOLD_ID, rAddr.*:Address1, rAddr.*:Address2, rAddr.*:City, rAddr.*:State, rAddr.*:Zip, rEnv.Address.COUNTRY_CODE, 
+						rAddr.*:DPVDesc, SUBSTRING(rAddr.*:DPVNotesDesc FROM 1 FOR 400), status);*/
+			END IF;
+
+			IF LASTMOVE(rError) THEN
+				SET status = 'error';
+				SET errType = rError.*:Type;
+				SET errDesc = rError.*:Desc;
+				
+				/*INSERT INTO Database.NCLSEA.NCL_HOUSEHOLD_ADDR_STG(HOUSEHOLD_ADDR_ID, HOUSEHOLD_ID, STATUS_TXT, ERR_TYPE_TXT, ERR_DESC_TXT)
+					VALUES(rEnv.Address.HOUSEHOLD_ADDR_ID, rEnv.Address.HOUSEHOLD_ID, 'error', rError.*:Type, rError.*:Desc);*/
+			END IF;
+		ELSEIF rEnv.Address.COUNTRY_CODE = 'CA' THEN
+			DECLARE rAddr REFERENCE TO InputRoot.XMLNSC.*:CanadianAddressResponseV2.*:CanadianAddressInfoV2;
+			DECLARE rError REFERENCE TO InputRoot.XMLNSC.*:CanadianAddressResponseV2.*:Error;
+
+			IF LASTMOVE(rAddr) THEN
+				SET addrLine1 = rAddr.*:Address;
+				SET addrLine2 = rAddr.*:Address2;
+				SET city = rAddr.*:Municipality;
+				SET state = rAddr.*:Province;
+				SET zip = rAddr.*:PostalCode;
+				SET country = rEnv.Address.COUNTRY_CODE;
+				SET status = 'valid';
+				
+				/*INSERT INTO Database.NCLSEA.NCL_HOUSEHOLD_ADDR_STG(HOUSEHOLD_ADDR_ID, HOUSEHOLD_ID, ADDRESS_LINE1_TXT, ADDRESS_LINE2_TXT, CITY_CD, STATE_CD, ZIP_CD, COUNTRY_CD, STATUS_TXT)
+					VALUES(rEnv.Address.HOUSEHOLD_ADDR_ID, rEnv.Address.HOUSEHOLD_ID, rAddr.*:Address, rAddr.*:Address2, rAddr.*:Municipality, rAddr.*:Province, rAddr.*:PostalCode, 
+						rEnv.Address.COUNTRY_CODE, 'valid');*/
+			END IF;
+
+			IF LASTMOVE(rError) THEN
+				SET status = 'error';
+				SET errType = rError.*:Type;
+				SET errDesc = rError.*:Desc;
+				
+				/*INSERT INTO Database.NCLSEA.NCL_HOUSEHOLD_ADDR_STG(HOUSEHOLD_ADDR_ID, HOUSEHOLD_ID, STATUS_TXT, ERR_TYPE_TXT, ERR_DESC_TXT)
+					VALUES(rEnv.Address.HOUSEHOLD_ADDR_ID, rEnv.Address.HOUSEHOLD_ID, 'error', rError.*:Type, rError.*:Desc);*/
+			END IF;
+		ELSE
+			DECLARE rAddr REFERENCE TO InputRoot.XMLNSC.*:AddressInfoResponse.*:AddressInfo;
+			DECLARE rError REFERENCE TO InputRoot.XMLNSC.*:AddressInfoResponse.*:Error;
+
+			IF LASTMOVE(rAddr) THEN
+				SET addrLine1 = rAddr.*:Address1;
+				SET addrLine2 = rAddr.*:Address2;
+				SET addrLine3 = rAddr.*:Address3;
+				SET addrLine4 = rAddr.*:Address4;
+				SET city = rAddr.*:Locality;
+				SET state = rAddr.*:AdministrativeArea;
+				SET zip = rAddr.*:PostalCode;
+				SET country = rAddr.*:CountryISO2;
+				SET resolLevel = rAddr.*:ResolutionLevel;
+				SET status = rAddr.*:Status;
+								
+				/*INSERT INTO Database.NCLSEA.NCL_HOUSEHOLD_ADDR_STG(HOUSEHOLD_ADDR_ID, HOUSEHOLD_ID, ADDRESS_LINE1_TXT, ADDRESS_LINE2_TXT, ADDRESS_LINE3_TXT, ADDRESS_LINE4_TXT, CITY_CD, 
+					STATE_CD, ZIP_CD, COUNTRY_CD, RESOLUTION_LVL_TXT, STATUS_TXT)
+					VALUES(rEnv.Address.HOUSEHOLD_ADDR_ID, rEnv.Address.HOUSEHOLD_ID, rAddr.*:Address1, rAddr.*:Address2, rAddr.*:Address3, rAddr.*:Address4, rAddr.*:Locality, 
+						rAddr.*:AdministrativeArea, rAddr.*:PostalCode, rAddr.*:CountryISO2, rAddr.*:ResolutionLevel, rAddr.*:Status);*/
+			END IF;
+
+			IF LASTMOVE(rError) THEN
+				SET status = 'error';
+				SET errType = rError.*:Type;
+				SET errDesc = rError.*:Desc;
+				
+				/*INSERT INTO Database.NCLSEA.NCL_HOUSEHOLD_ADDR_STG(HOUSEHOLD_ADDR_ID, HOUSEHOLD_ID, STATUS_TXT, ERR_TYPE_TXT, ERR_DESC_TXT)
+					VALUES(rEnv.Address.HOUSEHOLD_ADDR_ID, rEnv.Address.HOUSEHOLD_ID, 'error', rError.*:Type, rError.*:Desc);*/
+			END IF;
+		END IF;
+		
+		CALL UpdateHousholdAddress(CAST(rEnv.Address.HOUSEHOLD_ADDR_ID AS CHAR), CAST(rEnv.Address.HOUSEHOLD_ID AS CHAR), addrLine1, addrLine2, addrLine3, addrLine4, city, state, zip, country, 
+									dpv,dpvDesc, dpvNotesDesc, resolLevel, status, errType, errDesc, rEnv.Address.STATE_CODE, rEnv.Address.COUNTRY_CODE, updateFlag,retVal);
+		
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE UpdateHousholdAddress(IN hholdAddrId CHARACTER, IN hholdId CHARACTER, IN addrLine1 CHARACTER, IN addrLine2 CHARACTER, IN addrLine3 CHARACTER, IN addrLine4 CHARACTER, 
+											IN city CHARACTER, IN state CHARACTER, IN zip CHARACTER, IN country CHARACTER,IN dpv CHARACTER, IN dpvDesc CHARACTER, IN dpvNotesDesc CHARACTER, IN resolLevel CHARACTER, 
+											IN status CHARACTER, IN errType CHARACTER, IN errDesc CHARACTER, IN sw_state CHARACTER, IN sw_country CHARACTER, IN updateAddrFlag CHARACTER, OUT retVal CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_UPDT_HHOLD_ADDR_AND_STG";
+END MODULE;

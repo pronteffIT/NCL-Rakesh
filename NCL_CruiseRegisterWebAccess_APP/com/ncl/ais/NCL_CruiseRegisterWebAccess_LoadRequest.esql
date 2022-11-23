@@ -1,0 +1,116 @@
+BROKER SCHEMA com.ncl.ais
+-- Declaring the UDPs and NameSpaces
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_REGISTER_WEBACCESS_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE nsEncrypt NAMESPACE 'http://versonix.com/api/schemas';--'http://versonix.com/api/definitions';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+CREATE COMPUTE MODULE NCL_CruiseRegisterWebAccess_LoadRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRegisterWebAccessRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+	--	CALL com.ncl.iib.log.CreateMetaData('BookingChannel', COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''), 'Channel', rEnv);
+	--	CALL com.ncl.iib.log.CreateMetaData('EntityId', COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''), 'Requestor Id', rEnv);
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',	'','',rEnv);
+												
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event		
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL CruiseRegisterWebAccess Request', 'xml', rEnv); 
+		END IF;
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRegisterWebAccessRQ = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseRegisterWebAccessRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking AgencyLookup...', rEnv);
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRegisterWebAccessRS AS rOut;
+		CREATE FIELD rOut.Success;
+		CREATE FIELD rOut.Warnings;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;		
+
+
+		DECLARE IdNumber,ZipCd,PhoneNbr CHARACTER;
+		SET IdNumber = COALESCE(rIn.*:AgencyLookup.(XMLNSC.Attribute)IdentificationNumber,'');
+		SET ZipCd = COALESCE(rIn.*:AgencyLookup.*:Address.*:PostalCode || '%','');
+		SET PhoneNbr = COALESCE(rIn.*:AgencyLookup.*:Telephone.(XMLNSC.Attribute)PhoneNumber, '');
+		BEGIN
+			DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN
+				IF rEnv.CrAgntComplete = 'N' THEN
+					-- Error for CreateAgent StoredProc
+					SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRegisterWebAccessRS AS rOut;
+					CREATE FIELD rOut.Success;
+					CREATE FIELD rOut.Warnings;
+					CALL MapWarnings(rOut,'9926','Create Agent fail');
+				ELSE
+						-- Error for RegisterAgencyLookup Call
+						CALL MapWarnings(rOut,'9924','Agency lookup failed');
+				END IF;
+				RETURN TRUE;
+			END;
+	
+			CALL RegisterAgencyLookUp (IdNumber,ZipCd,PhoneNbr,'REGISTER_AGENCY',rEnv.AgencyId,rEnv.AgentCount);
+
+			IF rEnv.AgencyId >0 AND rEnv.AgentCount = 0 THEN
+				-- SUccess Case
+				SET OutputRoot = NULL;
+				CREATE FIELD OutputRoot.XMLNSC.nsEncrypt:processEncryptDecryptRequest.nsEncrypt:Encrypt_Decrypt AS rOut;
+				SET rOut.nsEncrypt:Action = 'ENCRYPT';
+				SET rEnv.DecryptString = RIGHT(UUIDASCHAR, 9);
+				SET rOut.nsEncrypt:DecryptString = rEnv.DecryptString;
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;	
+				
+			ELSEIF rEnv.AgencyId = 0 THEN
+				CALL MapWarnings(rOut,'9921','No Agency Found');
+				
+			ELSEIF rEnv.AgentCount > 0 THEN
+				
+				CALL MapWarnings(rOut,'9922','Agent exists');
+			END IF;
+							
+		END;
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE RegisterAgencyLookUp(IN IdNumber CHARACTER, IN ZIPCd CHARACTER, IN PhoneNbr CHARACTER, IN CallingProc CHARACTER, OUT AgencyId INTEGER,OUT WebAccessAgentCount INTEGER)
+	LANGUAGE DATABASE
+
+	EXTERNAL NAME "NCLSEA.NCL_WESB_REGISTER_AGCY_LOOKUP" ;
+END MODULE;
+
+CREATE PROCEDURE MapWarnings ( INOUT refOut REFERENCE,IN ErrorCode CHARACTER,IN ErrorMsg CHARACTER )
+BEGIN
+
+	SET refOut.Warnings.Warning.(XMLNSC.Attribute)Code = ErrorCode;
+	SET refOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = ErrorMsg;
+	IF ErrorCode = '9921' OR ErrorCode = '9922' THEN
+		SET refOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+
+END;

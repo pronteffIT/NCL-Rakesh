@@ -1,0 +1,65 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE GetContactDetails_SaveContactInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS;
+		DECLARE rDbSearch REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		
+		DECLARE cExternalCodeInfo CHARACTER '';
+		DECLARE cChannel CHARACTER COALESCE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		DECLARE cErrorCode CHARACTER '25074';
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search response message', 'xml', rEnv);
+		END IF;
+		
+		IF COALESCE(rDbSearch.PreferredContacts.Contact.IsFax, '') = 'Y' OR COALESCE(rDbSearch.PreferredContacts.Contact.IsEMail, '') = 'Y' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB Search returned the contact details ...', rEnv);
+
+			IF COALESCE(rDbSearch.PreferredContacts.Contact.IsFax, '') = 'Y' THEN
+				SET rEnv.Temp.Contact.Fax = rDbSearch.PreferredContacts.Contact.ContactAddress;
+			ELSE
+				SET rEnv.Temp.Contact.Email = rDbSearch.PreferredContacts.Contact.ContactAddress;
+			END IF;
+			
+			RETURN TRUE;
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB Search did not return the contact details ...', rEnv);
+			
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || ExternalCodeType, cErrorCode, XC10CacheMap, XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+				
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS AS rOut;
+				
+				CALL CreateResponseFromAdvisoryCode('', cChannel, cErrorCode, ExternalCodeType, rOrgMsg, rOut);
+			ELSE
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRequestDocumentReportsRS AS rOut;
+
+				CALL CreateResponseFromAdvisoryCode(cExternalCodeInfo, cChannel, cErrorCode, ExternalCodeType, rOrgMsg, rOut);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;

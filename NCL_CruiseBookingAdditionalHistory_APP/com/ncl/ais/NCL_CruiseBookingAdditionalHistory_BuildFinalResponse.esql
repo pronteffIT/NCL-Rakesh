@@ -1,0 +1,133 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseBookingAdditionalHistory_BuildFinalResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	DECLARE rEnv REFERENCE TO Environment.Variables;
+	DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseBookingAdditionalHistoryRQ;
+	DECLARE rBkgAddReq REFERENCE TO InputRoot.XMLNSC.CustomDbSearch_OUT; 
+	DECLARE rOut,rResHistCon,rResCom,rResp,rOutResp,rDBSearchReq,rResHist,rTranx REFERENCE TO OutputRoot;
+	
+	DECLARE AmountBaseCurrency INTEGER 1;
+	DECLARE AmountOrigCurrency INTEGER 1;
+	
+	DECLARE tDate TIMESTAMP; 
+    DECLARE cDate TIMESTAMP;
+    DECLARE mDate TIMESTAMP;
+    DECLARE InputPattern CHARACTER 'M/d/yyyy'' ''h:mm:ss'' ''a';
+    DECLARE InputPattern1 CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS';
+	DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+	
+	CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC'; 
+ 	CREATE LASTCHILD OF OutputRoot.XMLNSC AS rDBSearchReq IDENTITY CustomDbSearch_IN;							
+
+	SET rDBSearchReq.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+	SET rDBSearchReq.MsgHeader.CallerInfo.UserInfo.Internal.Username = rEnv.Temp.Channel;
+	SET rDBSearchReq.MsgHeader.CallerInfo.UserInfo.Internal.Password = rEnv.Temp.Channel;
+	SET rDBSearchReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+	SET rDBSearchReq.MsgHeader.MessageID = rEnv.Temp.Headers.MQMD.MsgId;
+	SET rDBSearchReq.MsgHeader.Language = 'ENG';
+	
+	SET rDBSearchReq.Options.MaxRows = '600';
+	SET rDBSearchReq.Options.FilterBySets = 'Y';
+	SET rDBSearchReq.Options.CountOnly = 'N';
+	SET rDBSearchReq.Options.ActiveOnly = 'Y';
+	SET rDBSearchReq.Options.IncludeDisplayRanks = 'N';
+	SET rDBSearchReq.Options.MaxDuration = '180';
+	
+	SET rDBSearchReq.ResHistoryConfirmations.ResID = rEnv.Temp.ReservationId;
+	SET rDBSearchReq.ResComments.ResID = rEnv.Temp.ReservationId;
+	SET rDBSearchReq.ResHistoryTransactions.ResID = rEnv.Temp.ReservationId;
+ 
+	PROPAGATE TO LABEL 'InvokeDBSearch';
+	
+	DECLARE envDbSearch REFERENCE TO Environment.Variables.Temp.Message.DBSearchResponse;
+	
+	CREATE LASTCHILD OF rEnv.Temp.Message AS rOutResp DOMAIN('XMLNSC') IDENTITY ns:NCL_CruiseBookingAdditionalHistoryRS; 
+	CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg,rOutResp);
+	CREATE FIELD rOutResp.Success;
+
+--	SET rOutResp.ResHistoryConfirmations = envDbSearch.ResHistoryConfirmations;
+	
+	CREATE LASTCHILD OF rOutResp AS rResHistCon IDENTITY ResHistoryConfirmations;
+	FOR eachTranx AS envDbSearch.ResHistoryConfirmations.Confirmation[] DO
+		CREATE LASTCHILD OF rResHistCon AS rTranx IDENTITY Confirmation; 
+		
+		SET rTranx.ConfirmationID = eachTranx.ConfirmationID;
+		
+--		******TimeFormat**********  
+		SET cDate = CAST(eachTranx.Date AS TIMESTAMP FORMAT InputPattern);
+		SET rTranx.Date = CAST(cDate AS CHARACTER FORMAT FormatZ);
+		
+		SET rTranx.Operator = eachTranx.Operator;
+		SET rTranx.OperatorName = eachTranx.OperatorName;
+		
+	    SET rTranx.Comments = eachTranx.Comments; 
+	    SET rTranx.ConfirmationStatus = eachTranx.ConfirmationStatus;
+	    SET rTranx.DocCode = eachTranx.DocCode;
+	    SET rTranx.EMail = eachTranx.EMail;
+	    SET rTranx.Subject = eachTranx.Subject; 
+	    SET rTranx.Message = eachTranx.Message;
+	   
+	    SET cDate = NULL;
+		
+	END FOR;
+	
+--	SET rOutResp.ResComments = envDbSearch.ResComments;
+	CREATE LASTCHILD OF rOutResp AS rResCom IDENTITY ResComments;
+		FOR eachTranx AS envDbSearch.ResComments.Comment[] DO
+			CREATE LASTCHILD OF rResCom AS rTranx IDENTITY Comment; 
+			
+			SET rTranx.ResID = eachTranx.ResID;
+			
+	--		******TimeFormat**********  
+			SET mDate = CAST(eachTranx.Timestamp AS TIMESTAMP FORMAT InputPattern1);
+			SET rTranx.Timestamp = CAST(mDate AS CHARACTER FORMAT FormatZ);
+			
+			SET rTranx.Operator = eachTranx.Operator;
+			SET rTranx.OperatorName = eachTranx.OperatorName;
+			SET rTranx.Subject = eachTranx.Subject; 
+		    SET rTranx.Comments = eachTranx.Comments;
+		   
+		    SET mDate = NULL;
+			
+		END FOR;
+
+--	SET rOutResp.ResHistoryTransactions = envDbSearch.ResHistoryTransactions;
+	
+	CREATE LASTCHILD OF rOutResp AS rResHist IDENTITY ResHistoryTransactions;
+	FOR eachTranx AS envDbSearch.ResHistoryTransactions.Transaction[] DO
+		CREATE LASTCHILD OF rResHist AS rTranx IDENTITY Transaction; 
+		SET rTranx.AccTransId = eachTranx.AccTransId;
+		SET rTranx.Operator = eachTranx.Operator;
+		SET rTranx.OperatorName = eachTranx.OperatorName;
+		
+--		******TimeFormat**********  
+		SET tDate = CAST(eachTranx.Date AS TIMESTAMP FORMAT InputPattern);
+		SET rTranx.Date = CAST(tDate AS CHARACTER FORMAT FormatZ);
+		
+	   SET rTranx.AmountBaseCurrency.(XMLNSC.Attribute)DecimalPlaces = '2';
+	   SET rTranx.AmountBaseCurrency.(XMLNSC.Attribute)Amount= ROUND(CAST(eachTranx.AmountBaseCurrency AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP);
+	   SET rTranx.AmountOrigCurrency.(XMLNSC.Attribute)DecimalPlaces = '2'; 
+	   SET rTranx.AmountOrigCurrency.(XMLNSC.Attribute)Amount= ROUND(CAST(eachTranx.AmountOrigCurrency AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP);
+	   SET rTranx.Currency = eachTranx.Currency; 
+	   SET rTranx.DestinationType = eachTranx.DestinationType;
+	   SET rTranx.DestinationID = eachTranx.DestinationID;
+	   SET rTranx.FormOfTrans = eachTranx.FormOfTrans;
+	   SET rTranx.SourceType = eachTranx.SourceType; 
+	   SET rTranx.SourceID = eachTranx.SourceID;
+	   SET rTranx.TransStatus = eachTranx.TransStatus;
+	   SET rTranx.TransStatusClass = eachTranx.TransStatusClass;
+	   SET rTranx.TransType = eachTranx.TransType;
+	   
+	   SET tDate = NULL;
+		
+	END FOR;
+	
+	CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY ns:NCL_CruiseBookingAdditionalHistoryRS; 
+  			SET rResp = rOutResp;
+	
+	END;
+
+	
+END MODULE;

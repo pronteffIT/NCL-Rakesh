@@ -1,0 +1,29 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+
+
+CREATE COMPUTE MODULE ValidateResGuest_HandeException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLY_Q;			
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+				
+		DECLARE rOut REFERENCE TO OutputRoot;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC'; 
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseEurofinsValidateGuestRS;
+		SET rOut.ns:Status = 500;
+		SET rOut.ns:Message = cErrorText;
+		RETURN TRUE;
+	END;
+	
+END MODULE;

@@ -1,0 +1,21 @@
+BROKER SCHEMA com.ncl.cvs
+
+
+CREATE COMPUTE MODULE Import_Cvs_Manifest_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rInpExp REFERENCE TO InputExceptionList;
+		DECLARE rNewRelic,rEmail REFERENCE TO OutputRoot;	
+		DECLARE cErrorText CHARACTER COALESCE(GET_EXCEPTION_MSG(rInpExp,rEnv), 'Internal IIB Error, please check the logs');
+		SET rEnv.STATUS=cErrorText;
+		--SEND NR EVENT
+		IF LOG_TO_NEWRELIC 
+		THEN
+			CALL BUILD_NR_ERROR('CVS_MANIFEST_ACK', NULL , NULL,cErrorText ,'ERROR', rNewRelic );
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		CALL BUILD_EMAIL('CVS Manifest Import  :Internal Error',	cErrorText, rEmail);	
+		RETURN TRUE;
+	END;
+END MODULE;

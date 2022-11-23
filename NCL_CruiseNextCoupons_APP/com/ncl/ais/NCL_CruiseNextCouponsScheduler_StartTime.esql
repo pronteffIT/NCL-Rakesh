@@ -1,0 +1,71 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseNextCouponsScheduler_StartTime
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rEmailReq REFERENCE TO OutputRoot;
+
+		DECLARE SQLQry,pCouponType CHARACTER;
+		DECLARE EndTime INTEGER 0;
+		DECLARE StartTime INTEGER 0;
+
+		SET EndTime = CAST(CAST( CURRENT_TIME AS CHARACTER FORMAT 'ss')AS Integer);
+		SET rEnv.EndTime = EndTime;
+		SET StartTime = rEnv.StartTime;
+		SET pCouponType = rEnv.CouponType;
+		DECLARE Timetaken INTEGER;
+
+		SET Timetaken = (EndTime - StartTime);
+		
+		/*
+		SET rEnv.CouponsDetails = ASBITSTREAM(InputRoot.DFDL.Coupons CCSID 1208 ENCODING 546);
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail; 
+		
+			SET OutputRoot.EmailOutputHeader.From = 'do-not-reply@ncl.com';
+			SET OutputRoot.EmailOutputHeader.To = rEnv.Temp.CurntWebLogDetails.Email;
+			SET OutputRoot.EmailOutputHeader.Subject ='CruiseNext Report';
+			SET OutputLocalEnvironment.Destination.Email.BodyContentType = 'text/html;charset=utf-8';
+			SET OutputLocalEnvironment.Destination.Email.Attachment.Content= CAST(rEnv.CouponsDetails AS BLOB CCSID 1208);
+			SET OutputLocalEnvironment.Destination.Email.Attachment.ContentType = 'application/octet-stream';
+			SET OutputLocalEnvironment.Destination.Email.Attachment.ContentName= 'CruiseNext.csv';
+			SET OutputLocalEnvironment.Destination.Email.Attachment.ContentEncoding = 'base64';
+			SET OutputRoot.BLOB.BLOB = CAST('Thank you for requesting a CruiseNext report. Please find attached spreadsheet with all outstanding CruiseNext certificates for  Agent ID: ' || UPPER(rEnv.Temp.CurntWebLogDetails.WebLogInTxt) AS BLOB CCSID 1208);
+		*/
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmailReq;
+		SET rEmailReq.EmailAddress.FromAddress = 'do-not-reply@ncl.com';
+		SET rEmailReq.EmailAddress.ToAddress = rEnv.Temp.CurntWebLogDetails.Email;
+		IF pCouponType = 'FCCOUPONS'
+			THEN SET rEmailReq.EmailSubject = 'FCC Report';
+			ELSE SET rEmailReq.EmailSubject = 'CruiseNext Report';
+		END IF;		
+		
+		SET rEmailReq.EmailContentType = 'text/html;charset=utf-8';
+		SET rEmailReq.Attachment.AttachmentContent = CAST(ASBITSTREAM(InputRoot.DFDL.Coupons) AS CHARACTER CCSID 1208 ENCODING 546);
+		SET rEmailReq.Attachment.AttachmentType = 'application/octet-stream';
+		IF pCouponType = 'FCCOUPONS'
+			THEN 
+				SET rEmailReq.Attachment.AttachmentName = 'FCCCoupons.csv';
+				SET rEmailReq.EmailContent = 'Thank you for requesting a Future Cruise Credit report. Please find attached spreadsheet with all outstanding Future Cruise Credits for  Agent ID: '|| UPPER(rEnv.Temp.CurntWebLogDetails.WebLogInTxt);
+			ELSE 
+				SET rEmailReq.Attachment.AttachmentName = 'CruiseNext.csv';
+				SET rEmailReq.EmailContent = 'Thank you for requesting a CruiseNext report. Please find attached spreadsheet with all outstanding CruiseNext certificates for  Agent ID: '|| UPPER(rEnv.Temp.CurntWebLogDetails.WebLogInTxt);
+		END IF;
+		SET rEmailReq.Attachment.AttachmentEncoding = 'base64';
+		
+		
+
+		SET SQLQry = 'UPDATE NCLSEA.NCL_CRUISE_NEXT_COUPONS_TBL P SET IS_COMPLETE_TXT =?, COMPLETION_TS=?,TOTAL_COUPONS_NBR=?,TIME_TAKEN_NBR=? WHERE P.AGENT_WEB_LOGIN_TXT=? AND P.CREATE_TS=? AND P.COUPON_TYPE=?;';
+		PASSTHRU( SQLQry, 'Y',CURRENT_TIMESTAMP, rEnv.Temp.CurntWebLogDetails.CoupnCnt,Timetaken, UPPER(rEnv.Temp.CurntWebLogDetails.WebLogInTxt), rEnv.Temp.CurntWebLogDetails.CreationTime, pCouponType);
+		PASSTHRU('COMMIT');
+		SET rEnv.Temp.CurntWebLogDetails = NULL;
+		SET rEnv.StartTime = NULL;
+		RETURN TRUE;
+
+
+	END;
+END MODULE;

@@ -1,0 +1,81 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_LoadExternalCodesToCache_ReadDatabase
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.CacheMetadata;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE cQuery CHARACTER '';
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		IF EXISTS(rIn.LoadSubCodes[]) THEN
+			SET rEnv.Temp.CacheKey = rIn.Channel || '#' || rIn.ErrorCodeType || '#SUB';
+			
+			SET cQuery = 'SELECT EXTERNAL_XREF_SUBDETAIL.EXTERNAL_CODE, EXTERNAL_XREF_SUBDETAIL.SW_CODE, EXTERNAL_XREF_SUBDETAIL.DESCRIPTION, ' ||
+								'EXTERNAL_XREF_SUBDETAIL.LONG_DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, DETAILS.EXTERNAL_XREF_ID ' ||
+							'FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' ||
+							'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+							'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+							'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID ' ||
+							'JOIN EXTERNAL_XREF_SUBDETAIL ON DETAILS.EXTERNAL_XREF_DETAIL_ID = EXTERNAL_XREF_SUBDETAIL.EXTERNAL_XREF_DETAIL_ID ' ||
+							'WHERE TEMP_JOIN.EXTERNAL_TABLE = ?';
+		ELSE
+			SET rEnv.Temp.CacheKey = rIn.Channel || '#' || rIn.ErrorCodeType;
+			
+			SET cQuery = 'SELECT DETAILS.EXTERNAL_CODE, DETAILS.SW_CODE, DETAILS.DESCRIPTION, DETAILS.LONG_DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, DETAILS.EXTERNAL_XREF_ID ' ||
+							'FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' || 
+							'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+							'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+							'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE = ?';
+		END IF;
+
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rEnv.Temp.CacheKey, '', '', '', '', rEnv);
+				
+		SET rEnv.Temp.DB.AdvisoryCode[] = PASSTHRU(cQuery VALUES(rIn.Channel, rIn.ErrorCodeType));
+		
+		IF EXISTS(rEnv.Temp.DB.AdvisoryCode[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieved external codes from database, proceeding with loading cache ...', rEnv);
+			
+			PROPAGATE;
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'No records found for the key combination: ' || rEnv.Temp.CacheKey || ' ...', rEnv);
+		END IF;
+
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;		
+		PROPAGATE TO TERMINAL 'out1';
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_LoadExternalCodesToCache_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

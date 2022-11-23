@@ -1,0 +1,43 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE OfferBooking_SearchRQ
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rCustomDbSearchReq REFERENCE TO Environment.Variables;
+		
+		DECLARE rOrgMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE FIELD OutputRoot.XMLNSC.CustomDbSearch_IN AS rCustomDbSearchReq;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rCustomDbSearchReq);
+		SET rCustomDbSearchReq.MsgHeader.SessionGUID = rEnv.sessionID; 
+		SET rCustomDbSearchReq.ResRequests.ResStatus ='RQ';
+		SET rCustomDbSearchReq.ResRequests.CollectionID = rEnv.Temp.collectionID;
+		SET rCustomDbSearchReq.ResRequests.ResLockInfo = 'UNLOCKED';		
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		RETURN TRUE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE OfferBooking_SaveRQ
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rResIdNode REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rSailInfo REFERENCE TO rOrgMsg.*:SailingInfo;
+		DECLARE category CHARACTER;
+		SET category = FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode);
+		IF LENGTH(category)=0 THEN
+			SET category = FIELDVALUE(rSailInfo.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode);
+		END IF;
+		SET rResIdNode=THE( SELECT A.ResID FROM InputRoot.XMLNSC.CustomDbSearch_OUT.ResRequests.ResRequest[] as A WHERE A.CabinCategory=category);
+		IF LENGTH(rResIdNode.ResID)>0 THEN
+			SET rEnv.Temp.collectionResId = CAST(rResIdNode.ResID AS INTEGER);
+			SET rEnv.TempCollection.collectionResId = rEnv.Temp.collectionResId;
+		END IF;
+		RETURN TRUE;
+	END;
+	
+END MODULE;

@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" attributeFormDefault="unqualified" elementFormDefault="qualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:include schemaLocation="GroupShell.xsd"/>
+	<xs:simpleType name="InvoiceType">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="INVOICE REGULAR"/>
+			<xs:enumeration value="INVOICE CARGO AD"/>
+			<xs:enumeration value="CONFIRMATION"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:group name="InvoiceEntity">
+		<xs:annotation>
+			<xs:documentation>Accounting Entity that is used in Agency Invoice</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="ResID" type="RecordID"/>
+			<xs:element name="GroupID" type="RecordID"/>
+			<xs:element name="GL">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="Item" type="GLItem"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:group>
+	<xs:group name="InvoiceEntityShell">
+		<xs:annotation>
+			<xs:documentation>Accounting Entity that is used in Agency Invoice</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="ResShell" type="ResShell"/>
+			<!-- 
+			<xs:element name="CargoShell" type="CargoShell">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			 -->
+			<xs:element name="GroupShell" type="GroupShell"/>
+			<xs:element name="GLShell">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="Item" type="GLItem"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:group>
+	<xs:complexType name="AgencyInvoice">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element minOccurs="0" name="InvoiceHeader">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="0" name="RefNumber" type="RefNumber"/>
+						<xs:element name="InvoiceID" type="RecordID"/>
+						<xs:element name="InvoiceType" type="InvoiceType"/>
+						<xs:element name="DateTime" type="xs:dateTime">
+							<xs:annotation>
+								<xs:documentation>Date/time of invoice creation</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="InvoicingDate" type="xs:date"/>
+						<xs:choice minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Invoice is based on AR/AP transactions for the certain Agency/Client</xs:documentation>
+							</xs:annotation>
+							<xs:element name="AgencyBankID" type="RecordID"/>
+							<xs:element name="ClientBankID" type="RecordID"/>
+						</xs:choice>
+						<xs:choice minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Individual entity AR/AP invoice or entity confirmation (if no AR/AP Bank is defined)</xs:documentation>
+							</xs:annotation>
+							<xs:element name="ResID" type="RecordID"/>
+							<xs:element name="GroupID" type="RecordID"/>
+						</xs:choice>
+						<xs:element name="Amount" type="Money"/>
+						<xs:element minOccurs="0" name="InvNum" type="xs:integer"/>
+						<xs:element name="SeqNum" type="xs:positiveInteger"/>
+						<xs:element name="Currency" type="CurrencyCode"/>
+						<xs:element minOccurs="0" name="Comments" type="ShortComment"/>
+						<xs:element minOccurs="0" name="DueDate" type="xs:date"/>
+						<xs:element name="Sent" type="Boolean"/>
+						<xs:element minOccurs="0" name="TempFileID" type="RecordID">
+							<xs:annotation>
+								<xs:documentation>ID of stored primary document for the invoice</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element minOccurs="0" name="TotalPaid" type="Money"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="Entities">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="Entity">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:choice>
+										<xs:group ref="InvoiceEntity"/>
+										<xs:group ref="InvoiceEntityShell"/>
+									</xs:choice>
+									<xs:choice>
+										<xs:element name="Debit" type="Money"/>
+										<xs:element name="Credit" type="Money"/>
+									</xs:choice>
+									<xs:element minOccurs="0" name="PrevInvoice" type="RefNumber"/>
+									<xs:element minOccurs="0" name="CalcParams">
+										<xs:annotation>
+											<xs:documentation>Invoice calc.parameters that are associated with the transactions. It happens if transaction is a part of FPR or terms payment.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element maxOccurs="unbounded" minOccurs="0" name="CalcParam">
+													<xs:complexType>
+														<xs:all>
+															<xs:element name="Name" type="LongCode"/>
+                              <xs:element name="Value" type="xs:double"/>
+														</xs:all>
+													</xs:complexType>
+												</xs:element>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+									<xs:element minOccurs="0" name="ResHistoryItem" type="ResHistItem"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="Transactions">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="Transaction" type="AccTransaction"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="Payments">
+				<xs:annotation>
+					<xs:documentation>Payments and refunds</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="Transaction" type="AccTransaction"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="ExtDelivery">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="unbounded" minOccurs="0" name="DeliveryItem">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Timestamp" type="xs:dateTime"/>
+									<xs:element name="Status" type="LongCode"/>
+									<xs:element minOccurs="0" name="Comments" type="ShortComment"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+</xs:schema>

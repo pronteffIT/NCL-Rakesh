@@ -1,0 +1,31 @@
+
+
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseCategoryDesc_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseCategoryDescRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCategoryDescRS;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking  api', rEnv);
+			-- CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			END IF;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCategoryDescRS AS rOut;
+		    CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		END IF;
+	END;
+END MODULE;

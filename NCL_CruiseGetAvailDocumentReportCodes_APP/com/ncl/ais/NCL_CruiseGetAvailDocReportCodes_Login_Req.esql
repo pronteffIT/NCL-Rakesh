@@ -1,0 +1,257 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_DOC_CODES_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetAvailDocReportCodes
+* MODULE NAME : Req_Docs
+* Description : This module requests for reports
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetAvailDocReportCodes_Req_Docs
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, uuid);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetAvailDocumentReportCodesRQ;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseGetAvailDocumentReportCodesRQ;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, 'X ''', '') FROM 2);
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+        CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '','','',rEnv);
+		
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GetAvailDocumentsReportCodes request message', 'xml', rEnv);
+		END IF;
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+				SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+		DECLARE rOutIn REFERENCE TO OutputRoot.XMLNSC.*:CustomDbSearch_IN;
+		CREATE FIELD OutputRoot.XMLNSC.*:CustomDbSearch_IN AS rOutIn;
+
+		SET rEnv.requester = rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rEnv.requsterValidation = PASSTHRU('select to_char( count(1)) from (select  AGY.AGENCY_ID xx from agency agy where AGY.AGENCY_ID = (?)
+		                                        and AGY.IS_ACTIVE = (?) union select AGT.AGENT_ID xx from agent agt, agency_contact act where AGT.AGENT_ID = (?)
+		                                        and AGT.AGENT_ID = act.agent_id and sysdate >= ACT.DATE_FROM and sysdate < ACT.DATE_TO
+		                                        union select CL.CLIENT_ID xx from client cl
+		                                        where CL.CLIENT_ID = (?) and CL.IS_ACTIVE = (?))',rEnv.XMLNSC.*:RequestorID.(XMLNSC.Attribute)ID, 'Y',rEnv.XMLNSC.*:RequestorID.(XMLNSC.Attribute)ID,rEnv.XMLNSC.*:RequestorID.(XMLNSC.Attribute)ID,'Y');
+		                                        
+        SET rOutIn.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion(); 
+		SET rOutIn.MsgHeader.CallerInfo.UserInfo.Internal.Username = rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;						
+		SET rOutIn.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rOutIn.MsgHeader.Language = 'ENG';
+		SET rOutIn.Options.ActiveOnly = 'Y';
+		SET rOutIn.DocReports.EntityType = rEnv.XMLNSC.*:EntityType;
+		SET rOutIn.DocReports.Recipient = rEnv.XMLNSC.*:RecipientType;
+		PROPAGATE TO TERMINAL 'out';
+            
+		RETURN FALSE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetAvailDocReportCodes
+* MODULE NAME : Response
+* Description : This module generates response
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetAvailDocReportCodes_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CREATE FIELD Environment.Variables ;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		DECLARE rInRes REFERENCE TO InputRoot.XMLNSC.*:CustomDbSearch_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseGetAvailDocumentReportCodesRS;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+	    SET OutputRoot.MQRFH2.usr.Endpoint  = COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+	     
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetAvailDocumentReportCodesRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		-- checking count
+		DECLARE count INTEGER;
+		SET count = CARDINALITY(rInRes.DocReports.DocReport[]);
+		IF (count > 0) THEN
+
+			SET rOut.Success = '';
+			-- Checking Recipient Type
+			IF (rInRes.*:DocReports.*:DocReport.*:Recipient = 'GUEST') THEN
+				SET rOut.Reports.Guest = '';
+				DECLARE Guest,Report REFERENCE TO rOut.Reports.Guest;
+				FOR DocReport AS rInRes.DocReports.DocReport[] DO
+					CREATE LASTCHILD OF Guest AS Report NAME 'Report';
+					SET Report.Code = DocReport.Code;
+					SET Report.Name = DocReport.Name;
+					SET Report.EntityType = DocReport.EntityType;
+					SET Report.Language = DocReport.Language;
+				END FOR;
+				SET rOut.Reports.Agent = '';
+				SET rOut.Reports.Agency = '';
+			ELSEIF (rInRes.*:DocReports.*:DocReport.*:Recipient = 'AGENT') THEN
+				SET rOut.Reports.Guest = '';
+				SET rOut.Reports.Agent = '';
+				DECLARE Agent,Report REFERENCE TO rOut.Reports.Agent;
+				FOR DocReport AS rInRes.DocReports.DocReport[] DO
+					CREATE LASTCHILD OF Agent AS Report NAME 'Report';
+					SET Report.Code = DocReport.Code;
+					SET Report.Name = DocReport.Name;
+					SET Report.EntityType = DocReport.EntityType;
+					SET Report.Language = DocReport.Language;
+				END FOR;
+				SET rOut.Reports.Agency = '';
+			ELSEIF (rInRes.*:DocReports.*:DocReport.*:Recipient = 'AGENCY') THEN
+				SET rOut.Reports.Guest = '';
+				SET rOut.Reports.Agent = '';
+				SET rOut.Reports.Agency = '';
+				DECLARE Agency,Report REFERENCE TO rOut.Reports.Agency;
+				FOR DocReport AS rInRes.DocReports.DocReport[] DO
+					CREATE LASTCHILD OF Agency AS Report NAME 'Report';
+					SET Report.Code = DocReport.Code;
+					SET Report.Name = DocReport.Name;
+					SET Report.EntityType = DocReport.EntityType;
+					SET Report.Language = DocReport.Language;
+				END FOR;
+			END IF;
+		ELSE
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'No data returned.  Change request';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+		END IF;
+		-- add response msg to log event
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad)THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GetAvailDocumentsReportCodes response message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		--PROPAGATE TO TERMINAL 'out';
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetAvailDocReportCodes
+* MODULE NAME : exception
+* Description : This module handles Exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetAvailDocReportCodes_exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GetAvailDocumentsReportCodes Invalid request message', 'xml', rEnv);
+		END IF ;
+		END IF;
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetAvailDocReportCodes
+* MODULE NAME : Fault
+* Description : This module handles any failed invocation
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailDocReportCodes_Fault
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseGetAvailDocumentReportCodesRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			--SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetAvailDocumentReportCodesRS AS runTimeErr;
+       -- SET runTimeErr.Errors.Error = cErrorText;
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+	    SET runTimeErr.Errors.Error.(XMLNSC.Attribute)ShortText = RIGHT(cErrorText,64);
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+
+END MODULE;

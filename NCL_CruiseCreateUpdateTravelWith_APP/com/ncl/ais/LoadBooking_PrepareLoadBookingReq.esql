@@ -1,0 +1,74 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE LoadBooking_PrepareLoadBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.*:NCL_CruiseCreateUpdateTravelWithRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOut, refTwDetails, refTwDetail, rResID, rLoadBkngReq REFERENCE TO OutputRoot;
+		
+		IF EXISTS(rIn.agencyNotFound[]) OR EXISTS(rIn.loginError[]) THEN 				
+				CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpateTravelWithRS AS rOut;				
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);				
+				IF EXISTS(rIn.agencyNotFound[]) THEN
+					SET rOut.*:Warnings.*:Warning = rIn.agencyNotFound;
+				ELSE
+					SET rOut.*:Warnings.*:Warning = rIn.loginError;
+				END IF;
+				PROPAGATE TO LABEL 'ROUTETOCALLER';	
+				RETURN FALSE;
+				
+			ELSEIF EXISTS(rIn.runtimeError[]) THEN
+				CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpateTravelWithRS AS rOut;		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+				SET rOut.*:Errors.*:Error = rIn.runtimeError;
+				PROPAGATE TO LABEL 'ROUTETOCALLER';					
+				RETURN FALSE;
+				
+			ELSEIF NOT EXISTS(rOrgMsg.*:TravelWithInfo.*:TWDetail.*:Bookings.*:TWResInfo[]) THEN
+				CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpdateTravelWithRS AS rOut;		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+				SET rOut.*:Errors.*:Error = 'ReservationId in TravelWith information is Missing';
+				PROPAGATE TO LABEL 'ROUTETOCALLER';				
+				RETURN FALSE;
+		END IF;
+		
+		SET rEnv.endPoint = rIn.endpoint;
+		SET rEnv.SessionGUID = rIn.sessionGUID;
+		
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		
+ 		DECLARE rTWDetail REFERENCE TO rOrgMsg.*:TravelWithInfo.*:TWDetail;
+					
+		SET rEnv.Temp.PrimaryResID = THE(SELECT ITEM FIELDVALUE(A.*:ResID) FROM rOrgMsg.*:TravelWithInfo.*:TWDetail.*:Bookings.*:TWResInfo[]
+												 AS A WHERE A.(XMLNSC.Attribute)IsPrimary = 'true'); 
+				
+		
+		CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rLoadBkngReq;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rLoadBkngReq);													
+		SET rLoadBkngReq.ResID  = rEnv.Temp.PrimaryResID;					
+			
+		RETURN TRUE;
+
+END;				
+ 	
+	
+
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

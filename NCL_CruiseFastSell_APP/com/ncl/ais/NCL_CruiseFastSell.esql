@@ -1,0 +1,521 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_FAST_SELL_RESP';
+DECLARE AdvCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE StatusCodeType EXTERNAL CHARACTER 'STS';
+DECLARE ModeOfTransCodeType EXTERNAL CHARACTER 'TRP';
+DECLARE FareCodeDescCodeType EXTERNAL CHARACTER 'Promos';
+DECLARE RegionCodeType EXTERNAL CHARACTER 'GeoAreaSuper';
+DECLARE DefaultChannelPromos EXTERNAL CHARACTER 'SABRE';
+DECLARE DefaultChannel EXTERNAL CHARACTER 'SABREXML';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE LogPayload EXTERNAL BOOLEAN; 
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_BuildAmadeusReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rFastSell, rModeOfTrans, rGuestInfo, rCabinInfo, rOutMsg REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseFastSellRQ;
+		DECLARE rInSource REFERENCE TO rIn.*:POS.*:Source;
+		DECLARE cCurDateTime CHARACTER CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmmss');
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		SET rEnv.Temp.Channel = FIELDVALUE(rInSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+			/* SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			--CREATE FIELD OutputRoot.XMLNSC;
+			--SET OutputRoot.XMLNSC.ns:LoginRequest.ns:source = rOrgMsg.*:POS.*:Source;
+			SET OutputRoot.XMLNSC.ns:LoginRequest.ns:source.ns:BookingChannel.ns:CompanyName.Code = FIELDVALUE(rInSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+			
+			RETURN TRUE; */
+		
+		
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.InputMessage = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.InputMessage.(XMLNSC.NamespaceDecl)xmlns = NULL;
+		
+		-- for keeping track of which code table is requested to be loaded to cache
+		SET rEnv.Temp.CacheLoadRequested = '#';
+				
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rEnv.Temp.Channel, ''),
+												'',
+												'',
+												'',
+											 	rEnv);
+
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL_CruiseFastSell request message', 'xml', rEnv);
+		END IF;
+		-- Create the request message for processAmadeus service	
+		--SET OutputRoot.MQMD = NULL;	
+		DETACH OutputRoot.MQMD;
+		
+		CREATE FIELD rEnv.Temp.Message.AmadeusReq.sch:processAmadeusRequest.fastSell AS rFastSell;	
+		/*CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		--CREATE FIELD OutputRoot.XMLNSC.sch:processAmadeusRequest.fastSell AS rFastSell;
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutMsg IDENTITY sch:processAmadeusRequest;		
+		CREATE LASTCHILD OF rOutMsg AS rFastSell NAME 'fastSell'; */
+		
+		--SET rFastSell.(XMLNSC.Attribute)agency = FIELDVALUE(rInSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rFastSell.(XMLNSC.Attribute)agency = rEnv.Temp.Channel;
+		SET rFastSell.(XMLNSC.Attribute)domain = 'CD';
+		SET rFastSell.(XMLNSC.Attribute)release = '1';
+		SET rFastSell.(XMLNSC.Attribute)version = '06';
+		SET rFastSell.SessionId = cCurDateTime;
+		
+		SET rFastSell.processingInfo.processingDetails.businessType = '5';
+		SET rFastSell.processingInfo.processingDetails.function = 'FST';
+		
+		SET rFastSell.requestOriginator.originatorSystemFeatures.originatorName = FIELDVALUE(rInSource.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rFastSell.requestOriginator.originatorDetail.originatorIataNbr = '00000000';
+		SET rFastSell.requestOriginator.originatorDetail.agentOfficeId = COALESCE(FIELDVALUE(rInSource.(XMLNSC.Attribute)PseudoCityCode),FIELDVALUE(rInSource.*:RequestorID.(XMLNSC.Attribute)ID));
+		SET rFastSell.requestOriginator.originatorDetail.agentSineId = FIELDVALUE(rInSource.(XMLNSC.Attribute)AgentSine);
+		SET rFastSell.requestOriginator.originatorInfo.isoCountryCode = FIELDVALUE(rInSource.(XMLNSC.Attribute)ISOCountry);
+		SET rFastSell.requestOriginator.originatorInfo.originatorIsoCurrency = FIELDVALUE(rInSource.(XMLNSC.Attribute)ISOCurrency);
+		SET rFastSell.requestOriginator.securityId = FIELDVALUE(rInSource.(XMLNSC.Attribute)ERSP_UserID);
+		
+		SET rFastSell.agentEnvironment.agentTerminalId = FIELDVALUE(rInSource.(XMLNSC.Attribute)TerminalID);
+		
+		SET rFastSell.sailingGroup.sailingDescription.providerDetails.shipCode = FIELDVALUE(rIn.*:SelectedSailing.(XMLNSC.Attribute)ShipCode);
+		SET rFastSell.sailingGroup.sailingDescription.providerDetails.cruiselineCode =	'NCL';
+		
+		SET rFastSell.sailingGroup.sailingDescription.sailingDateTime.sailingDepartureDate = CAST(CAST(FIELDVALUE(rIn.*:SelectedSailing.(XMLNSC.Attribute)Start) AS DATE FORMAT 'yyyy-MM-dd') AS CHARACTER FORMAT 'ddMMyyyy');
+		
+		SET rFastSell.sailingGroup.sailingDescription.sailingDateTime.sailingDuration = getDuration(FIELDVALUE(rIn.*:SelectedSailing.(XMLNSC.Attribute)Duration));
+		
+		SET rFastSell.sailingGroup.sailingDescription.regionDetails.cruiseRegionCode = FIELDVALUE(rIn.*:RegionPref.(XMLNSC.Attribute)RegionCode);
+		
+		DECLARE rSailingGrp REFERENCE TO rFastSell.sailingGroup;
+		
+		FOR rGuest AS rIn.*:Guest[] 
+		DO			
+			CREATE LASTCHILD OF rSailingGrp AS rModeOfTrans NAME 'modeOfTransportation';
+			-- Hardcoding NCLWEBC here. Also can consider making TRP a UDP
+			--SET rModeOfTrans.transportationInfo.modeOfTransport = COALESCE(com.ncl.ais.utils.XrefSWCodes(FIELDVALUE(rInSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code), 'TRP', FIELDVALUE(rGuest.*:GuestTransportation.(XMLNSC.Attribute)Mode), rEnv, rOutRoot),'');
+			
+			SET rModeOfTrans.transportationInfo.modeOfTransport = COALESCE(com.ncl.ais.utils.XrefSWCodes(rEnv.Temp.Channel,ModeOfTransCodeType, FIELDVALUE(rGuest.*:GuestTransportation.(XMLNSC.Attribute)Mode), rEnv, rOutRoot),'');
+			SET rModeOfTrans.transportationInfo.motCity = FIELDVALUE(rGuest.*:GuestTransportation.*:GatewayCity.(XMLNSC.Attribute)LocationCode);
+			SET rModeOfTrans.transportationInfo.motStatus = FIELDVALUE(rGuest.*:GuestTransportation.(XMLNSC.Attribute)Status);
+
+			-- These two fields will keep getting rewritten for each loop. But this avoids looping twice thru Guests
+			--SET rFastSell.sailingGroup.currencyInfo.currencyList.currencyQualifier = NULLIF(FIELDVALUE(rIn.*:Currency.(XMLNSC.Attribute)DecimalPlaces),'');
+			--SET rFastSell.sailingGroup.currencyInfo.currencyList.currencyIsoCode = NULLIF(FIELDVALUE(rIn.*:Currency.(XMLNSC.Attribute)CurrencyCode), '');
+		END FOR;
+		
+		SET rFastSell.sailingGroup.currencyInfo.currencyList.currencyQualifier = NULLIF(FIELDVALUE(rIn.*:Currency.(XMLNSC.Attribute)DecimalPlaces),'');
+		SET rFastSell.sailingGroup.currencyInfo.currencyList.currencyIsoCode = NULLIF(FIELDVALUE(rIn.*:Currency.(XMLNSC.Attribute)CurrencyCode), '');
+		
+		FOR rGuest AS rIn.*:Guest[] 
+		DO			
+			CREATE LASTCHILD OF rFastSell.sailingGroup AS rGuestInfo NAME 'guestInfo';
+			
+			SET rGuestInfo.travellerId.lastName = rGuest.*:GuestName.*:Surname;
+			SET rGuestInfo.travellerDetails.nameId = FIELDVALUE(rGuest.(XMLNSC.Attribute)LoyaltyMembershipID);
+			SET rGuestInfo.travellerDetails.referenceNbr = FIELDVALUE(rGuest.(XMLNSC.Attribute)GuestRefNumber);
+			SET rGuestInfo.travellerDetails.passengerTitle = rGuest.*:GuestName.*:NameTitle;
+			SET rGuestInfo.travellerDetails.passengerGender = FIELDVALUE(rGuest.(XMLNSC.Attribute)Gender);
+			SET rGuestInfo.travellerDetails.age = FIELDVALUE(rGuest.(XMLNSC.Attribute)Age);			
+		END FOR;		
+		
+		IF EXISTS(rIn.*:SelectedSailing.*:SelectedFare[]) THEN
+			SET rFastSell.sailingGroup.fareGroup.fareCode.fareCodeId.cruiseFareCode = FIELDVALUE(rIn.*:SelectedSailing.*:SelectedFare.(XMLNSC.Attribute)FareCode);
+			SET rFastSell.sailingGroup.fareGroup.fareCode.fareCodeId.fareDescription = FIELDVALUE(rIn.*:SelectedSailing.*:SelectedFare.(XMLNSC.Attribute)FareCodeDescription);
+		END IF;
+		
+		IF EXISTS(rIn.*:SelectedSailing.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode[]) OR
+			EXISTS(rIn.*:SelectedSailing.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode[]) THEN
+			
+			SET rFastSell.sailingGroup.fareGroup.categoryGroup.categoryInfo.categoryId.pricedCategory = FIELDVALUE(rIn.*:SelectedSailing.*:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode);
+			SET rFastSell.sailingGroup.fareGroup.categoryGroup.categoryInfo.categoryId.berthedCategory = FIELDVALUE(rIn.*:SelectedSailing.*:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode);
+		END IF;
+		
+		FOR rCabin AS rIn.*:SelectedSailing.*:SelectedCategory.*:SelectedCabin[] 
+		DO
+			CREATE LASTCHILD OF rFastSell.sailingGroup.fareGroup.categoryGroup AS rCabinInfo NAME 'cabinInfo';
+			
+			SET rCabinInfo.cabinDetails.cabinNbr = FIELDVALUE(rCabin.(XMLNSC.Attribute)CabinNumber);
+			SET rCabinInfo.cabinDetails.heldIndicator = FIELDVALUE(rCabin.(XMLNSC.Attribute)HeldIndicator);
+			SET rCabinInfo.cabinDescription.maxOccupancy = FIELDVALUE(rCabin.(XMLNSC.Attribute)MaxOccupancy);
+		END FOR;	
+		
+		SET rFastSell.numberOfUnitsDescription.nbrOfUnitsDetails.unitValue = FIELDVALUE(rIn.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Quantity);
+		SET rFastSell.numberOfUnitsDescription.nbrOfUnitsDetails.unitQualifier = 'NI';		
+			
+		-- Build Output Message from Env	
+		--CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		--CREATE FIELD OutputRoot.XMLNSC.sch:processAmadeusRequest.fastSell AS rFastSell;
+		--CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutMsg IDENTITY sch:processAmadeusRequest;
+		
+		SET OutputRoot.SOAP.Body = rEnv.Temp.Message.AmadeusReq;
+		--SET OutputRoot.XMLNSC = rEnv.Temp.Message.AmadeusReq;
+		
+		DETACH rEnv.Temp.Message.AmadeusReq;	
+			
+		-- Log the EncryptDecrypt Request message
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Request Message for EncryptDecrypt Service', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Amadeus FastSell service ...', rEnv);
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		-- IF message has failed before going into the first compute node
+		IF NOT EXISTS(rEnv.Temp.Headers.MQMD[]) THEN
+			SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+			SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+			-- set reply-to-q if not set
+			IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+				SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+			END IF;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell request message', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		--DECLARE outMsgName CHARACTER rEnv.Temp.InputMessageName || 'RS';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_HandleAmadeusFailure
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		DECLARE cErrorLogText CHARACTER 'Failed to invoke Amadeus FastSell service';
+		
+		IF EXISTS(InputRoot.SOAP.Body.*:Fault[]) THEN
+			SET cErrorLogText = 'Error from Amadeus FastSell service';
+			
+			DECLARE wholeMsgBlob BLOB
+   							ASBITSTREAM(InputRoot.SOAP.Body,
+              				 InputRoot.Properties.Encoding,
+               				 InputRoot.Properties.CodedCharSetId );
+ 			 SET cErrorText = 
+   				CAST(wholeMsgBlob AS CHAR CCSID InputRoot.Properties.CodedCharSetId); 
+		END IF;
+
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, cErrorLogText, rEnv);
+
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		--SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_MapErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		--DECLARE outMsgName CHARACTER rEnv.Temp.InputMessageName || 'RS';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '14';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);
+		END IF;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_ProcessResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:processAmadeusResponse;
+		--DECLARE rIn REFERENCE TO InputRoot.SOAP.Body.*:processAmadeusResponse;
+		DECLARE rEnv,rEnvSailInfo, rPricing REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rOutRoot, rOut REFERENCE TO OutputRoot;
+		DECLARE rInSource REFERENCE TO rOrgMsg.*:POS.*:Source;
+		DECLARE rInResp REFERENCE TO rIn.*:*[1];		
+		
+		
+		-- This move is taking us to the namespace. So have to do another move down.
+		--MOVE rInResp FIRSTCHILD;
+		MOVE rInResp NEXTSIBLING;
+		
+		-- Sometime Amadeus may send empty response. Catch that as an error instead of timing out
+		IF NOT LASTMOVE(rInResp) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			SET rOut.ns:Errors.ns:Error = 'Empty Response from Amadeus';
+	
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);			
+			END IF;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;			
+		END IF;
+		
+		DECLARE cResponseType CHARACTER FIELDNAME(rInResp);
+		
+		-- TODO Revisit. Might need to list out individual allowable tag names
+		IF EXISTS(rInResp.SessionId[])
+		THEN
+			IF CARDINALITY(rIn.sailingAvailabilityResponseMessage.sailingGroup[]) > 1 THEN
+				
+				CREATE FIELD rEnv.Temp.Message.OutResp.ns:NCL_CruiseFastSellRS AS rOut;
+						
+				CALL MapMultipleSailingToOutput(rIn.sailingAvailabilityResponseMessage, rEnv, rOut, rOutRoot);
+				
+				--SET OutputRoot.Properties = InputRoot.Properties;
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				--CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS AS rOut;
+				
+				SET OutputRoot.XMLNSC = rEnv.Temp.Message.OutResp;
+				
+				DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseFastSellRS;
+
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rResp);				
+				
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				IF (LogPayload) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseFastSell response message', 'xml', rEnv);
+				END IF;
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+			
+			-- Take a backup of the information in Env
+			CREATE FIELD rEnv.Temp.Message.OutSailingInfo AS rEnvSailInfo;
+			CALL MapToOutputSailingInfo(rInResp, rEnvSailInfo, rEnv, rOutRoot);
+			
+			SET OutputRoot.Properties = InputRoot.Properties;
+			-- Prepare the next request message
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+			CREATE FIELD OutputRoot.XMLNSC.sch:processAmadeusRequest.pricingForBooking AS rPricing;
+			--SET rFastSell.(XMLNSC.Attribute)agency = FIELDVALUE(rInSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+			SET rPricing.(XMLNSC.Attribute)agency = rEnv.Temp.Channel;
+			SET rPricing.(XMLNSC.Attribute)domain = 'CD';
+			SET rPricing.(XMLNSC.Attribute)release = '';
+			SET rPricing.(XMLNSC.Attribute)version = '2.1';
+			
+			SET rPricing.processingInfo.processingDetails.businessType = '5';
+			SET rPricing.processingInfo.processingDetails.function = '56';
+		
+			SET rPricing.requestOriginator.originatorSystemFeatures.originatorName = FIELDVALUE(rInSource.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+			SET rPricing.requestOriginator.originatorDetail.agentOfficeId = FIELDVALUE(rInSource.(XMLNSC.Attribute)PseudoCityCode);
+			
+			SET rPricing.sailingGroup.sailingDescription.providerDetails.shipCode = FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedSailing.*:CruiseLine.(XMLNSC.Attribute)ShipCode);
+			SET rPricing.sailingGroup.sailingDescription.providerDetails.cruiselineCode =	FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedSailing.*:CruiseLine.(XMLNSC.Attribute)VendorCode);
+			
+			
+			
+			SET rPricing.sailingGroup.sailingDescription.sailingDateTime.sailingDepartureDate = CAST(CAST(FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)Start) AS DATE FORMAT 'yyyy-MM-dd') AS CHARACTER FORMAT 'ddMMyyyy');
+			
+			SET rPricing.sailingGroup.sailingDescription.sailingId.cruiseVoyageNbr = FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+			SET rPricing.sailingGroup.categoryInfo.categoryId.pricedCategory = 'XX';
+			SET rPricing.sailingGroup.categoryInfo.categoryId.berthedCategory = 'XX';
+			
+			SET rPricing.sailingGroup.categoryInfo.fareCodeId.cruiseFareCode = FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedFare.(XMLNSC.Attribute)FareCode);
+			SET rPricing.sailingGroup.categoryInfo.fareCodeId.fareDescription = FIELDVALUE(rEnvSailInfo.*:SailingInfo.*:SelectedFare.(XMLNSC.Attribute)FareCodeDescription);
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Amadeus PricingForBooking service', rEnv);		
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unknown Response Type from processAmadeus Request', rEnv);
+			RETURN FALSE;			
+		END IF;		
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Temp.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseFastSell_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		IF FIELDVALUE(rEnv.sessionID) IS NOT NULL THEN -- SessionId exists
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.sessionID;
+			PROPAGATE TO TERMINAL 'out';
+		ELSE -- SessionId does not exists
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;

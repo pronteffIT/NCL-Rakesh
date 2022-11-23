@@ -1,0 +1,73 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_CARD_TYPE_INFO_RESP';
+CREATE COMPUTE MODULE FetchCreditCardInfo_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN	
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreditCardTypeInfoRQ;		
+		DECLARE cQuery CHARACTER;
+		DECLARE rOutResp,rCardInfo,rBinRange REFERENCE TO OutputRoot;
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		SET cQuery = 'SELECT A.CC_TYPE,A.COMMENTS,A.CC_TYPE_EXT,A.MIN_DIG_QTY,A.MAX_DIG_QTY,A.CTRLNMB_DIG_QTY,	A.CHECK_DIGIT_ALGORITHM,B.MIN_PREFIX,B.MAX_PREFIX FROM CC_TYPE_MST A, CC_PREFIX_INFO B 	  WHERE A.CC_TYPE=B.CC_TYPE ORDER BY A.CC_TYPE,B.MIN_PREFIX';
+		SET rEnv.Temp.CardType[] = PASSTHRU(cQuery);
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreditCardTypeInfoRS AS rOutResp;
+		SET rOutResp.(XML.NamespaceDecl)xmlns=ns;
+		CREATE FIELD rOutResp.ns:Success;		
+		DECLARE cCardType CHARACTER '';
+		FOR r AS rEnv.Temp.CardType[]
+		DO
+			IF r.CC_TYPE <> cCardType THEN
+				SET cCardType = r.CC_TYPE;
+				CREATE LASTCHILD OF rOutResp.ns:CreditCardTypes AS rCardInfo NAMESPACE ns NAME 'CardTypeInfo';
+				SET rCardInfo.ns:CardType = r.CC_TYPE;				
+				SET rCardInfo.ns:CardCode = r.CC_TYPE_EXT;
+				SET rCardInfo.ns:Name = r.COMMENTS;
+				SET rCardInfo.ns:CardMinDigit = r.MIN_DIG_QTY;
+				SET rCardInfo.ns:CardMaxDigit = r.MAX_DIG_QTY;
+				SET rCardInfo.ns:CardControlNumberDig = r.CTRLNMB_DIG_QTY;
+				SET rCardInfo.ns:CardCheckDigAlgo = r.CHECK_DIGIT_ALGORITHM;												
+			END IF;
+			CREATE LASTCHILD OF rCardInfo AS rBinRange NAMESPACE ns NAME 'BinRange';
+			SET rBinRange.ns:BinRangePrefixStart = r.MIN_PREFIX;
+			SET rBinRange.ns:BinRangePrefixEnd = r.MAX_PREFIX;  
+		END FOR;		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE FetchCreditCardInfo_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		IF EXISTS(rEnv.Temp.Headers.MQMD[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		END IF;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreditCardTypeInfoRS AS rOutResp;
+		CALL com.ncl.ais.utils.CopyAttributes(rEnv.cpnReq,rOutResp);  					
+			
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';	
+		RETURN TRUE;		
+	END;	
+END MODULE;

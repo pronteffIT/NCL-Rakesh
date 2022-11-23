@@ -1,0 +1,222 @@
+
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_UPDATE_AGENT_EMAILPHONE_RESP';
+
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateAgentEmailPhone_UpdAgentEmailPhone
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut,rOutWarnings REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE inRef REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseUpdateAgentEmailPhoneRQ;
+		
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		IF LogPayLoad THEN
+			DECLARE inPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(inPayload, NodeLabel, 'Cruise Update AgentContact Info Req..', 'xml', rEnv);
+		END IF;
+		
+		DECLARE Requestor,BookingChannel CHARACTER;
+
+		SET Requestor = COALESCE(FIELDVALUE(inRef.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(inRef.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(inRef.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,'','','',rEnv);
+		
+		--Adding MQMD Headers to Environment
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		
+		--Saving Input message to Environment
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN 'XMLNSC' NAME 'InpReq';
+		SET rEnv.Temp.InpReq = inRef;
+		
+		DECLARE AgentID INTEGER CAST(inRef.*:AgentID AS INTEGER);
+		-- DB look up for Agent ID
+		SET rEnv.Results[] = SELECT AG.AGENT_ID FROM Database.SEA.AGENT AS AG where AG.AGENT_ID = AgentID;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateAgentEmailPhoneRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(inRef,rOut);
+		
+		IF NOT EXISTS(rEnv.Results[]) THEN
+			CREATE FIELD rOut.ns:Warnings AS rOutWarnings;
+	--		SET rOutWarnings.ns:Warning = rEnv.Temp.status;
+			SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Invalid Agent ID';
+			SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+
+			DECLARE p_AgentId,p_Int_Code INTEGER;
+			DECLARE p_email,p_PhoneNumber,p_Phone_Type,p_Is_Phone_Primary,p_Is_Phone_Secondary,p_Is_Phone_Fax,
+			p_Fax_Att_Line,p_Comments,p_PhoneExt,p_ErrorCode,p_ErrorMessage CHARACTER;
+			DECLARE p_PhoneUpdate, p_EmailUpdate CHARACTER;
+		    			
+			SET p_AgentId = Cast(inRef.*:AgentID AS INTEGER);
+			SET p_email = inRef.*:Email;
+			SET p_PhoneNumber = inRef.*:Phone.*:PhoneNumber;
+			SET p_Phone_Type = inRef.*:Phone.*:PhoneType;
+			
+			
+			IF COALESCE(p_Phone_Type, '') = '' THEN
+				SET p_Phone_Type = 'PRIMARY';
+			END IF;
+			
+			IF p_Phone_Type = 'PRIMARY' THEN
+				
+				SET p_Is_Phone_Primary = 'Y';
+				SET p_Is_Phone_Secondary = 'N';
+				SET p_Is_Phone_Fax = 'N';
+				
+			ELSEIF p_Phone_Type = 'SECONDARY' THEN
+				
+				SET p_Is_Phone_Primary = 'N';
+				SET p_Is_Phone_Secondary = 'Y';
+				SET p_Is_Phone_Fax = 'N';
+				
+			ELSEIF p_Phone_Type = 'FAX' THEN
+				
+				SET p_Is_Phone_Primary = 'N';
+				SET p_Is_Phone_Secondary = 'N';
+				SET p_Is_Phone_Fax = 'Y';
+				
+			END IF;
+
+			SET p_Int_Code = CAST(inRef.*:Phone.*:IntlCode AS INTEGER);
+			SET p_Fax_Att_Line = '';
+			SET p_Comments = '';
+			SET p_PhoneExt = '';
+
+			CALL updateAgentContactSP(p_AgentId,p_email,p_PhoneNumber,p_Phone_Type,p_Is_Phone_Primary,p_Is_Phone_Secondary,p_Is_Phone_Fax,p_Int_Code,p_Fax_Att_Line,p_Comments,p_PhoneExt,p_ErrorCode,p_ErrorMessage, p_PhoneUpdate, p_EmailUpdate );
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking stored procedure to update agent AgentContact Info', rEnv);
+			
+		--	SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		--	CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateAgentEmailPhoneRS AS rOut;
+			IF SQLCODE <> 0 THEN
+				
+				CREATE FIELD rOut.ns:Warnings AS rOutWarnings;
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Database exception';
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				
+			ELSEIF p_ErrorCode IS NOT NULL  THEN
+
+				CREATE FIELD rOut.ns:Warnings AS rOutWarnings;
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMessage,'Error in Updating Agent Contact');
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+			ELSE
+				--CREATE FIELD rOut.ns:Success
+				
+				IF p_PhoneUpdate = 'Y'  THEN
+					SET rOut.ns:PhoneUpdate = 'Y';
+				ELSE
+					SET rOut.ns:PhoneUpdate = 'N';
+				END IF; 
+				
+				IF p_EmailUpdate = 'Y' THEN
+					SET rOut.ns:EmailUpdate = 'Y';
+				ELSE
+					SET rOut.ns:EmailUpdate = 'N';					
+				END IF;
+				
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+				IF LogPayLoad THEN
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Update AgentContact resp..', 'xml', rEnv);
+				END IF;
+
+				SET OutputRoot.XMLNSC = NULL;
+				SET OutputRoot.BLOB.BLOB = bPayload;
+
+			END IF;
+
+		END IF;
+
+		RETURN TRUE;
+	END;
+	
+	
+	--Insert Data IN NCL_WESB_Upd_AgentContact
+	CREATE PROCEDURE updateAgentContactSP (IN p_AgentId INTEGER,IN p_email CHARACTER,IN p_PhoneNumber CHARACTER,IN p_Phone_Type CHARACTER,IN p_Is_Phone_Primary CHARACTER,
+	IN p_Is_Phone_Secondary CHARACTER,IN p_Is_Phone_Fax CHARACTER,IN p_Int_Code INTEGER,IN p_Fax_Att_Line CHARACTER,IN p_Comments CHARACTER,IN p_PhoneExt CHARACTER,OUT p_ErrorCode CHARACTER, OUT p_ErrorMessage CHARACTER, OUT p_PhoneUpdate CHARACTER, OUT p_EmailUpdate CHARACTER)
+
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_WESB_Upd_Agent_Contact";
+	
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateAgentEmailPhone_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update AgentContact input request message exception IIB...', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateAgentEmailPhone_RunTimeException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rIn REFERENCE TO rEnv.InpReq;
+
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.TempHeaders.MQMD.ReplyToQ;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateAgentEmailPhoneRS AS rOut;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception for Cruise Update AgentContact Info', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			CREATE FIELD rOut.ns:Errors AS rOutErrors;
+
+			SET rOutErrors.ns:Error = cErrorText;
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;

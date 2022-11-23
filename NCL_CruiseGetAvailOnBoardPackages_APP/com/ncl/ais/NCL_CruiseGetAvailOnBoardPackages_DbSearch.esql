@@ -1,0 +1,58 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE DBSearchOut SHARED ROW ROW('' AS LoadTime, '' AS DBSearchOut);
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailOnBoardPackages_DBSearch_Request
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+	BEGIN ATOMIC
+			IF DBSearchOut.LoadTime='' OR  ( CURRENT_TIMESTAMP - CAST(DBSearchOut.LoadTime AS TIMESTAMP)) MINUTE> INTERVAL '1440' MINUTE THEN		
+		
+				DECLARE rEnv,oRef REFERENCE TO Environment.Variables;
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DbSearchIn Request', rEnv);
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+				CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS oRef;
+				SET oRef.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				--SET oRef.MsgHeader.SessionGUID = rEnv.SessionGUID;
+				SET oRef.PackageTypes.ProductType = 'DINING';
+				RETURN TRUE;
+			ELSE
+				RETURN FALSE;	
+			END IF;	
+			
+		END;	
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailOnBoardPackages_DBSearch_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseGetAvailOnBoardPackagesRQ;
+		DECLARE inRefDBSearch REFERENCE TO InputRoot.XMLNSC.*:DbSearch_OUT;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		IF EXISTS(inRefDBSearch.Errors[] ) OR EXISTS(InputExceptionList.RecoverableException[]) THEN
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking DBSearchIn', rEnv);
+			-- This Proc Creates the Warnings Section
+			SET rEnv.DBSearch.Error = 'TRUE';
+			
+		ELSE	
+			
+			IF (LogPayLoad) THEN
+				-- Add response msg to log event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB Search Out Message', 'xml', rEnv);
+			END IF;
+		--	SET rEnv.DBSearch.PackageTypes = inRefDBSearch.PackageTypes;--SELECT A FROM inRefDBSearch.PackageTypes.PackageType[] AS A
+															--WHERE A.Components.Component.SubCode1 IN (rEnv.PartyCount.Quantity[]);
+			SET DBSearchOut.LoadTime = CAST(CURRENT_TIMESTAMP AS CHARACTER);
+			SET DBSearchOut.DBSearchOut.PackageTypes = inRefDBSearch.PackageTypes; 												
+																	
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+

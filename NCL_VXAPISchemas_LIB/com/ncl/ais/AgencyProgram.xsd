@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+    <xs:include schemaLocation="BaseTypes.xsd"/>
+    <xs:complexType name="SailInfo">
+        <xs:annotation>
+            <xs:documentation>Basic information about sail.</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="SailID" type="RecordID"/>
+            <xs:element name="Ship" type="Code"/>
+            <xs:element name="SailFrom" type="xs:date"/>
+            <xs:element name="SailTo" type="xs:date"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="ResAmenityDistribution">
+        <xs:sequence>
+            <xs:element name="ResID" type="RecordID"/>
+            <xs:element minOccurs="0" name="FirstGuestName">
+                <xs:annotation>
+                    <xs:documentation>Output only.</xs:documentation>
+                </xs:annotation>
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="60"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element minOccurs="0" name="GuestCount" type="Count">
+                <xs:annotation>
+                    <xs:documentation>Output only.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="Currency" minOccurs="0">
+                <xs:annotation>
+                    <xs:documentation>Output only.</xs:documentation>
+                </xs:annotation>
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="5"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="Earned" type="Money" minOccurs="0">
+                <xs:annotation>
+                    <xs:documentation>Output only.</xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element minOccurs="0" name="AmenityPromo">
+                <xs:annotation>
+                    <xs:documentation>Output only.</xs:documentation>
+                </xs:annotation>
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="30"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element minOccurs="0" name="Amenities">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" name="Amenity">
+                            <xs:complexType>
+                                <xs:sequence>
+                                    <xs:element name="AmenityCode">
+                                        <xs:simpleType>
+                                            <xs:restriction base="xs:string">
+                                                <xs:maxLength value="30"/>
+                                                <xs:whiteSpace value="collapse"/>
+                                            </xs:restriction>
+                                        </xs:simpleType>
+                                    </xs:element>
+                                    <xs:element default="1" name="Quantity" type="xs:nonNegativeInteger" minOccurs="0"/>
+                                    <xs:element default="1" name="Guests" type="GuestRefs" minOccurs="0"/>
+                                </xs:sequence>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="AmenityDistributionItem">
+        <xs:sequence>
+            <xs:element name="AmenityCode">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="30"/>
+                        <xs:whiteSpace value="collapse"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="Currency">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:maxLength value="5"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="Price" type="Money"/>
+            <xs:element default="N" minOccurs="0" name="PerGuest" type="Boolean"/>
+            <xs:element default="N" minOccurs="0" name="PerDay" type="Boolean"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="AmenityPointsDistribution">
+        <xs:sequence>
+            <xs:element name="Sail" type="SailInfo"/>
+            <xs:element name="AgencyID" type="RecordID"/>
+            <xs:element name="CollectionID" type="RecordID"/>
+            <xs:element minOccurs="0" name="AmenityPromoGroup" type="xs:string"/>
+            <xs:element minOccurs="0" name="EligibleAmenities">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" minOccurs="0" name="Amenity" type="AmenityDistributionItem"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element minOccurs="0" name="Bookings">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" minOccurs="0" name="ResAmenityDistribution" type="ResAmenityDistribution"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="SellLimitAvlItem">
+        <xs:annotation>
+            <xs:documentation>-1 means "unlimited"</xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="AvlWgtCommon" type="xs:double" default="-1" minOccurs="0"/>
+            <xs:element name="AvlAbsCommon" type="xs:integer" default="-1" minOccurs="0"/>
+            <xs:element name="StopSellCommon" type="Boolean" default="N" minOccurs="0"/>
+            <xs:element name="AvlWgtLocal" type="xs:double" default="-1" minOccurs="0"/>
+            <xs:element name="AvlAbsLocal" type="xs:integer" default="-1" minOccurs="0"/>
+            <xs:element name="StopSellLocal" type="Boolean" default="N" minOccurs="0"/>
+            <xs:element name="TotalAbs" type="xs:integer" default="-1" minOccurs="0"/>
+            <xs:element name="TotalWgt" type="xs:double" default="-1" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="SellLimAgPrgCtgPromoStatusItem">
+        <xs:sequence>
+            <xs:element name="ResStatus">
+                <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                        <xs:length value="2"/>
+                        <xs:enumeration value="OF"/>
+                        <xs:enumeration value="BK"/>
+                        <xs:enumeration value="RQ"/>
+                        <xs:enumeration value="SH"/>
+                        <xs:enumeration value="CL"/>
+                        <xs:enumeration value="CX"/>
+                        <xs:enumeration value="TM"/>
+                        <xs:whiteSpace value="collapse"/>
+                    </xs:restriction>
+                </xs:simpleType>
+            </xs:element>
+            <xs:element name="PackageID" type="xs:integer"/>
+            <xs:element name="AvlInfo" type="SellLimitAvlItem"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="SellLimAgPrgCtgPromoItem">
+        <xs:sequence>
+            <xs:element name="PromoCode" type="LongCode"/>
+            <xs:element name="AvlInfo" type="SellLimitAvlItem"/>
+            <xs:element name="Details">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" name="Item" type="SellLimAgPrgCtgPromoStatusItem"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="SellLimAgPrgCtgItem">
+        <xs:sequence>
+            <xs:element name="Category" type="LongCode"/>
+            <xs:element name="AvlInfo" type="SellLimitAvlItem"/>
+            <xs:element name="Details">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" name="Item" type="SellLimAgPrgCtgPromoItem"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="SellLimAgPrgPromoGroupItem">
+        <xs:sequence>
+            <xs:element name="PromoGroup" type="LongCode"/>
+            <xs:element name="AvlInfo" type="SellLimitAvlItem"/>
+            <xs:element name="Details">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" name="Item" type="SellLimAgPrgCtgItem"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:element name="GetAmenityPointsInfo_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:choice>
+                    <xs:element minOccurs="0" name="SailID" type="RecordID"/>
+                    <xs:sequence minOccurs="0">
+                        <xs:annotation>
+                            <xs:documentation>Should correspond to a specific sail.</xs:documentation>
+                        </xs:annotation>
+                        <xs:element name="Ship" type="LongCode"/>
+                        <xs:element name="SailFrom" type="xs:date"/>
+                        <xs:element name="SailTo" type="xs:date"/>
+                    </xs:sequence>
+                </xs:choice>
+                <xs:element name="AgencyID" type="RecordID"/>
+                <xs:element minOccurs="0" name="CollectionID" type="RecordID">
+                    <xs:annotation>
+                        <xs:documentation>If not set, then Default Collection will be used.</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+
+    </xs:element>
+    <xs:element name="GetAmenityPointsInfo_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="AmenityPointsDistribution" type="AmenityPointsDistribution"/>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="UpdateAmenityPointsInfo_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="SailID" type="RecordID"/>
+                <xs:element name="AgencyID" type="RecordID"/>
+                <xs:element minOccurs="0" name="CollectionID" type="RecordID">
+                    <xs:annotation>
+                        <xs:documentation>If not set, then Default Collection will be used.</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Distribution">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element maxOccurs="unbounded" minOccurs="0" name="ResAmenityDistribution" type="ResAmenityDistribution"/>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="UpdateAmenityPointsInfo_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="AmenityPointsDistribution" type="AmenityPointsDistribution"/>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="SaveAmenityPointsInfo_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="SailID" type="RecordID"/>
+                <xs:element name="AgencyID" type="RecordID"/>
+                <xs:element minOccurs="0" name="CollectionID" type="RecordID">
+                    <xs:annotation>
+                        <xs:documentation>If not set, then Default Collection will be used.</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="SaveAmenityPointsInfo_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="AmenityPointsDistribution" type="AmenityPointsDistribution"/>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="RollbackAmenityPointsInfo_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="SailID" type="RecordID"/>
+                <xs:element name="AgencyID" type="RecordID"/>
+                <xs:element minOccurs="0" name="CollectionID" type="RecordID">
+                    <xs:annotation>
+                        <xs:documentation>If not set, then Default Collection will be used.</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="RollbackAmenityPointsInfo_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Version" type="xs:nonNegativeInteger"/>
+                <xs:element name="AmenityPointsDistribution" type="AmenityPointsDistribution"/>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="GetAgencyProgramAvailability_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                            <XMLBridge>Implemented</XMLBridge>
+                        </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:choice>
+                    <xs:sequence>
+                        <xs:element name="CollectionID" type="RecordID"/>
+                        <xs:element name="AgencyID" type="RecordID" minOccurs="0">
+                            <xs:annotation>
+                                <xs:documentation>If set, then must correspond to the collection's one.</xs:documentation>
+                            </xs:annotation>
+                        </xs:element>
+                    </xs:sequence>
+                    <xs:sequence>
+                        <xs:element name="SailID" type="RecordID">
+                            <xs:annotation>
+                                <xs:documentation>In case of Sail set the Default Collection will be
+                                    used.</xs:documentation>
+                            </xs:annotation>
+                        </xs:element>
+                        <xs:element name="AgencyID" type="RecordID"/>
+                    </xs:sequence>
+                </xs:choice>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="GetAgencyProgramAvailability_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                    <XMLBridge>Implemented</XMLBridge>
+                </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="AgencyProgramAvailability" minOccurs="0">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="AvlInfo" type="SellLimitAvlItem" minOccurs="0"/>
+                            <xs:element minOccurs="0" name="Details">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element maxOccurs="unbounded" name="Item" type="SellLimAgPrgPromoGroupItem"/>
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:complexType name="SailProgram">
+        <xs:sequence>
+            <xs:element name="Sail" type="SailInfo"/>
+            <xs:element minOccurs="0" name="PricePromoGroup" type="LongCode"/>
+            <xs:element minOccurs="0" name="PricePromotions">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" minOccurs="0" name="Promotion" type="PromotionCode"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element minOccurs="0" name="AmenityPromoGroup" type="LongCode"/>
+            <xs:element minOccurs="0" name="AmenityPromotions">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element maxOccurs="unbounded" minOccurs="0" name="Promotion" type="PromotionCode"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element minOccurs="0" name="CouponClass" type="LongCode"/>
+            <xs:element name="IsOpen" type="Boolean"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="AmenityPointsSummary">
+        <xs:sequence>
+            <xs:element name="ResCount" type="xs:nonNegativeInteger"/>
+            <xs:element minOccurs="0" name="Currency" type="LongCode"/>
+            <xs:element name="TotalEarned" type="Money"/>
+            <xs:element name="TotalSpent" type="Money"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:element name="GetAgencySailPrograms_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                            <XMLBridge>Implemented</XMLBridge>
+                        </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="Params">
+                    <xs:complexType>
+                       <xs:choice>
+                           <xs:sequence>
+                               <xs:element name="CollectionID" type="RecordID"/>
+                               <xs:element name="AgencyID" type="RecordID"  minOccurs="0"/>
+                           </xs:sequence>
+                           <xs:sequence>
+                               <xs:element name="SailRange">
+                                   <xs:complexType>
+                                       <xs:sequence>
+                                           <xs:element name="From" type="xs:date"/>
+                                           <xs:element name="To" type="xs:date"/>
+                                       </xs:sequence>
+                                   </xs:complexType>
+                               </xs:element>
+                               <xs:element minOccurs="0" name="Ship" type="LongCode"/>
+                               <xs:element name="AgencyID" type="RecordID"/>
+                               <xs:element name="ActiveOnly" type="Boolean" minOccurs="0" default="N"/>
+                           </xs:sequence>
+                       </xs:choice> 
+                    </xs:complexType>
+                </xs:element>
+                <xs:element minOccurs="0" name="Options">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element default="N" minOccurs="0" name="IncludeAmenityPointsSummary" type="Boolean"/>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="GetAgencySailPrograms_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                            <XMLBridge>Implemented</XMLBridge>
+                        </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element minOccurs="0" name="AgencySailPrograms">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element maxOccurs="unbounded" minOccurs="0" name="AgencySailProgram">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="SailProgram" type="SailProgram"/>
+                                        <xs:element name="Collection" type="AgencyCollection" minOccurs="0"> </xs:element>
+                                        <xs:element minOccurs="0" name="EnrollmentDate" type="xs:dateTime">
+                                            <xs:annotation>
+                                                <xs:documentation>Date when Agency enrolled in the program. Empty if Agency is not enrolled.</xs:documentation>
+                                            </xs:annotation>
+                                        </xs:element>
+                                        <xs:element minOccurs="0" name="AmenityPointsSummary" type="AmenityPointsSummary">
+                                            <xs:annotation>
+                                                <xs:documentation>Populated when IncludeAmenityPointsSummary = 'Y' in input message.</xs:documentation>
+                                            </xs:annotation>
+                                        </xs:element>
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="EnrollAgencyIntoSailProgram_IN">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                            <XMLBridge>Implemented</XMLBridge>
+                        </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="SailID" type="RecordID"/>
+                <xs:element name="AgencyID" type="RecordID"/>
+                <xs:element name="Collection" type="AgencyCollection" minOccurs="0">
+                    <xs:annotation>
+                        <xs:documentation>Omit CollectionID for new enrollment.</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="EnrollAgencyIntoSailProgram_OUT">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+                    <xs:annotation>
+                        <xs:appinfo source="Versonix">
+                            <XMLBridge>Implemented</XMLBridge>
+                        </xs:appinfo>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element minOccurs="0" name="SailProgram" type="SailProgram"/>
+                <xs:element name="Collection" minOccurs="0" type="AgencyCollection"> </xs:element>
+                <xs:element minOccurs="0" name="EnrollmentDate" type="xs:dateTime"/>
+                <xs:element minOccurs="0" name="Errors" type="Errors"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:complexType name="AgencyCollection">
+        <xs:sequence>
+            <xs:element name="CollectionID" type="RecordID" minOccurs="0"/>
+            <xs:element minOccurs="0" name="AgencyID" type="RecordID"/>
+            <xs:element name="IsActive" type="Boolean" minOccurs="0"/>
+            <xs:element name="IsDefault" type="Boolean" default="N" minOccurs="0"/>
+            <xs:element name="Type" type="LongCode" minOccurs="0"/>
+            <xs:element name="SubType" type="LongCode" minOccurs="0"/>
+            <xs:element minOccurs="0" name="Name" type="LongCode"/>
+            <xs:element maxOccurs="1" minOccurs="0" name="Comments" type="ShortComment"/>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>

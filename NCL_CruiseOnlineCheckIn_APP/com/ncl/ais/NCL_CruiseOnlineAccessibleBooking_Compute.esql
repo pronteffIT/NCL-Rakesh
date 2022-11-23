@@ -1,0 +1,82 @@
+BROKER SCHEMA com.ncl.ais
+
+--DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+--DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_ONLINE_ACCESSIBLE_BKG_RESP';
+--DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;	
+
+CREATE COMPUTE MODULE NCL_CruiseOnlineAccessibleBooking_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseOnlineAccessibleBookingRQ;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		--Create IIB Log Event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code,''), '', '', '', rEnv);
+		
+		If(LogPayLoad) THEN
+			-- Adding PayLoad Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL_CruiseOnlineAccessibleBookingRQ Request', 'xml', rEnv);
+		END IF;
+		
+		-- Save MQMD header which is used in reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		--Set Reply Q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseOnlineAccessibleBookingRS AS rOut;
+		-- call the procedure to copy attributes
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		
+		CALL ExecuteSQL(rIn, rEnv, rOut);
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+	
+	CREATE PROCEDURE ExecuteSQL(IN rIn REFERENCE, INOUT rEnv REFERENCE, INOUT rOut REFERENCE)
+	BEGIN
+		
+		DECLARE EXIT HANDLER FOR SQLSTATE LIKE '%'
+		BEGIN	
+		    SET rOut.Warnings.Warning = 'Cannot Insert Record';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '122288';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '2';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = SQLERRORTEXT;	
+		END;		
+
+		DECLARE VOYAGE_ID, CLIENT_ID, RES_ID, CABIN_NBR CHAR;
+		DECLARE SQLInsertStmt CHAR;
+		SET VOYAGE_ID = COALESCE(rIn.*:VoyageID, '');
+		SET CLIENT_ID = COALESCE(rIn.*:ClientID, '');
+		SET RES_ID = COALESCE(rIn.*:ResID, '');
+		SET CABIN_NBR = COALESCE(rIn.*:CabinNumber, '');
+		
+		SET SQLInsertStmt = 'INSERT INTO NCLSEA.NCL_ONLN_ACCESSIBLE_BOOKED (VOYAGE_ID, CLIENT_ID, RESERVATION_ID, CABIN_NBR)
+		VALUES ('''||VOYAGE_ID||''','''||CLIENT_ID||''','''||RES_ID||''','''||CABIN_NBR||''')';
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Executing the Insert into NCLSEA.NCL_ONLN_ACCESSIBLE_BOOKED', rEnv);
+		SET rEnv.QueryResult.InsertRecords = PASSTHRU(SQLInsertStmt);
+		SET rOut.InsertRecords = rEnv.QueryResult.InsertRecords;
+		CREATE FIELD rOut.Success;
+	END;
+END MODULE;

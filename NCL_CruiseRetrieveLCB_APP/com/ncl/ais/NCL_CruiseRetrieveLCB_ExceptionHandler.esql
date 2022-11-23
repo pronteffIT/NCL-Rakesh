@@ -1,0 +1,63 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveLCB_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+			IF (LogPayload) THEN
+				--creating IIB Log Event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveLCB Request', 'xml', rEnv);
+			END IF;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrieveLCBRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.Temp.Message.NCL_CruiseRetrieveLCBRQ[])
+			THEN
+			DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveLCBRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;

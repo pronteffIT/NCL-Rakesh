@@ -1,0 +1,21 @@
+<?xml version="1.1" encoding="UTF-8" standalone="yes"?>
+<policies>
+  <policy policyType="FtpServer" policyName="PlusGradeFTP">
+    <allowedCiphers></allowedCiphers>
+    <fileFtpAccountInfo></fileFtpAccountInfo>
+    <fileFtpCompression>0</fileFtpCompression>
+    <fileFtpConnectionType>ACTIVE</fileFtpConnectionType>
+    <fileFtpDirectory>stage</fileFtpDirectory>
+    <fileFtpScanDelay/>
+    <fileFtpServer>drop-02.plusgrade.com</fileFtpServer>
+    <fileFtpTransferMode>BINARY</fileFtpTransferMode>
+    <fileFtpUser>PlusGradeFTPSecId</fileFtpUser>
+    <knownHostsFile></knownHostsFile>
+    <mac></mac>
+    <preserveRemoteFileDate>FALSE</preserveRemoteFileDate>
+    <remoteTransferType>SFTP</remoteTransferType>
+    <sslProtocol>TLSv1.2</sslProtocol>
+    <strictHostKeyChecking>FALSE</strictHostKeyChecking>
+    <timeoutInterval>0</timeoutInterval>
+  </policy>
+</policies>

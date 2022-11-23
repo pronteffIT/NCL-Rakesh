@@ -1,0 +1,215 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_VCSADDTNL_FLD_VALUE_RESP';
+DECLARE MsgExpiry EXTERNAL INTEGER 1500;
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseVCSAdditionalFieldValue
+ * MODULE NAME       :     CruiseVCSAdditionalFieldValue
+ * Description       :     This module accepts the Contract Acceptances Request
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseVCSAdditionalFieldValue
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutVCSAddFldVal,rOutWarnings,rOutErrors REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rInVCSAddFldVal REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseVCSAdditionalFieldValueRQ;
+		DECLARE cLocalTransId CHARACTER COALESCE(InputRoot.MQMD.MsgId,UUIDASCHAR);
+		SET cLocalTransId = SUBSTRING(REPLACE(cLocalTransId, '''', '') FROM 2);
+		--IIB Log Event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTransId, '', '');
+		-- Add payload logging
+		IF LogPayLoad THEN
+			DECLARE inPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(inPayload, NodeLabel, 'Cruise Additional Field Value Req..', 'xml', rEnv);
+		END IF;
+		
+		DECLARE Requestor,BookingChannel CHARACTER;
+		
+		
+		SET Requestor = COALESCE(FIELDVALUE(rInVCSAddFldVal.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rInVCSAddFldVal.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rInVCSAddFldVal.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,'','','',rEnv);
+		--Adding MQMD Headers to Environment
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		--Saving Input message to Environment
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN 'XMLNSC' NAME 'InpReq';
+		SET rEnv.Temp.InpReq = rInVCSAddFldVal;
+		
+		DECLARE cQuery CHARACTER 'SELECT VA.ID, VA.ROW_TYPE, VA.FIELD_NAME,VA.RECORD_ID, TRIM(STR_VALUE) as StrValue 
+								 FROM SEA.VCS_ADDITIONAL_FIELD_VALUE VA WHERE ROW_TYPE = ? AND FIELD_NAME = ? AND RECORD_ID = ?';
+								 
+		DECLARE rcdCount,vaID INTEGER;
+		SET vaID = rInVCSAddFldVal.*:RecordID;
+
+		SET rEnv.Temp.Records[] = PASSTHRU(cQuery,rInVCSAddFldVal.*:RowType,rInVCSAddFldVal.*:FieldName,vaID);
+		SET rcdCount = CARDINALITY(rEnv.Temp.Records[]);
+			
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseVCSAdditionalFieldValueRS AS rOutVCSAddFldVal;
+		CALL com.ncl.ais.utils.CopyAttributes(rInVCSAddFldVal,rOutVCSAddFldVal);
+		CREATE FIELD rOutVCSAddFldVal.ns:Success;
+		
+		IF NOT EXISTS(rEnv.Temp.Records[])OR SQLCODE<>0 OR rcdCount > 100 THEN
+			
+			CREATE FIELD rOutVCSAddFldVal.ns:Errors AS rOutErrors;
+			
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)ShortText = 'No data returned.  Please change request';
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+		ELSE IF	rcdCount > 1 THEN
+			
+			CREATE FIELD rOutVCSAddFldVal.ns:Errors AS rOutErrors;
+			
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)ShortText = 'Mulitple rows returned.  Please correct request.';
+			SET rOutErrors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+		ELSE
+				
+			SET rOutVCSAddFldVal.ID = rEnv.Temp.Records.ID;
+			SET rOutVCSAddFldVal.RowType = rEnv.Temp.Records.ROW_TYPE;
+			SET rOutVCSAddFldVal.FieldName = rEnv.Temp.Records.FIELD_NAME;
+			SET rOutVCSAddFldVal.RecordID = rEnv.Temp.Records.RECORD_ID;
+			SET rOutVCSAddFldVal.StrValue = rEnv.Temp.Records.STRVALUE;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			
+			IF LogPayLoad THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise VCS Additional Field Value Resp ...', 'xml', rEnv);
+			END IF;
+			
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;	
+			
+		END IF;
+	END IF;	
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseVCSAdditionalFieldValue
+ * MODULE NAME       :     CruiseVCSAdditionalFieldValue_Exception
+ * Description       :     This module takes care of exception handling
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseVCSAdditionalFieldValue_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+--		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		--Adding MQMD Headers to Environment
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseVCSAdditionalFieldValue
+ * MODULE NAME       :     CruiseVCSAdditionalFieldValue_RunTimeException
+ * Description       :     This module builds Handles Runtime Exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/26/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseVCSAdditionalFieldValue_RunTimeException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutVCSAddFldVal,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rInVCSAddFldVal REFERENCE TO rEnv.InpReq;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.TempHeaders.MQMD.ReplyToQ;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseVCSAdditionalFieldValueRS AS rOutVCSAddFldVal;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[])  THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception for VCS Addtional Field(OCI)', rEnv);
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+				SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rInVCSAddFldVal,rOutVCSAddFldVal);
+				CREATE FIELD rOutVCSAddFldVal.ns:Success;
+					
+				CREATE FIELD rOutVCSAddFldVal.ns:Errors AS rOutErrors;
+				
+				SET rOutErrors.ns:Error = cErrorText;
+				SET rOutErrors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+				SET rOutErrors.ns:Error.(XMLNSC.Attribute)ShortText = 'Error retrieving data';
+				SET rOutErrors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		END IF;		
+		RETURN TRUE;
+	END;
+END MODULE;

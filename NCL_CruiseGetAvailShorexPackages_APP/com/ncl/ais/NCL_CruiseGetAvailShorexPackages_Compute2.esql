@@ -1,0 +1,59 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns4 NAMESPACE 'http://nclapi/schemas';
+DECLARE xsi NAMESPACE 'http://www.w3.org/2001/XMLSchema-instance';
+CREATE COMPUTE MODULE NCL_CruiseGetAvailShorexPackages_Compute2
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,refOut REFERENCE TO Environment.Variables;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE rInReq REFERENCE TO rEnv.InpReq;
+		
+		IF EXISTS(rVAIn.*:agencyID[]) THEN
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Session established ...', rEnv);
+
+			SET rEnv.Response = InputRoot.XMLNSC.*:VerifyAgencyResponse;
+			SET rEnv.SessionGUID = rVAIn.sessionGUID;
+			SET rEnv.VoyageID = FIELDVALUE(rEnv.InpReq.*:ReservationID.*:ID);
+			SET rEnv.agencyID = rVAIn.*:agencyID;
+			SET rEnv.agencyCurrency = rVAIn.*:agencyCurrency;
+			SET rEnv.ReservationID = CAST(FIELDVALUE(rEnv.InpReq.*:ReservationID.*:ID) AS INTEGER);
+			SET rEnv.endPoint = COALESCE(rVAIn.*:endpoint,'');
+			
+			PROPAGATE TO LABEL 'SHOREX';
+
+		ELSE
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetAvailShorexPackagesRS AS refOut;
+			CALL com.ncl.ais.utils.CopyAttributes (rInReq,refOut);
+			
+			IF EXISTS(rVAIn.agencyNotFound[]) OR EXISTS(rVAIn.loginError[]) THEN
+				
+				IF EXISTS(rVAIn.agencyNotFound[]) THEN
+					
+					SET refOut.ns:Warnings.ns:Warning = rVAIn.agencyNotFound;
+				ELSE
+					SET refOut.ns:Warnings.ns:Warning = rVAIn.loginError;
+				END IF;
+				
+			ELSEIF EXISTS(rVAIn.runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+				
+				SET refOut.ns:Errors.ns:Error = rVAIn.runtimeError;
+			
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;

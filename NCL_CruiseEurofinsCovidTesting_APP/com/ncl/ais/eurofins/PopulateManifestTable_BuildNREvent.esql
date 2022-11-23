@@ -1,0 +1,27 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+
+CREATE COMPUTE MODULE PopulateManifestTable_BuildNREvent
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE ns NAMESPACE  'http://com.ncl.newrelic';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NewRelicInsightEvent;
+		SET rOut.ns:Events[1].ns:EventType = 'TIMER_EVENT'; 
+		SET rOut.ns:Events[1].ns:Fields[1].ns:FieldName ='TIME';
+		SET rOut.ns:Events[1].ns:Fields[1].ns:FieldValue = CURRENT_TIMESTAMP;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

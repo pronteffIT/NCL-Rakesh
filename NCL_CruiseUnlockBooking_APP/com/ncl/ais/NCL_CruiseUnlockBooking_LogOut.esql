@@ -1,0 +1,57 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE PROCEDURE DeleteDataFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.deleteEntriesFromCache";	
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseUnlockBookingRQ;
+		DECLARE rResponse REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseUnlockBookingRS;
+		DECLARE cacheRetVal CHARACTER '';
+			
+		--IF COALESCE(rEnv.Temp.DB.Session.SESSIONID, '') = '' OR rEnv.Stateful = FALSE THEN
+		IF rEnv.Stateful = FALSE THEN
+			-- add audit trail
+			IF LENGTH(TRIM(rEnv.Temp.DB.Session.SESSIONID)) > 0 THEN 
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of session ...', rEnv);
+			
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			
+				SET OutputRoot.XMLNSC.LogOut_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				SET OutputRoot.XMLNSC.LogOut_IN.MsgHeader.SessionGUID = COALESCE(rEnv.Temp.DB.Session.SESSIONID, '');
+			
+				PROPAGATE;
+			END IF; 	
+			
+			IF rResponse.*:ReservationStatusChange.*:PriorStatus <> 'Unlocked' THEN
+				SET cacheRetVal = DeleteDataFromCache(COALESCE(rEnv.Temp.DB.Session.SESSIONID, ''), SessionMap, '');
+				SET cacheRetVal = DeleteDataFromCache(COALESCE(rOrgMsg.*:ReservationId, ''), SessionMap, '');
+			END IF;
+		END IF;
+				
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseUnlockBooking_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.Endpoint;
+		  
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+

@@ -1,0 +1,278 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE CACHE SHARED ROW;
+
+CREATE COMPUTE MODULE NCL_EnrichAmenityOrders_PrepareAmenityGuestInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rDbSrch REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:enrichAmenityOrders;
+		DECLARE rEnvResp REFERENCE TO Environment;
+		DECLARE rEnvItm REFERENCE TO Environment;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		DECLARE cLoyaltyMbrId CHARACTER '';
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- save MQMD header
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		
+		-- save some variables
+		SET rEnv.Temp.Var.SessionID = rIn.*:sessionGUID;
+		SET rEnv.Temp.Var.ReservationID = rIn.*:reservationID;
+		SET rEnv.Temp.Endpoint = rIn.*:Endpoint;
+	
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		CREATE LASTCHILD OF rEnv.Temp.Message AS rEnvResp NAME 'enrichAmenityOrdersResponse';
+		SET rEnvResp = rIn;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', '', rEnv.Temp.Var.ReservationID, '', '', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Enrich amenity orders request message', 'xml', rEnv);
+		END IF;
+
+		-- deleting order details which will be enriched in further calls
+		DELETE FIELD rEnvResp.*:NCL_CruiseRetrieveAmenityOrdersRS.*:AmenityOrders;
+		
+		-- create the elements which will be populated later
+		CREATE FIELD rEnvResp.sc:NCL_CruiseRetrieveAmenityOrdersRS.sc:Warnings;
+		CREATE FIELD rEnvResp.sc:NCL_CruiseRetrieveAmenityOrdersRS.sc:AmenityOrders;
+		CREATE FIELD rEnvResp.sc:NCL_CruiseRetrieveAmenityOrdersRS.sc:Errors;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to add guest and payment info ...', rEnv);
+		
+		-- loop thru the amenity orders
+		FOR rOrder AS rIn.*:NCL_CruiseRetrieveAmenityOrdersRS.*:AmenityOrders.*:AmenityOrder[] DO
+			-- call addAmenityGuestInfo amenity helper module
+			--SET OutputLocalEnvironment.CallableFlow.EndPoint = rEnv.Temp.Endpoint;
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+
+			SET OutputRoot.XMLNSC.sc:addAmenityGuestInfo.sc:amenityOrder = rOrder;
+			SET OutputRoot.XMLNSC.sc:addAmenityGuestInfo.sc:sessionGUID = rEnv.Temp.Var.SessionID;
+			SET OutputRoot.XMLNSC.sc:addAmenityGuestInfo.sc:reservationID = rEnv.Temp.Var.ReservationID;
+			SET OutputRoot.XMLNSC.sc:addAmenityGuestInfo.sc:Endpoint = rEnv.Temp.Endpoint;
+
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Amenity guest info request message', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE TO LABEL 'ADD_DETAILS';
+		END FOR;
+
+		-- create request to get gift card messages
+		IF EXISTS(CACHE.GiftCardMessages.GiftCardMessage[]) THEN
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;			
+		ELSE
+		
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			
+			CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDbSrch;
+			
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.Var.SessionID,rDbSrch);
+			
+--			SET OutputRoot.XMLNSC.DbSearch_IN.MsgHeader.Version = VersonixAPIVersion;
+--			IF LENGTH(COALESCE(rEnv.Temp.Var.SessionID,'')) > 0 THEN
+--				SET OutputRoot.XMLNSC.DbSearch_IN.MsgHeader.SessionGUID = rEnv.Temp.Var.SessionID;
+--			ELSE
+--				CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN.MsgHeader.CallerInfo.UserInfo.Internal;
+--			END IF;
+
+			CREATE FIELD rDbSrch.GiftCardMessages;
+	
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to get gift card messages ...', rEnv);
+	
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search request message', 'xml', rEnv);
+			END IF;
+		END IF;		
+			
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_EnrichAmenityOrders_PrepareAddPaymentReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addAmenityGuestInfoResponse;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Amenity guest info response message', 'xml', rEnv);
+		END IF;
+		
+	--	SET OutputLocalEnvironment.CallableFlow.EndPoint = rEnv.Temp.Endpoint;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+		SET OutputRoot.XMLNSC.sc:addPaymentInfo.sc:amenityOrderReq = rIn.*:amenityOrder;
+		SET OutputRoot.XMLNSC.sc:addPaymentInfo.sc:sessionGUID = rEnv.Temp.Var.SessionID;
+		SET OutputRoot.XMLNSC.sc:addPaymentInfo.sc:reservationID = rEnv.Temp.Var.ReservationID;
+		SET OutputRoot.XMLNSC.sc:addPaymentInfo.sc:Endpoint =  rEnv.Temp.Endpoint;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add payment info request message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_EnrichAmenityOrders_SaveOrderDetails
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addPaymentInfoResponse.*:amenityOrderRes;
+		DECLARE rWarn REFERENCE TO InputRoot.XMLNSC.*:addPaymentInfoFault_warning;
+		DECLARE rFault REFERENCE TO InputRoot.XMLNSC.*:addPaymentInfoFault;
+		DECLARE rEnvResp REFERENCE TO Environment.Variables.Temp.Message.enrichAmenityOrdersResponse.*:NCL_CruiseRetrieveAmenityOrdersRS;
+		DECLARE rEnvOrder REFERENCE TO Environment;
+		
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add payment info response message', 'xml', rEnv);
+		END IF;
+		
+		IF LASTMOVE(rIn) THEN
+			CREATE LASTCHILD OF rEnvResp.sc:AmenityOrders AS rEnvOrder NAMESPACE sc NAME 'AmenityOrder';
+			SET rEnvOrder = rIn;
+		ELSEIF LASTMOVE(rWarn) THEN
+			CREATE LASTCHILD OF rEnvResp.sc:Warnings AS rEnvOrder NAMESPACE sc NAME 'Warning';
+			SET rEnvOrder = rWarn;
+		ELSEIF LASTMOVE(rFault) THEN
+			CREATE LASTCHILD OF rEnvResp.sc:Errors AS rEnvOrder NAMESPACE sc NAME 'Error';
+			SET rEnvOrder = rWarn;
+		END IF;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_EnrichAmenityOrders_SaveOrderErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvResp REFERENCE TO rEnv.Temp.Message.enrichAmenityOrdersResponse.*:NCL_CruiseRetrieveAmenityOrdersRS;
+		DECLARE rEnvOrder REFERENCE TO Environment;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		CREATE LASTCHILD OF rEnvResp.sc:Errors AS rEnvOrder NAMESPACE sc NAME 'Error';
+		SET rEnvOrder.(XMLNSC.Attribute)Code = '12228';
+		SET rEnvOrder.(XMLNSC.Attribute)ShortText = 'System Internal Error';
+		SET rEnvOrder.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_EnrichAmenityOrders_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnvResp REFERENCE TO Environment.Variables.Temp.Message.enrichAmenityOrdersResponse;
+		DECLARE rGiftMsgResp REFERENCE TO OutputRoot;
+		DECLARE rResp REFERENCE TO OutputRoot;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search request message', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot.XMLNSC.sc:enrichAmenityOrdersResponse = rEnvResp;
+		MOVE rResp TO OutputRoot.XMLNSC.sc:enrichAmenityOrdersResponse.sc:NCL_CruiseRetrieveAmenityOrdersRS.sc:AmenityOrders;
+		IF NOT EXISTS(CACHE.GiftCardMessages.GiftCardMessage[]) THEN
+			SET CACHE.GiftCardMessages = InputRoot.XMLNSC.DbSearch_OUT.GiftCardMessages;
+		END IF;
+		
+		--FOR rGiftMsg AS InputRoot.XMLNSC.DbSearch_OUT.GiftCardMessages.GiftCardMessage[] DO
+		FOR rGiftMsg AS CACHE.GiftCardMessages.GiftCardMessage[] DO
+			CREATE LASTCHILD OF rResp.sc:AmenityGiftCardMessages AS rGiftMsgResp NAMESPACE sc NAME 'Message';
+			SET rGiftMsgResp = rGiftMsg.Message;
+		END FOR;
+
+		MOVE rResp TO OutputRoot.XMLNSC.sc:enrichAmenityOrdersResponse.sc:NCL_CruiseRetrieveAmenityOrdersRS;
+		
+		IF EXISTS(rResp.*:Errors.*:Error[]) THEN
+			DELETE FIELD rResp.*:AmenityOrders;
+			DELETE FIELD rResp.*:Warnings;
+			DELETE FIELD rResp.*:Success;
+		ELSE
+			DELETE FIELD rResp.*:Errors;
+		END IF;
+
+		IF NOT EXISTS(rResp.*:Warnings.*:Warning[]) THEN
+			DELETE FIELD rResp.*:Warnings;
+		END IF;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Enrich amenity orders response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_EnrichAmenityOrders_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

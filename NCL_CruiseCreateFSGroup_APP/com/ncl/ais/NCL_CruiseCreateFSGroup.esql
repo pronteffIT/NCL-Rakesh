@@ -1,0 +1,563 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_CREATE_FS_GRP_RESP';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_ExtractInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreateFSGroupRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateFSGroupRS;
+		DECLARE rEnrolReq REFERENCE TO OutputRoot.XMLNSC.EnrollAgencyIntoSailProgram_IN;
+		
+		DECLARE bPayload BLOB;
+		DECLARE DB ROW;
+		DECLARE cSystemName CHARACTER COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'SABRE');
+		DECLARE cQuery CHARACTER '';
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		SET rEnv.Temp.CacheLoadRequested = '#';
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.ID, COALESCE(rIn.*:POS.*:Source.PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.Code, ''),
+												COALESCE(rIn.*:CollectionName, ''),
+												COALESCE(rIn.*:AgentInfo.*:AgentLoginName, ''),
+												COALESCE(rIn.*:SailingInfo.*:VoyageID, ''),
+											 	rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'FS group request message', 'xml', rEnv);
+		END IF;
+
+		-- application logic starts here
+		SET rEnv.Temp.SessionId = rIn.*:SessionId.*:SessionToken;
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		
+		IF LENGTH(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID) > 0 THEN
+			SET rEnv.Temp.AgencyId = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		ELSE
+			IF LENGTH(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode) > 0 THEN
+				SET cQuery = 'SELECT B.DEFAULT_CURRENCY, B.AGENCY_ID, B.AGENCY_NAME, B.OFFICE_CODE FROM SEA.AGENCY_EXTERNAL A, SEA.AGENCY B' ||
+								' WHERE A.AGENCY_ID = B.AGENCY_ID AND B.IS_ACTIVE = ''Y'' AND A.PSEUDO_CITY_CODE = ? AND A.EXTERNAL_NAMES_ID = ' ||
+								'(SELECT EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES WHERE EXTERNAL_NAME = ?)';
+	
+				SET DB.AgencyInfo[] = PASSTHRU(cQuery VALUES(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, cSystemName));
+				SET rEnv.Temp.AgencyId = COALESCE(DB.AgencyInfo.AGENCY_ID, '0');
+			ELSE
+				SET rEnv.Temp.AgencyId = '0';
+			END IF;
+		END IF;
+
+		-- get agent info from agent login name
+		SET cQuery = 'select a.agent_id as "agentId", a.last_name as "lastName", a.first_name as "firstName", a.middle_name as "middleName", a.full_name as "fullName", ' ||
+							'a.birthday as "birthDay", a.email as "email", a.web_login_name as "webLoginName", b.agency_id as "agencyId", c.agency_name as "agencyName", ' ||
+							'c.country_code as "countryCode", c.default_currency as "defaultCurrency", c.office_code as "officeCode" ' ||
+						'from agent a, agency_contact b, agency c where a.agent_id = b.agent_id and c.agency_id = b.agency_id and c.is_active = ''Y'' and ' ||
+							'upper(web_login_name) = ?';
+
+		SET rEnv.Temp.Objects.AgentInfo[] = PASSTHRU(cQuery VALUES(UPPER(rIn.*:AgentInfo.*:AgentLoginName)));
+
+		-- if agent info is empty, send the error response
+		IF COALESCE(rEnv.Temp.Objects.AgentInfo.agencyId, '') = '' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Agent info could not be retrieved successfully ...', rEnv);
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateFSGroupRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+			
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12805';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Please check the Agency Login Name';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			
+			RETURN TRUE;
+		END IF;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to enroll agency into sailing program ...', rEnv);
+
+		CREATE FIELD OutputRoot.XMLNSC.EnrollAgencyIntoSailProgram_IN AS rEnrolReq;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rEnrolReq);
+--		SET rEnrolReq.MsgHeader.Version = VersonixAPIVersion;
+--		SET rEnrolReq.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+		SET rEnrolReq.SailID = rIn.*:SailingInfo.*:SailID;
+		SET rEnrolReq.AgencyID = rEnv.Temp.Objects.AgentInfo.agencyId;
+		SET rEnrolReq.Collection.IsDefault = 'N';
+		SET rEnrolReq.Collection.Name = rIn.*:CollectionName;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Enroll agency api request', 'xml', rEnv);
+		END IF;
+		
+		PROPAGATE TO TERMINAL 'out1';
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_GetAvailCategoryReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnrolResp REFERENCE TO InputRoot.XMLNSC.EnrollAgencyIntoSailProgram_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rAvailCatReq REFERENCE TO OutputRoot.XMLNSC.GetAvailCategories_IN;
+		
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Enroll agency api response', 'xml', rEnv);
+		END IF;
+		
+		SET rEnv.endpoint = COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+		
+		IF EXISTS(rEnrolResp.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Enroll agency to sail program failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateFSGroupRS', rEnv, rOrgMsg, rEnrolResp, rOutRoot);
+								
+			RETURN TRUE;
+		ELSE
+			SET rEnv.Temp.CollectionId = rEnrolResp.Collection.CollectionID;
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endpoint;
+			-- get avail categories request
+			CREATE FIELD OutputRoot.XMLNSC.GetAvailCategories_IN AS rAvailCatReq;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rAvailCatReq);
+			--SET rAvailCatReq.MsgHeader = rEnrolResp.MsgHeader;
+			
+			SET rAvailCatReq.SearchParams.PackageID = rOrgMsg.*:SailingInfo.*:VoyageID;
+			SET rAvailCatReq.SearchParams.Promotions.PromoCode = '$force_program';
+			
+			SET rAvailCatReq.SearchOptions.AvailabilityMode = 'GTY';
+			SET rAvailCatReq.SearchOptions.CalcPrices = 'Y';
+			SET rAvailCatReq.SearchOptions.PriceDetails = 'Y';
+			SET rAvailCatReq.SearchOptions.ExcludeOccupancy = 'Y';
+
+			SET rAvailCatReq.ResShell.ResHeader.AgencyID = rEnv.Temp.Objects.AgentInfo.agencyId;
+			SET rAvailCatReq.ResShell.ResHeader.CollectionID = rEnrolResp.Collection.CollectionID;
+			SET rAvailCatReq.ResShell.ResHeader.ResStatus = 'RQ';
+			SET rAvailCatReq.ResShell.ResHeader.SourceCode = rEnv.Temp.Channel;
+
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to get avail categories ...', rEnv);
+
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get avail categories api request', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_GetAgencyProgramAvail
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ;
+		DECLARE rAvailCatResp REFERENCE TO InputRoot.XMLNSC.GetAvailCategories_OUT;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rEnvCat REFERENCE TO Environment;
+		DECLARE rPrgmAvailReq REFERENCE TO OutputRoot.XMLNSC.GetAgencyProgramAvailability_IN;
+		
+		DECLARE bPayload BLOB;
+		DECLARE CATEGORY ROW;
+		DECLARE bCabinAvailable BOOLEAN FALSE;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get avail categories api response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rAvailCatResp.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Get available categories failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateFSGroupRS', rEnv, rOrgMsg, rAvailCatResp, rOutRoot);
+								
+			RETURN TRUE;
+		ELSE
+			-- build categories 
+			FOR rCatOpt AS rOrgMsg.*:CategoryOptions.*:CategoryOption[] DO
+				SET CATEGORY.AvailCat[] = SELECT AC FROM rAvailCatResp.AvailCategories.AvailCategory[] AS AC WHERE AC.Category = rCatOpt.*:Category;
+				
+				IF EXISTS(CATEGORY.AvailCat[]) THEN
+					CREATE LASTCHILD OF rEnv.Temp.Objects.Categories AS rEnvCat NAME 'Category';
+					
+					SET rEnvCat.CategoryCode = rCatOpt.*:Category;
+					SET rEnvCat.CatAvailPromos.CatAvailPromo[] = SELECT ITEM P.PromoCode FROM CATEGORY.AvailCat.UsedPromos.PromoItem[] AS P;
+					SET rEnvCat.AvailableCabin = CAST(CATEGORY.AvailCat.ShipAvailability.AvailCabins AS INTEGER);
+					SET rEnvCat.RequestedCabin = CAST(rCatOpt.*:RQTotal AS INTEGER);
+					SET rEnvCat.ExistingRQCount = 0;
+					
+					IF rEnvCat.AvailableCabin > rEnvCat.RequestedCabin THEN
+						SET rEnvCat.HasCapacity = TRUE;
+					ELSE
+						SET rEnvCat.HasCapacity = FALSE;
+					END IF;
+					
+					SET rEnvCat.CalculatedReqCount = 0;
+					SET rEnvCat.CreatedRQTotal = 0;
+					
+					IF rEnvCat.AvailableCabin > 0 THEN
+						SET bCabinAvailable = TRUE;
+					END IF;
+				END IF;
+			END FOR;
+			
+			-- if cabin available proceed, else send warning message and end the transaction
+			IF bCabinAvailable THEN
+				
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endpoint;
+				-- get agency program availability request
+				CREATE FIELD OutputRoot.XMLNSC.GetAgencyProgramAvailability_IN AS rPrgmAvailReq;
+				
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rPrgmAvailReq);
+			--	SET rPrgmAvailReq.MsgHeader = rAvailCatResp.MsgHeader;
+				SET rPrgmAvailReq.SailID = rOrgMsg.*:SailingInfo.*:SailID;
+				SET rPrgmAvailReq.AgencyID = rEnv.Temp.Objects.AgentInfo.agencyId;
+				SET rPrgmAvailReq.CollectionID = rEnv.Temp.CollectionId;
+
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to get agency program availability ...', rEnv);
+
+				-- log payload
+				IF LogPayload THEN
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get agency program availability api request', 'xml', rEnv);
+				END IF;
+				
+				PROPAGATE TO TERMINAL 'out1';
+			ELSE
+				CALL CreateCabinNotAvailMsg(rEnv, rOrgMsg, rOutRoot);
+				
+				RETURN TRUE;
+			END IF;
+		END IF;
+		
+		RETURN FALSE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_CustomDBSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ;
+		DECLARE rPrgmAvailResp REFERENCE TO InputRoot.XMLNSC.GetAgencyProgramAvailability_OUT;
+		DECLARE rDbSearchReq REFERENCE TO OutputRoot.XMLNSC.CustomDbSearch_IN;
+		DECLARE rCatItem REFERENCE TO Environment;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cAgencyPromo CHARACTER '#';
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get agency program availability api response', 'xml', rEnv);
+		END IF;
+		
+		-- update categories with agency promos
+		FOR rEnvCat AS rEnv.Temp.Objects.Categories.Category[] DO
+			-- loop thru the items and add promos for matching category
+			FOR rItem AS rPrgmAvailResp.AgencyProgramAvailability.Details.Item[] DO
+				MOVE rCatItem TO rItem.Details.Item;
+				
+				C: WHILE LASTMOVE(rCatItem) DO
+					IF (rCatItem.Category = rEnvCat.CategoryCode) THEN
+						-- loop thru the promo codes
+						FOR rPromoItem AS rCatItem.Details.Item[] DO
+							-- filter dupplicate promos
+							IF NOT CONTAINS(cAgencyPromo, rPromoItem.PromoCode) THEN
+								CREATE LASTCHILD OF rEnvCat.AgencyPromos NAME 'AgencyPromo' VALUE rPromoItem.PromoCode;
+								SET cAgencyPromo = cAgencyPromo || rPromoItem.PromoCode || '#';
+							END IF;						
+						END FOR;
+												
+						LEAVE C;
+					END IF;
+					
+					MOVE rCatItem NEXTSIBLING REPEAT TYPE NAME;
+				END WHILE;
+			END FOR;
+			
+			-- reset for next category
+			SET cAgencyPromo = '#';
+		END FOR;
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endpoint;
+		-- update booking request
+		CREATE FIELD OutputRoot.XMLNSC.CustomDbSearch_IN AS rDbSearchReq;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rDbSearchReq);
+		--SET rDbSearchReq.MsgHeader = rPrgmAvailResp.MsgHeader;
+		SET rDbSearchReq.ResCollectMinRQRequests.CollectionID = rEnv.Temp.CollectionId;
+		SET rDbSearchReq.ResCollectMinRQRequests.AgencyID = rEnv.Temp.Objects.AgentInfo.agencyId;
+		SET rDbSearchReq.ResCollectMinRQRequests.PackageID = rOrgMsg.*:SailingInfo.*:VoyageID;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling custom db search ...', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Custom db search api request', 'xml', rEnv);
+		END IF;
+
+		RETURN TRUE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_CalculateAvailability
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ;
+		DECLARE rDBSearchResp REFERENCE TO InputRoot.XMLNSC.CustomDbSearch_OUT;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rWarn REFERENCE TO Environment;
+		
+		DECLARE bPayload BLOB;
+		DECLARE TEMP ROW;
+		DECLARE iRQResCount INTEGER;
+		DECLARE hasAvailability, hasCommonPromos BOOLEAN FALSE;
+		DECLARE cCommonPromo CHARACTER '#';
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Custom db search api response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rDBSearchResp.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Custom DB search failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateFSGroupRS', rEnv, rOrgMsg, rDBSearchResp, rOutRoot);
+								
+			RETURN TRUE;
+		ELSE
+			-- update categories
+			FOR rEnvCat AS rEnv.Temp.Objects.Categories.Category[] DO
+				SET iRQResCount = THE(SELECT ITEM RQ.RQResCount FROM rDBSearchResp.ResCollectMinRQRequests.ResCollectMinRQRequest[] AS RQ 
+										WHERE RQ.CabinCategory = rEnvCat.CategoryCode);
+				
+				SET rEnvCat.ExistingRQCount = iRQResCount;
+				
+				IF iRQResCount > 0 THEN
+					IF rEnvCat.AvailableCabin >= rEnvCat.RequestedCabin + iRQResCount THEN
+						SET rEnvCat.CalculatedReqCount = rEnvCat.RequestedCabin;
+					ELSE
+						SET rEnvCat.CalculatedReqCount = rEnvCat.AvailableCabin - iRQResCount;
+					END IF;
+				ELSE
+					IF rEnvCat.AvailableCabin >= rEnvCat.RequestedCabin THEN
+						SET rEnvCat.CalculatedReqCount = rEnvCat.RequestedCabin;
+					ELSE
+						SET rEnvCat.CalculatedReqCount = rEnvCat.AvailableCabin;
+					END IF;
+				END IF;
+				
+				IF rEnvCat.CalculatedReqCount > 0 THEN
+					SET hasAvailability = TRUE;
+				END IF;
+				
+				-- set common promos
+				FOR rAvailPromo AS rEnvCat.CatAvailPromos.CatAvailPromo[] DO
+					SET TEMP.Common.Promo[] = SELECT ITEM C FROM rEnvCat.AgencyPromos.AgencyPromo[] AS C WHERE C = rAvailPromo;
+
+					IF EXISTS(TEMP.Common.Promo[]) AND NOT CONTAINS(cCommonPromo, rAvailPromo) THEN
+						CREATE LASTCHILD OF rEnvCat.CommonPromos NAME 'CommonPromo' VALUE rAvailPromo;
+						
+						SET cCommonPromo = cCommonPromo || rAvailPromo || '#';
+						SET hasCommonPromos = TRUE;
+					END IF;
+				END FOR;
+
+				-- reset for next category
+				SET cCommonPromo = '#';
+				
+				IF rEnvCat.RequestedCabin > rEnvCat.CalculatedReqCount THEN
+					CREATE LASTCHILD OF rEnv.Temp.Message.Warnings AS rWarn NAMESPACE ns NAME 'Warning';
+					
+					SET rWarn.(XMLNSC.Attribute)Code = '207089';
+					SET rWarn.(XMLNSC.Attribute)ShortText = 'Requested Cabin Not available for category ' || rEnvCat.CategoryCode || 
+																'. Available ' || CAST(rEnvCat.CalculatedReqCount AS CHARACTER);
+					SET rWarn.(XMLNSC.Attribute)Type = '3';
+				END IF;
+			END FOR;
+			
+			-- check for error condition (Raghu to confirm if commonPromos check is required)
+			IF (hasAvailability AND hasCommonPromos) THEN
+			--IF (hasAvailability) THEN
+				PROPAGATE TO TERMINAL 'out1';
+			ELSE
+				CALL CreateCabinNotAvailMsg(rEnv, rOrgMsg, rOutRoot);
+				
+				RETURN TRUE;
+			END IF;
+		END IF;
+		
+		RETURN FALSE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_CreateResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateFSGroupRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateFSGroupRS;
+		
+		DECLARE bPayload BLOB;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateFSGroupRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		CREATE FIELD rOut.ns:Success;
+		SET rOut.ns:SailingInfo.ns:VoyageID = rOrgMsg.*:SailingInfo.*:VoyageID;
+		SET rOut.ns:SailingInfo.ns:SailID = rOrgMsg.*:SailingInfo.*:SailID;
+		SET rOut.ns:CollectionInfo.ns:CollectionID = rEnv.Temp.CollectionId;
+		SET rOut.ns:CollectionInfo.ns:CollectionName = rOrgMsg.*:CollectionName;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'FS group response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		DECLARE bPayload BLOB;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'FS group response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateFSGroup_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,179 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE LoadAndUpdateBooking_UpdateBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rLoadBkgRes REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		--DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+		DECLARE rUpdtBkngReq REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		SET rOutRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;	
+		
+		
+		-- Exit processing if loadbooking returns errors
+		IF EXISTS(rLoadBkgRes.Errors.Error.ErrorMessage[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Load booking returned errors ...', rEnv);
+			
+			CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;	
+		ELSE
+			-- prepare for update booking
+			--CREATE LASTCHILD OF rEnv.Temp.Message DOMAIN('XMLNSC') NAME 'UpdateBooking_IN';
+			CREATE FIELD rEnv.Temp.Message.UpdateBooking_IN AS rUpdtBkngReq;			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling update booking with reservation id ...', rEnv);
+				
+			CALL CreateUpdateBookingReqWithResId(rEnv, rOrgMsg, rLoadBkgRes, rUpdtBkngReq, rOutRoot);				
+			
+			--SET OutputRoot.XMLNSC.UpdateBooking_IN = rEnv.Temp.Message.UpdateBooking_IN;
+			SET OutputRoot.XMLNSC.UpdateBooking_IN = rUpdtBkngReq;
+			--SET rEnv.Temp.Message.UpdateBooking_IN = NULL;
+			
+			RETURN TRUE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE LoadAndUpdateBooking_StoreBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rWarn, rStoreBkngReq REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rUpdBkgRes REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		
+		DECLARE cCode,cExternalCodeInfo CHARACTER '';
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rWarnings REFERENCE TO rEnv.Temp.Warnings;
+		DECLARE bFatalError, bNonFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rUpdBkgRes.Errors.Error[1];
+		SET rOutRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;	
+		
+		CREATE LASTCHILD OF rEnv.Temp.Message DOMAIN('XMLNSC') NAME 'UpdateBkgRes';
+		SET rEnv.Temp.Message.UpdateBkgRes = rUpdBkgRes;	
+		
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'
+			THEN
+				SET bFatalError = TRUE;
+			ELSEIF rError.BookingValidation.CanBeStored = 'Y' OR
+						rError.ErrorSeverity = 'W' OR rError.ErrorSeverity='I'
+			THEN
+				SET bNonFatalError = TRUE;
+			END IF;		
+			MOVE rError NEXTSIBLING;
+		END WHILE;	
+
+		--IF rUpdBkgRes.Errors.Error.ErrorSeverity = 'E' OR rUpdBkgRes.Errors.Error.ErrorSeverity = 'F' 
+		IF bFatalError = TRUE THEN			
+			
+			/* CALL CreateWarningResponseForVXErrors(rEnv, rOrgMsg, rUpdBkgRes, rOutRoot);	
+			-- Add res ID
+			SET	rOutRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS.ns:ReservationID.(XMLNSC.Attribute)ID = rEnv.Temp.ReservationId;
+			RETURN TRUE; */
+			
+			CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+								
+			--rUpdBkgRes.Errors.Error.BookingValidation.CanBeStored = 'Y' OR
+			--rUpdBkgRes.Errors.Error.ErrorSeverity = 'W' OR rUpdBkgRes.Errors.Error.ErrorSeverity='I' 
+		ELSEIF bNonFatalError = TRUE 
+		THEN		
+			CALL StoreErrorsAsWarnings (rUpdBkgRes.Errors, rEnv, rOutRoot);
+			/* IF NOT EXISTS(rEnv.Temp.Warnings[]) THEN
+				CREATE FIELD rEnv.Temp.Warnings AS rWarnings;				
+			END IF;
+			
+			FOR rError AS rUpdBkgRes.Errors.Error[] DO
+				SET cCode = rError.ErrorCode;
+				CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY ns:Warning;
+				-- get external error code from cache
+				SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.Temp.Channel || '#' || AdvCodeType, cCode, XC10CacheMap, XC10ConnectionConfig);
+	
+				IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+					CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+					-- trigger cache loader
+					SET rOutRoot.XMLNSC.CacheMetadata.Channel = rEnv.Temp.Channel;
+					SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = AdvCodeType;
+		
+					PROPAGATE TO LABEL 'CACHE_LOAD';
+		
+					CALL CreateWarningResponse('', rEnv.Temp.Channel, cCode, AdvCodeType, rError, rWarn);
+				ELSE
+					CALL CreateWarningResponse(cExternalCodeInfo, rEnv.Temp.Channel, cCode, AdvCodeType, rError, rWarn);
+				END IF;
+			END FOR;  */		
+
+		END IF;
+		
+		
+		IF rEnv.Stateless = TRUE THEN
+			-- Create Store Booking Request 
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling StoreBooking API ...', rEnv);
+		
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rStoreBkngReq;
+			
+--			SET OutputRoot.XMLNSC.StoreBooking_IN.MsgHeader.Version = VersonixAPIVersion;
+--			SET OutputRoot.XMLNSC.StoreBooking_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rStoreBkngReq);
+			SET rStoreBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+			
+			-- Setting this option to avoid calling UnlockBooking later
+			--SET OutputRoot.XMLNSC.StoreBooking_IN.Options.Unlock = 'Y';
+			
+			SET rStoreBkngReq.ResShellOptions.ExcludeElements = 'SpecialRequests';
+			--SET OutputRoot.XMLNSC.StoreBooking_IN.ResID = rEnv.Temp.ReservationId;
+			SET rStoreBkngReq.ResID = rUpdBkgRes.ResShell.ResHeader.ResID;
+			
+			PROPAGATE TO TERMINAL 'out1'; 			
+			
+		ELSEIF rEnv.Temp.ModeOfOperation = 'Edit' OR rEnv.Temp.ModeOfOperation = 'Update' 
+		THEN
+		SET rEnv.Temp.LockExpirationTime = rUpdBkgRes.ResShell.ResHeader.LockInfo.ExpiresAt;
+			-- Update Mode. Go directly to retrieve packages
+			PROPAGATE TO TERMINAL 'out2';
+			--RETURN FALSE;
+		ELSE
+			-- Create Store Booking Request 
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling StoreBooking API ...', rEnv);
+		
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rStoreBkngReq;
+			
+--			SET rStoreBkngReq.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rStoreBkngReq);
+			SET rStoreBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+			
+			-- Setting this option to avoid calling UnlockBooking later
+			--SET OutputRoot.XMLNSC.StoreBooking_IN.Options.Unlock = 'Y';
+			SET rStoreBkngReq.ResShellOptions.ExcludeElements = 'SpecialRequests';
+			--SET OutputRoot.XMLNSC.StoreBooking_IN.ResID = rEnv.Temp.ReservationId;
+			SET rStoreBkngReq.ResID = rUpdBkgRes.ResShell.ResHeader.ResID;
+			
+			PROPAGATE TO TERMINAL 'out1'; 
+			--RETURN FALSE;
+		END IF;
+		RETURN FALSE;
+	END;
+
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

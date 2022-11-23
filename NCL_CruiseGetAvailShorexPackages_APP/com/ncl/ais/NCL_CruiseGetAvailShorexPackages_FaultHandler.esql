@@ -1,0 +1,35 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+CREATE COMPUTE MODULE NCL_CruiseGetAvailShorexPackages_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetAvailShorexPackagesRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetAvailShorexPackagesRS AS runTimeErr;
+		
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+		
+
+END MODULE;

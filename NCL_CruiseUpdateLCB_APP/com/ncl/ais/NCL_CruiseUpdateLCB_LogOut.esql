@@ -1,0 +1,32 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateLCB_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.Endpoint;
+		
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+		
+		PROPAGATE TO TERMINAL 'out1';
+			
+		IF FIELDVALUE(rEnv.SessionId) IS NOT NULL THEN
+			SET OutputRoot = NULL;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionId;
+			RETURN TRUE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

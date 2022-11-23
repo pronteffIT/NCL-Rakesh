@@ -1,0 +1,716 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" version="3.000">
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA specification are made available according to the terms defined by the OTA License Agreement at http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:complexType name="AddressPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Address(es) to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Address" type="AddressInfoType"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="PrivacyGroup"/>
+	</xs:complexType>
+	<xs:complexType name="CommonPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Travel needs associated with a collection but independent of specific travel services.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="NamePref" type="NamePrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="PhonePref" type="PhonePrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="AddressPref" type="AddressPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="PaymentFormPref" type="PaymentFormPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="InterestPref" type="InterestPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="InsurancePref" type="InsurancePrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="SeatingPref" type="SeatingPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="TicketDistribPref" type="TicketDistribPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="MediaEntertainPref" type="MediaEntertainPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="PetInfoPref" type="PetInfoPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="MealPref" type="MealPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="LoyaltyPref" type="LoyaltyPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="SpecRequestPref" type="SpecRequestPrefType"/>
+			<xs:element maxOccurs="unbounded" minOccurs="0" name="RelatedTravelerPref" type="RelatedTravelerPrefType"/>
+			<xs:element minOccurs="0" ref="TPA_Extensions"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="PrivacyGroup"/>
+		<xs:attributeGroup ref="SmokingIndicatorGroup"/>
+		<xs:attributeGroup ref="PrimaryLangID_Group"/>
+		<xs:attributeGroup ref="AltLangID_Group"/>
+	</xs:complexType>
+	<xs:complexType name="CompanyNamePrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Identifies a preferred company by name.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="CompanyNameType">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="InsurancePrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Identifies travel insurance policies to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+				<xs:attribute name="RPH" type="RPH_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Index number to be used for reference the insurance policy to be used in this travel collection.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="InterestPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Traveler interests to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="LoyaltyPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Loyalty programs to be used with this collection.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+				<xs:attribute name="RPH" type="RPH_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Identification of loyalty program by reference number or index.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="MealPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Food and beverage preferences to be used with this collection.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength0to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+				<xs:attribute name="MealType" type="MealType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Type of meal required (e.g.,vegetarian, Kosher, low fat, etc.)</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="FavoriteFood" type="StringLength1to64">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Dining preferences used with this collection.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="Beverage" type="StringLength1to64">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Type of drink(s) preferred.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="MediaEntertainPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Media and entertainment information preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="NamePrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">PersonName to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="UniqueID" type="UniqueID_Type"/>
+			<xs:element name="PersonName" type="PersonNameType"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="PreferLevelGroup"/>
+	</xs:complexType>
+	<xs:complexType name="OtherSrvcPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Other travel service preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="OtherSrvcName" type="StringLength1to32">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Name of other travel services identified in this collection of preferences.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element maxOccurs="5" minOccurs="0" name="VendorPref" type="CompanyNamePrefType"/>
+			<xs:element maxOccurs="5" minOccurs="0" name="LoyaltyPref" type="LoyaltyPrefType"/>
+			<xs:element maxOccurs="5" minOccurs="0" name="PaymentFormPref" type="PaymentFormPrefType"/>
+			<xs:element maxOccurs="5" minOccurs="0" name="SpecRequestPref" type="SpecRequestPrefType"/>
+			<xs:element minOccurs="0" ref="TPA_Extensions"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="PreferLevelGroup"/>
+		<xs:attributeGroup ref="PrivacyGroup"/>
+		<xs:attribute name="TravelPurpose" type="OTA_CodeType" use="optional">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Refer to OTA Code List Travel Purpose (TVP).
+		</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+	<xs:complexType name="PaymentFormPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Form(s) of payment to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+				<xs:attribute name="RPH" type="RPH_Type"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="PetInfoPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Indicates the preferences for information about pets that accompany the customer in a given travel situation.
+			</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="PhonePrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Telephone number(s) to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Telephone" type="TelephoneInfoType"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="RelatedTravelerPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Name(s) of related travelers to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="UniqueID" type="UniqueID_Type"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="PreferLevelGroup"/>
+	</xs:complexType>
+	<xs:complexType name="SeatingPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Seating preferences to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength0to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+				<xs:attribute name="SeatDirection" type="StringLength1to16" use="optional">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Direction seat faces during travel, when conveyance allows.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="SeatLocation" type="xs:string" use="optional">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Location of seat in cabin of conveyance.  Suggested values include: Forward, Middle, Aft, ExitRow, Bulkhead, Right or Left Side, etc.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="SeatPosition" type="xs:string" use="optional">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Preferred position of seat in a row, such as Aisle, Middle, Center, Window, etc.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="SeatRow" type="xs:string" use="optional">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Preferred row for seating, indicates specific row number and/or seat identifier.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="SpecRequestPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Special request to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength1to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="TicketDistribPrefType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Type of ticket distribution to be used with this collection of preferences.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="StringLength0to64">
+				<xs:attributeGroup ref="PreferLevelGroup"/>
+				<xs:attribute name="DistribType" type="OTA_CodeType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Ticket distribution method such as Fax, Email, Courier, Mail, Airport_Pickup, City_Office, Hotel_Desk,
+ WillCall, etc. Refer to OTA Code List Distribution Type (DTB).</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="TicketTime" type="xs:duration">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Ticket turnaround time desired, amount of time requested to deliver tickets.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:attributeGroup name="IdentifierGroup">
+		<xs:attribute name="ID" type="StringLength1to32" use="optional">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Specifies a unique ID referencing an Amenity Order Option item.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:attributeGroup>
+	<xs:complexType name="AmenityOrderPaymentType">
+		<xs:sequence>
+			<xs:element name="SrcID" type="xs:string"/>
+			<xs:element name="SrcType" type="xs:string"/>
+			<xs:element minOccurs="0" name="DestID" type="xs:string"/>
+			<xs:element minOccurs="0" name="DestType" type="xs:string"/>
+			<xs:element name="FormOfPayment" type="xs:string"/>
+			<xs:element name="Currency">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Currency in which the payment was made to the Amenity.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="CurrencyAmountGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Status" type="xs:string"/>
+			<xs:element minOccurs="0" name="Comments" type="xs:string"/>
+			<xs:element minOccurs="0" name="TransType" type="xs:string"/>
+			<xs:element minOccurs="0" name="CCTransID" type="xs:string"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="IdentifierGroup"/>
+		<xs:attribute name="PaymentDate" type="xs:dateTime" use="required">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Specifies the date of payment for the Amenity Order.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderPaymentEntityType">
+		<xs:sequence>
+			<xs:element name="SrcEntity">
+				<xs:complexType>
+					<xs:attributeGroup ref="IdentifierGroup"/>
+					<xs:attribute name="SrcType">
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="ClientID"/>
+								<xs:enumeration value="AgencyID"/>
+								<xs:enumeration value="ClientBankID"/>
+								<xs:enumeration value="AgencyBankID"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DestEntity">
+				<xs:complexType>
+					<xs:attributeGroup ref="IdentifierGroup"/>
+					<xs:attribute name="DestType">
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="AmenityID"/>
+								<xs:enumeration value="ClientBankID"/>
+								<xs:enumeration value="AgencyBankID"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderPaymentDetailsRequestType">
+		<xs:complexContent>
+			<xs:extension base="AmenityOrderPaymentEntityType">
+				<xs:sequence>
+					<xs:element name="PaymentInfo" type="PaymentOptionsType"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="PaymentOptionsType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="PaymentOptions">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Collection of payment choices.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="9" name="PaymentOption">
+							<xs:annotation>
+								<xs:documentation xml:lang="en">Payment choice.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="PaymentDetailType">
+										<xs:attribute name="ExtendedIndicator" type="xs:boolean" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">When true, indicates payment will be made over an extended time. When false, the payment isn't extended.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+										<xs:attribute name="PaymentPurpose" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Specifies payment for a gift order or reservsation.</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:NMTOKEN">
+													<xs:enumeration value="GiftOrder"/>
+													<xs:enumeration value="Reservation"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+										<xs:attribute name="ExtendedDepositDate" type="DateOrDateTimeType" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Specifies the Extended Deposit Date for the check form of payment.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+										<xs:attribute name="ReferenceNumber" type="StringLength1to16" use="optional">
+											<xs:annotation>
+												<xs:documentation xml:lang="en">Specifies the Gift Order Reference/Form of Payment Number.</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderPaymentDetailsResponseType">
+		<xs:complexContent>
+			<xs:extension base="AmenityOrderPaymentEntityType">
+				<xs:sequence>
+					<xs:element name="AmenityPaymentInfo" type="AmenityPaymentResponseType"/>
+				</xs:sequence>
+				<xs:attributeGroup ref="IdentifierGroup"/>
+				<xs:attribute name="PaymentDate" type="xs:dateTime" use="required">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Specifies the date of payment for the Amenity Order.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="PaymentResponseType">
+		<xs:sequence>
+			<xs:element name="FormOfPayment" type="xs:string"/>
+			<xs:element name="Currency">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Currency in which the payment was made to the Amenity.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:attributeGroup ref="CurrencyAmountGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Status" type="xs:string"/>
+			<xs:element minOccurs="0" name="Comments" type="xs:string"/>
+			<xs:element minOccurs="0" name="TransType" type="xs:string"/>
+			<xs:element minOccurs="0" name="CCTransID" type="xs:string"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityPaymentResponseType">
+		<xs:complexContent>
+			<xs:extension base="PaymentResponseType"/>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderItemsInfoType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="AmenityOrderItems">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element maxOccurs="99" name="AmenityOrderItem" type="AmenityOrderItemType"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderItemType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="AmenityCategory" type="xs:string"/>
+			<xs:element name="AmenityCode" type="xs:string"/>
+			<xs:element minOccurs="0" name="AmenitySubCode" type="xs:string"/>
+			<xs:element minOccurs="0" name="AmenityName" type="xs:string"/>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger"/>
+			<xs:element minOccurs="0" name="AmenityPlaceCode" type="xs:string"/>
+			<xs:element name="AmenityItemDeliveryInfo" type="AmenityItemDeliveryType"/>
+			<xs:element name="Guest" type="GuestType"/>
+			<xs:element minOccurs="0" name="Comments" type="ParagraphType"/>
+			<xs:element minOccurs="0" name="AmenityInvoiceItems" type="AmenityInvoiceItemType"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="IdentifierGroup"/>
+		<xs:attribute name="AmenityType" type="xs:string" use="optional"/>
+	</xs:complexType>
+	<xs:complexType name="AmenityInvoiceItemType">
+		<xs:sequence>
+			<xs:element maxOccurs="unbounded" name="AmenityInvoiceItem">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AmenityCode" type="xs:string"/>
+						<xs:element name="AmenityInvoiceItemType" type="xs:string"/>
+						<xs:element minOccurs="0" name="AmentyInvoiceItemSubType" type="xs:string"/>
+						<xs:element minOccurs="0" name="PromoCode" type="xs:string"/>
+						<xs:element name="AmenityItemTotal" type="Money"/>
+						<xs:element name="Quantity" type="xs:nonNegativeInteger"/>
+						<xs:element minOccurs="0" name="ISItemValid" type="BooleanType"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityItemDeliveryType">
+		<xs:sequence>
+			<xs:element name="DeliveryType">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the delivery type (e.g., to the entire cabin
+, the guest or to a group).</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="PER CABIN"/>
+						<xs:enumeration value="PER GROUP"/>
+						<xs:enumeration value="PER GUEST"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element minOccurs="0" name="DeliveryPlace">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Specifies the delivery place (e.g., cabin
+, dining room.).</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:enumeration value="CABIN"/>
+						<xs:enumeration value="DINING ROOM"/>
+						<xs:enumeration value="HAWAII HOTEL"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element minOccurs="0" name="DayDeliveryBasis" type="xs:string"/>
+			<xs:element minOccurs="0" name="ItemDeliveryDay" type="xs:string"/>
+			<xs:element name="ItemDeliveryDate" type="DateOrDateTimeType"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderInfoType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="OrderDescription" type="xs:string"/>
+			<xs:element name="Currency">
+				<xs:complexType>
+					<xs:attributeGroup ref="CurrencyCodeGroup"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element minOccurs="0" name="ISOrderValid" type="BooleanType"/>
+			<xs:element minOccurs="0" name="ISDispatchedOK" type="BooleanType"/>
+			<xs:element minOccurs="0" name="ISTerminationCompleted" type="BooleanType"/>
+			<xs:element minOccurs="0" name="ISInvoiceValid" type="BooleanType"/>
+			<xs:element minOccurs="0" name="ISRefundDoneAfterCancellation" type="BooleanType"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="OriginatorInfoType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="Name" type="PersonNameType">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">The person requesting the amenity.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element minOccurs="0" name="Phone" type="xs:string"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="IdentifierGroup"/>
+		<xs:attribute name="OriginatorType" use="required">
+			<xs:simpleType>
+				<xs:restriction base="xs:string">
+					<xs:enumeration value="AGENCY"/>
+					<xs:enumeration value="INDIVIDUAL"/>
+					<xs:enumeration value="TRAVEL AGENCY"/>
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:attribute>
+	</xs:complexType>
+	<xs:complexType name="RecipientInfoType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="Name" type="PersonNameType">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">The person requesting the amenity.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element minOccurs="0" name="Phone" type="xs:string"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="IdentifierGroup"/>
+		<xs:attribute name="Type" use="required">
+			<xs:simpleType>
+				<xs:restriction base="xs:string">
+					<xs:enumeration value="FIT"/>
+					<xs:enumeration value="GROUP"/>
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:attribute>
+		<xs:attribute name="Status" type="OTA_CodeType" use="required">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Specifies the Booking status. Refer to OTA_Code list Status (STS).</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+	<xs:complexType name="GiftCardInfoType">
+		<xs:sequence>
+			<xs:element minOccurs="0" name="GiftCardComplimentsOf" type="xs:string">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Free text to enter the compliments text. Can either be a name or person or other information relevant to the Amenity being ordered.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element minOccurs="0" name="GiftCardTo" type="PersonNameType">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">The person to whom the Gift item to be sent to.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GiftCardMessage" type="xs:string"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="GiftCardAvailableMessageType">
+		<xs:sequence>
+			<xs:element maxOccurs="99" name="Message" type="xs:string"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AmenityOrderType">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">Specifies various information related to an Amenity Order that was made part of the booking.
+- Requstor Information
+- Recipient Information
+- Gift Card Information
+- Amenity Order Information	
+- Amenity Order Items Information
+- Invoice details for Amenity Items						
+							.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="RequestorInfo" type="OriginatorInfoType"/>
+			<xs:element name="RecipientInfo" type="RecipientInfoType"/>
+			<xs:element name="GiftCardInfo" type="GiftCardInfoType"/>
+			<xs:element name="AmenityOrderInfo" type="AmenityOrderInfoType"/>
+			<xs:element minOccurs="0" name="AmenityOrderItemsInfo" type="AmenityOrderItemsInfoType"/>
+			<xs:element minOccurs="0" name="AmenityOrderPaymentInfo" type="AmenityOrderPaymentType"/>
+		</xs:sequence>
+		<xs:attributeGroup ref="AmenityOrderGroup"/>
+	</xs:complexType>
+	<xs:attributeGroup name="AmenityOrderGroup">
+		<xs:annotation>
+			<xs:documentation>Provides the Amenity Order status and time of creation.</xs:documentation>
+		</xs:annotation>
+		<xs:attributeGroup ref="IdentifierGroup"/>
+		<xs:attribute name="OrderDate" type="xs:dateTime" use="optional">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Specifies the date of the Amenity Order.</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="Status" type="OTA_CodeType" use="optional">
+			<xs:annotation>
+				<xs:documentation xml:lang="en">Specifies the Amenity Order status. Refer to OTA_Code list Status (AM_STS).</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:attributeGroup>
+	<xs:complexType name="AmenityCodeType">
+		<xs:annotation>
+			<xs:documentation>Specifies the list of AmenityCodes that are available in the system.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element maxOccurs="unbounded" name="AvailAmenityCode">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AmenityCategory" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>Specifies the Category of  the Amenity. Some examples include FRUIT BASKET,FOOD,ITEM,CASINO,WINE,REWARDS etc.
+													</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="AmenityType" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>Speficies type of Amenity such as WINE,FRUIT,OBC,BIRTHDAY,CREDIT etc</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="AmenityCode" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>Specifies Unique code identifying an Amenity.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="AmenityName" type="xs:string">
+							<xs:annotation>
+								<xs:documentation>Specifies the name of an Amenity and some examples include LEBISTRO RESTAURANT,Soda Water,Backpack with Sports</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element minOccurs="0" name="AmenityProvider">
+							<xs:annotation>
+								<xs:documentation>Specifies the Information about the Amenity Service Provider. 
+</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Name" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>
+																			Examples include BAR,AIR,CASINO,GIFT SHOP etc													
+														</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Type" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>Example include BAR,AIR,CAS,GSHOP etc</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+						<xs:element minOccurs="0" name="Comments" type="xs:string"/>
+						<xs:element name="Price" type="Money"/>
+						<xs:element name="Currency">
+							<xs:complexType>
+								<xs:attributeGroup ref="CurrencyCodeGroup"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element minOccurs="0" name="ISSuggested" type="BooleanType">
+							<xs:annotation>
+								<xs:documentation>Speficies if this is a Amenity is setup as a suggestable Amenity</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element minOccurs="0" name="ISMandatory" type="BooleanType"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="CouponPaymentTransactionEntityType">
+		<xs:sequence>
+			<xs:element name="SrcEntity">
+				<xs:complexType>
+					<xs:attributeGroup ref="IdentifierGroup"/>
+					<xs:attribute name="SrcType">
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="ClientID"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DestEntity">
+				<xs:complexType>
+					<xs:attributeGroup ref="IdentifierGroup"/>
+					<xs:attribute name="DestType">
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="ResID"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

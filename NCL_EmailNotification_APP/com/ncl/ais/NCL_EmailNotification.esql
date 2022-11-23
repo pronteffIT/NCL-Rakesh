@@ -1,0 +1,94 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE FromAddress EXTERNAL CHARACTER '';
+DECLARE ToAddress EXTERNAL CHARACTER '';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     NCL
+ * PROJECT           :     WESB-IIB Migration
+ * FLOW NAME         :     NCL_EmailNotification
+ * MODULE NAME       :     NCL_EmailNotification_BuildEmailMessage
+ * Description       :     This module creates email request message for sending email 
+ 						   notification.  
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/30/2017   Prolifics      Initial version
+ * 1.1        
+ * 1.2        
+ *
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_EmailNotification_BuildEmailMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEmailReq REFERENCE TO InputRoot.XMLNSC.EmailRequest;
+		DECLARE rEmailHdr REFERENCE TO OutputRoot.EmailOutputHeader;
+		DECLARE rLocalEvEmail REFERENCE TO OutputLocalEnvironment;
+		
+		CREATE FIELD OutputRoot.EmailOutputHeader AS rEmailHdr;
+		
+		SET rEmailHdr.From = COALESCE(rEmailReq.EmailAddress.FromAddress, FromAddress);
+		SET rEmailHdr.To = COALESCE(rEmailReq.EmailAddress.ToAddress, ToAddress);
+		SET rEmailHdr.Cc = rEmailReq.EmailAddress.CcAddress;
+		SET rEmailHdr."Reply-To" = rEmailReq.EmailAddress.ReplyToAddress;
+		SET rEmailHdr.Subject = rEmailReq.EmailSubject;
+		
+		CREATE FIELD OutputLocalEnvironment.Destination.Email AS rLocalEvEmail;
+		SET rLocalEvEmail.BodyContentType = COALESCE(rEmailReq.EmailContentType, 'text/plain; charset=utf-8');
+		
+		IF EXISTS(rEmailReq.Attachment[]) THEN
+			SET rLocalEvEmail.Attachment.ContentType = rEmailReq.Attachment.AttachmentType;
+			SET rLocalEvEmail.Attachment.ContentEncoding = rEmailReq.Attachment.AttachmentEncoding;
+			SET rLocalEvEmail.Attachment.Content = CAST(rEmailReq.Attachment.AttachmentContent AS BLOB CCSID 1208);
+			SET rLocalEvEmail.Attachment.ContentName = rEmailReq.Attachment.AttachmentName;			
+		END IF;
+		
+		SET OutputRoot.BLOB.BLOB = CAST(rEmailReq.EmailContent AS BLOB CCSID 1208);
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     NCL
+ * PROJECT           :     WESB-IIB Migration
+ * FLOW NAME         :     NCL_EmailNotification
+ * MODULE NAME       :     NCL_EmailNotification_ProcessErrors
+ * Description       :     This module logs service errors
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/30/2017   Prolifics      Initial version
+ * 1.1        
+ * 1.2        
+ *
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_EmailNotification_ProcessErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET OutputRoot = InputRoot;
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Email request message', 'xml', rEnv);
+		
+		RETURN TRUE;
+	END;
+END MODULE;

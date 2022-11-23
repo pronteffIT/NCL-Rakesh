@@ -1,0 +1,10 @@
+NCLSEAT NCLWEBC nclwebc_oct17
+PLOG datapower datapowerseap2009
+OCINVSDB NVSCasino2SalesForce Salespara20180315
+RSSCNVSDB NVSCasino2SalesForce Salespara20180315
+NCLSEAD NCLWEBC NCLWEBC_sead_raghu_Jul22
+brokerTruststore::password temp Pa55word 
+sftp::PlusGradeFTPSecId jenkins Summer2020!
+sftp::CVSFTP jenkins Summer2020!
+sftp::GTreasuryFTP2 jenkins Summer2020!
+DWDB NVSCasino2SalesForce NVSIIB@202102

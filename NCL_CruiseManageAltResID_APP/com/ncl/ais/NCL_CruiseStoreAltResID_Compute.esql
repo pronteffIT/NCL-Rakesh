@@ -1,0 +1,25 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_Runtime
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking api', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv , rExcp);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		END IF;
+	END;
+END MODULE;
+
+

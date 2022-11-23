@@ -1,0 +1,21 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE UnlockAndLogoutSession_UnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.NCL_CruisePkgAvailRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		
+ 			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rOut);
+ 			SET rOut.ResID = rEnv.Temp.ReservationId;
+		RETURN TRUE;
+	END;
+
+END MODULE;

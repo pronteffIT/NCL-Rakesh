@@ -1,0 +1,521 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutGuest REFERENCE TO Environment.Variables;
+		DECLARE rIn,rSailingInfo,rGuestInfo,rOutDinig REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRS;
+		DECLARE RefInReq,rGuestDetl REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrievePackagesRQ;
+		DECLARE rOutSegment,rLdBkngRes,rOutPkgs,rOutTrans,rPrice_Guest, outRefHeader, rOutExtComponent,rExtParam REFERENCE TO rEnv.Temp.LoadBkingResp;
+		DECLARE inRef REFERENCE TO rOutSegment.ResShell.ResHeader;
+		DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+			-- Casting the CruiseRegistration Response to XML
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.BLOB CCSID 1208 ENCODING 546);
+			CREATE LASTCHILD OF rEnv.Temp AS rIn DOMAIN('XMLNSC') PARSE(bPayload,546,1208,'BLOB', 'XMLNSC');
+			SET rEnv.Temp.NCL_CruiseRetrieveAmenityOrdersRS.(XMLNSC.NamespaceDecl)* = NULL;
+			SET rEnv.Temp.NCL_CruiseRetrieveAmenityOrdersRS NAMESPACE = '';
+			MOVE rIn TO rEnv.Temp.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRS;
+			DETACH rIn.*:AmenityOrders.*:AmenityGiftCardMessages;
+		END IF;
+
+		CREATE LASTCHILD OF rEnv AS rOutResp DOMAIN('XMLNSC') IDENTITY NCL_CruiseRetrievePackagesRS;
+		CREATE FIELD rOutResp.ns:Success; 
+
+	    CREATE FIELD rOutResp.ns:Success; 
+
+	    -- Adding header to return additional infomration required in retrieve booking. Jira SEAOPS-3202
+	    CREATE LASTCHILD OF rOutResp AS outRefHeader IDENTITY ns:Header;
+ 		
+ 		SET outRefHeader.ns:ResID =  inRef.ResID;
+		SET outRefHeader.ns:AgencyID =  inRef.AgencyID;
+		SET outRefHeader.ns:AgentID =  inRef.AgentID;
+		SET outRefHeader.ns:SecAgencyID =  inRef.SecAgencyID; 
+		SET outRefHeader.ns:SecAgentID =  inRef.SecAgentID;
+		
+		SET rEnv.ResPackage[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE';
+		-- This FOR loop Creates SailingInfo
+		FOR rResPackage AS rEnv.ResPackage[] DO
+
+			SET rEnv.DuplicateSailing[] = SELECT A FROM rOutResp.*:SailingInfo[] AS A WHERE A.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID = rResPackage.PackageID;
+
+			IF NOT EXISTS(rEnv.DuplicateSailing[])THEN
+
+				SET rEnv.ResComponent = THE(SELECT A FROM rLdBkngRes.*:ResShell.*:ResComponents.*:ResComponent[] AS A
+				WHERE A.Type = 'SAIL' AND A.PackageID = rResPackage.PackageID) ;
+				CREATE LASTCHILD OF rOutResp AS rSailingInfo IDENTITY ns:SailingInfo;
+				-- CREATE FIELD rSailingInfo.ns:SelectedSailing;
+				DECLARE FromDate, Todate TIMESTAMP;
+				SET FromDate = CAST(rResPackage.VacationDates.From AS TIMESTAMP FORMAT 'IU');
+				SET Todate = CAST(rResPackage.VacationDates.To AS TIMESTAMP FORMAT 'IU') ;
+				DECLARE Diff INTEGER;
+				SET Diff = (Todate - FromDate )DAY;
+
+				SET rSailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)Duration = 'P'|| CAST(Diff AS CHARACTER) ||'D';
+				SET rSailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)End = CAST(CAST(TRANSLATE(rResPackage.VacationDates.To,'T',' ') AS TIMESTAMP) AS DATE);
+				SET rSailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)ShipCode = rResPackage.Ship;
+				SET rSailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)Start = CAST(CAST(TRANSLATE(rResPackage.VacationDates.From,'T',' ') AS TIMESTAMP) AS DATE);
+				SET rEnv.VoyageId = THE(SELECT A.PackageID FROM rLdBkngRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE FIELDVALUE(A.Ship) IS NOT NULL);
+				SET rSailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID = rResPackage.PackageID; --rEnv.VoyageId.PackageID;
+
+				SET rSailingInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorCode = 'NCL';
+				SET rSailingInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorName = 'Norwegian Cruise Lines';
+				SET rSailingInfo.ns:SelectedSailing.ns:DeparturePort.(XMLNSC.Attribute)LocationCode = rEnv.ResComponent.*:Location.*:From.Code;
+				SET rSailingInfo.ns:SelectedSailing.ns:ArrivalPort.(XMLNSC.Attribute)LocationCode = rEnv.ResComponent.*:Location.*:To.Code;
+
+				SET rSailingInfo.ns:Currency.(XMLNSC.Attribute)CurrencyCode = rLdBkngRes.*:ResShell.*:ResHeader.*:Currency;
+				SET rSailingInfo.ns:Currency.(XMLNSC.Attribute)DecimalPlaces = '2';
+				SET rSailingInfo.ns:SailingRemarksText.ns:Text = rResPackage.*:Notes;
+				SET rSailingInfo.ns:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode = rResPackage.PriceCategory;
+
+				IF com.ncl.ais.utils.isNumeric(rLdBkngRes.*:ResShell.*:ResShipRequests.*:ResShipRequest.*:Inventory.*:CabinChain.*:CabinAssignment.*:CabinNumber) THEN
+					SET rSailingInfo.ns:SelectedCategory.ns:SelectedCabin.(XMLNSC.Attribute)CabinNumber =
+					rLdBkngRes.*:ResShell.*:ResShipRequests.*:ResShipRequest.*:Inventory.*:CabinChain.*:CabinAssignment.*:CabinNumber;
+				END IF;
+				DETACH rEnv.ResComponent;
+			END IF;
+		END FOR;
+		DETACH rEnv.ResPackage;
+		-- End for SailingInfo section.
+
+		CREATE LASTCHILD OF rOutResp AS rGuestInfo IDENTITY ns:GuestInfo;
+		SET rGuestInfo.ns:ReservationID.(XMLNSC.Attribute)ID = rLdBkngRes.ResShell.ResHeader.ResID;
+		SET rGuestInfo.ns:ReservationID.(XMLNSC.Attribute)ResInitDateTime =
+		CAST(CAST(rLdBkngRes.ResShell.ResHeader.InitialDate AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+
+		DECLARE Channel CHARACTER rEnv.BkingChnlCompCd;
+		IF com.ncl.ais.utils.IsEmpty(rEnv.BkingChnlCompCd) THEN SET Channel = 'NCLWEBC';
+		END IF;
+
+		SET rGuestInfo.ns:ReservationID.(XMLNSC.Attribute)StatusCode =
+		com.ncl.ais.utils.XrefExternalCodes(Channel, 'STS', rLdBkngRes.ResShell.ResHeader.ResStatus, rEnv, rOut);
+
+		SET rGuestInfo.ns:ReservationID.(XMLNSC.Attribute)Type = rLdBkngRes.ResShell.ResHeader.ResType;
+
+		FOR rGuest AS rLdBkngRes.*:ResShell.*:ResGuests.*:ResGuest[] DO
+			IF LENGTH(rGuest.ClientID) > 0 THEN
+				SET OutputRoot = NULL;
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+				--SET rOut.MsgHeader.Version = VersonixAPIVersion;
+				
+--				IF EXISTS(rEnv.SessionGUID[]) THEN
+--					SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+--				ELSE
+--					SET rOut.MsgHeader.CallerInfo.UserInfo.Internal = '';
+--				END IF;	
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+				SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+				SET rOut.Clients.ClientID = rGuest.ClientID;
+				-- Route To DB search Call to get the GuestInfo Based on the ClientID.
+				PROPAGATE TO LABEL 'InvokeDBSearch';
+
+				FOR rDBClients AS rEnv.DBSearchResponse.DBClients.Client[] DO
+					CREATE LASTCHILD OF rOutResp.ns:GuestInfo.ns:GuestDetails AS rGuestDetl IDENTITY ns:GuestDetail;
+
+					SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)Age = CAST(com.ncl.ais.utils.getAge(rDBClients.Birthday) AS CHARACTER);
+					SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)BirthDate = rDBClients.Birthday;
+					IF rDBClients.Gender = 'M' THEN
+						SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)Gender = 'Male';
+					ELSE
+						SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)Gender = 'Female';
+					END IF;
+					SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)GuestRefNumber = rGuest.GuestSeqN;
+					SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID = rGuest.ClientID;
+					SET rGuestDetl.ns:ContactInfo.(XMLNSC.Attribute)Nationality = rDBClients.Nationality;
+					SET rGuestDetl.ns:ContactInfo.ns:PersonName.ns:GivenName = rDBClients.FirstName;
+					SET rGuestDetl.ns:ContactInfo.ns:PersonName.ns:MiddleName = rDBClients.MiddleName;
+					SET rGuestDetl.ns:ContactInfo.ns:PersonName.ns:Surname = rDBClients.LastName;
+					SET rGuestDetl.ns:ContactInfo.ns:PersonName.ns:NameTitle = rDBClients.Title;
+				END FOR;
+
+				DETACH rEnv.DBSearchResponse.DBClients;
+			END IF;
+		END FOR;
+		
+		
+		
+		-- This for loop get the package class type
+		DECLARE PackageIds CHARACTER '';
+		FOR refPackages AS rLdBkngRes.*:ResShell.*:ResPackages.*:ResPackage[] DO					
+			SET PackageIds = PackageIds || ',' || refPackages.PackageID;
+		END FOR;
+		
+		IF LENGTH(PackageIds) > 0 THEN
+		SET PackageIds = SUBSTRING(PackageIds FROM 2);
+		SET rEnv.Temp.PackageClassType[] = PASSTHRU('SELECT A.PACKAGE_ID, A.PACKAGE_CLASS_TYPE FROM sea.package_class_link  A WHERE A.package_id IN(' || PackageIds || ')');
+		END IF;
+		
+		-- This FOR loop Creates Packages
+		-- CREATE FIELD rOutResp.ns:Packages;
+		FOR rPackages AS rLdBkngRes.*:ResShell.*:ResPackages.*:ResPackage[] DO
+
+			SET rEnv.DuplicatePkg[] = SELECT A FROM rOutResp.*:Packages.*:Package[] AS A WHERE A.Code = rPackages.PackageType;
+			-- Check for the Duplicate packages
+			IF NOT EXISTS(rEnv.DuplicatePkg[]) THEN
+
+				IF rPackages.Ship IS NULL AND COALESCE(rPackages.PackageType, '') <> '' THEN
+
+					SET OutputRoot = NULL;
+					SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+					CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+					CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+					CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+					
+					SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+					SET rOut.PackageTypes.PackageType = rPackages.PackageType;
+					-- Route To DB search Call to get the GuestInfo Based on the Package/ProductType
+					PROPAGATE TO LABEL 'InvokeDBSearch';
+
+					FOR rDBPkgType AS rEnv.DBSearchResponse.DBPackages.PackageType[] DO
+
+						CREATE LASTCHILD OF rOutResp.ns:Packages AS rOutPkgs IDENTITY ns:Package;
+						SET rOutPkgs.(XMLNSC.Attribute)ID = rPackages.PackageID;
+						-- Need to Call the PkgTypeCd_Query
+						SET rOutPkgs.(XMLNSC.Attribute)PackageTypeCode = getPackageTypeCode(rEnv,rDBPkgType);
+						SET rOutPkgs.ns:Type = rDBPkgType.ProductType;
+
+						SET rEnv.ResComp_Ding_PKG[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResComponents.*:ResComponent[] AS A WHERE A.Type = 'DINING_PKG'
+																															AND A.PackageID = rPackages.*:PackageID;
+						IF EXISTS(rEnv.ResComp_Ding_PKG[]) THEN
+							SET rOutPkgs.ns:Name = rEnv.ResComp_Ding_PKG.Code;
+						ELSE
+							SET rOutPkgs.ns:Name = rPackages.Notes;
+						END IF;
+						SET rOutPkgs.ns:Code = rDBPkgType.PackageType;
+						SET rOutPkgs.ns:Comments = rPackages.Notes;
+						SET rOutPkgs.ns:DateRange.ns:PackageStartDate = CAST(CAST(rPackages.VacationDates.From AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT 'IU');
+						SET rOutPkgs.ns:DateRange.ns:PackageEndDate = CAST(CAST(rPackages.VacationDates.To AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT 'IU');
+						-- Price Mapping Section
+						DECLARE cGuestRefs CHARACTER TRIM(rPackages.GuestRefs);
+						--This Proc Splits the GuestReference from GuestRefs
+						CALL com.ncl.ais.utils.SplitGuestRef(cGuestRefs,rEnv);
+
+						IF NOT com.ncl.ais.utils.IsEmpty(rPackages.BookMode) THEN
+							FOR rSplit AS rEnv.Split.VALUE[] DO
+
+								SET rEnv.InvoiceItems.ResInvoiceItem[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResInvoice.*:ResInvoiceItem[] AS A
+																												WHERE A.Source.PackageID = rPackages.PackageID AND rSplit = A.GuestSeqN;
+
+								CREATE LASTCHILD OF rOutPkgs.ns:Price AS rPrice_Guest IDENTITY ns:Guest;
+								IF EXISTS(rEnv.InvoiceItems.ResInvoiceItem[]) THEN
+
+									DECLARE Amount DECIMAL 0;
+									FOR rInvoice AS rEnv.InvoiceItems.ResInvoiceItem[] DO
+										IF NOT com.ncl.ais.utils.IsEmpty(rInvoice.Amount) THEN
+											SET rPrice_Guest.ns:GuestRefNumber = rInvoice.GuestSeqN;
+											DECLARE TempAmnt DECIMAL 0;
+											SET TempAmnt = CAST(rInvoice.Amount AS DECIMAL);
+											SET Amount = Amount + TempAmnt;
+											SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)Amount = COALESCE(CAST(Amount*100 AS INTEGER),0);
+											SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)CurrencyCode = rLdBkngRes.*:ResShell.*:ResHeader.*:Currency;
+										ELSE
+											SET rPrice_Guest.ns:GuestRefNumber = rInvoice.GuestSeqN;
+											SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)Amount = 0;
+											SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)CurrencyCode = rLdBkngRes.*:ResShell.*:ResHeader.*:Currency;
+
+										END IF;
+									END FOR;
+								ELSE
+									SET rPrice_Guest.ns:GuestRefNumber = rSplit;
+									SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)Amount = 0;
+									SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)CurrencyCode = rLdBkngRes.*:ResShell.*:ResHeader.*:Currency;
+								END IF;
+								DETACH rEnv.InvoiceItems;
+							END FOR;
+						END IF;
+						-- ENd for Price Section
+
+						DECLARE GuestRef CHARACTER SUBSTRING(rPackages.GuestRefs BEFORE ' ');
+						SET rEnv.ResComponent[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResComponents.*:ResComponent[] AS A
+																										WHERE A.PackageID = rPackages.PackageID; --AND A.GuestRefs = GuestRef;
+						SET rOutPkgs.ns:Location.ns:From.ns:Code = rEnv.ResComponent.Location.From.Code;
+						SET rOutPkgs.ns:Location.ns:From.ns:Type = rEnv.ResComponent.Location.From.Type;
+						IF rEnv.ResComponent.Location.From.Type <> 'SHIP' THEN
+							SET rOutPkgs.ns:Location.ns:From.ns:Name = XrefGetPortName(rEnv.ResComponent.Location.From.Code,XC10CachePortInfoMap, XC10ConnectionConfig,rEnv,rOut);
+							--THE(SELECT ITEM A.PORT_NAME From Database.port AS A where A.PORT_CODE = rEnv.ResComponent.Location.From.Code); -- Lookup "PortNameLookupEngine"
+						END IF;
+
+						SET rOutPkgs.ns:Location.ns:To.ns:Code = rEnv.ResComponent.Location.To.Code;
+						SET rOutPkgs.ns:Location.ns:To.ns:Type = rEnv.ResComponent.Location.To.Type;
+
+						IF rEnv.ResComponent.Location.To.Type <> 'SHIP' THEN
+							SET rOutPkgs.ns:Location.ns:To.ns:Name = THE(SELECT ITEM A.PORT_NAME From Database.port AS A where A.PORT_CODE = rEnv.ResComponent.Location.To.Code); -- Lookup "PortNameLookupEngine"
+						END IF;
+						-- End for Location Section
+						
+						-- calling package calss procedure
+						SET rOutPkgs.ns:PackageClassType = THE(SELECT ITEM P.PACKAGE_CLASS_TYPE FROM rEnv.Temp.PackageClassType[] AS P WHERE P.PACKAGE_ID = rPackages.*:PackageID) ;
+				
+						IF rDBPkgType.ProductType = 'DINING' THEN
+							DECLARE TsizeQuery CHARACTER;
+							SET TsizeQuery = 'select component_subcode1 from package_itinerary it,package_definition p where package_id=? and it.component_type=''DINING_PKG'' AND
+							p.package_type=it.package_type and it.seq_num=1';
+							SET rEnv.DBResult = NULL;
+							SET rEnv.DBResult.Tsize[] = PASSTHRU(TsizeQuery,rPackages.PackageID);
+							SET rOutPkgs.ns:TableSize = rEnv.DBResult.Tsize.COMPONENT_SUBCODE1;
+
+						END IF;
+
+						DETACH rEnv.DBSearchResponse.DBPackages;
+					END FOR;
+				END IF;
+			END IF;
+			DETACH rEnv.ResComp_Ding_PKG;
+			DETACH rEnv.ResComponent;
+		END FOR;
+		-- End for Packages section.
+		-- Add the AmenityOrders
+		CREATE FIELD rOutResp.ns:AmenityOrders;
+		SET rOutResp.ns:AmenityOrders = rIn.*:AmenityOrders;
+		-- This FOR loop Creates ResTransportations
+		--CREATE FIELD rOutResp.ns:ResTransportations;
+		FOR rResTrans AS rLdBkngRes.*:ResShell.*:ResTransportations.*:ResTransportation[] DO
+			IF rResTrans.IsActive = 'Y' THEN
+				DECLARE guestRefs CHAR TRIM(rResTrans.GuestRefs)||' ';
+				WHILE COALESCE(guestRefs,'')<> '' DO
+					CREATE LASTCHILD OF rOutResp.ns:ResTransportations AS rOutTrans IDENTITY ns:ResTransportation;
+					SET rOutTrans.ns:Type = rResTrans.Type;
+					SET rOutTrans.ns:Mode = rResTrans.Mode;
+					SET rOutTrans.ns:GuestRefNumber = SUBSTRING(guestRefs BEFORE ' ');
+					SET guestRefs = NULLIF(LTRIM(SUBSTRING(guestRefs AFTER ' ')),'');
+					SET rOutTrans.ns:Gateway.ns:Out.ns:Timing = rResTrans.TimingOut;
+					SET rOutTrans.ns:Gateway.ns:Out.ns:Code = rResTrans.GatewayOut;
+					SET rOutTrans.ns:Gateway.ns:Return.ns:Timing = rResTrans.TimingRet;
+					SET rOutTrans.ns:Gateway.ns:Return.ns:Code = rResTrans.DestGatewayRet;
+					FOR rLeg AS rResTrans.ActualItinerary.Leg[] DO
+						CREATE LASTCHILD OF rOutTrans.ns:Segments AS rOutSegment IDENTITY ns:Segment;
+						SET rOutSegment.ns:SeqN = rLeg.SeqN;
+						SET rOutSegment.ns:Direction = rLeg.Direction;
+						SET rOutSegment.ns:Carrier = COALESCE(rLeg.MarketingCarrier,rLeg.OperatingCarrier);
+						SET rOutSegment.ns:Flight = rLeg.Flight;
+						SET rOutSegment.ns:Departure.ns:Airport = rLeg.Departure.Airport;
+						SET rOutSegment.ns:Departure.ns:ActualTime = CAST( CAST(rLeg.Departure.ActualTime AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT FormatZ);
+						SET rOutSegment.ns:Departure.ns:EarliestTime = CAST( CAST(rLeg.Departure.EarliestTime AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT FormatZ);
+						SET rOutSegment.ns:Arrival.ns:Airport = rLeg.Arrival.Airport;
+						SET rOutSegment.ns:Arrival.ns:ActualTime = CAST( CAST(rLeg.Arrival.ActualTime AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT FormatZ);
+						SET rOutSegment.ns:Arrival.ns:EarliestTime = CAST( CAST(rLeg.Arrival.EarliestTime AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT FormatZ);
+						SET rOutSegment.ns:Arrival.ns:LatestTime = CAST(CAST(rLeg.Arrival.LatestTime AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+					END FOR;
+				END WHILE;
+			END IF;
+		END FOR; 
+		
+		-- This FOR loop Creates ResAirIndependent section
+		FOR rResTrans AS rLdBkngRes.*:ResShell.*:ResAirIndependents.*:ResAirIndependent[] DO
+			DECLARE guestRefs CHAR TRIM(rResTrans.*:GuestRefs)||' ';
+			DECLARE CurrGuest CHAR '';
+			
+			WHILE COALESCE(guestRefs,'')<> '' DO					
+				SET CurrGuest = SUBSTRING(guestRefs BEFORE ' ');
+				
+				IF NOT(EXISTS(rEnv.GuestCheckList.{'Guest'||CurrGuest}[])) THEN
+						CREATE LASTCHILD OF rOutResp.ns:ResTransportations AS rOutTrans IDENTITY ns:ResTransportation;
+						SET rOutTrans.ns:Type = 'AIR';
+						SET rOutTrans.ns:Mode = 'INDEPENDENT';
+						SET rOutTrans.ns:IsActive = 'Y';
+						SET rOutTrans.ns:GuestRefNumber = CurrGuest;
+						DECLARE setAirDetails BOOLEAN TRUE;
+						
+					SET rEnv.AirIndependents.AirIndependent[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResAirIndependents.*:ResAirIndependent[] AS A WHERE CONTAINS(A.*:GuestRefs,CurrGuest);
+					SET rEnv.GuestCheckList.{'Guest'||CurrGuest}.ref=CurrGuest;		
+
+					SET rEnv.ResAirIndependent.Departure = THE(SELECT A.*:Flights.*:Flight.*:DepartureAirport FROM rEnv.AirIndependents.AirIndependent[] AS A WHERE A.SegmentKind = 'OUTBOUND');
+					SET rOutTrans.ns:GatewayOut = rEnv.ResAirIndependent.Departure.DepartureAirport;
+					SET rEnv.ResAirIndependent.Arrival = THE(SELECT A.*:Flights.*:Flight.*:ArrivalAirport FROM rEnv.AirIndependents.AirIndependent[] AS A WHERE A.SegmentKind = 'RETURN');
+					SET rOutTrans.ns:GatewayRet = rEnv.ResAirIndependent.Arrival.ArrivalAirport; 
+			
+					FOR rAirInd AS rEnv.AirIndependents.AirIndependent[] DO
+						FOR rFlights AS rAirInd.*:Flights.*:Flight[] DO
+							CREATE LASTCHILD OF rOutTrans.ns:Segments AS rOutSegment IDENTITY ns:Segment;				
+							SET rOutSegment.ns:SeqN = rFlights.*:LegSeqN;
+							IF rAirInd.*:SegmentKind = 'RETURN' THEN
+								SET rOutSegment.ns:Direction = 'RET';
+							ELSEIF rAirInd.*:SegmentKind = 'OUTBOUND' THEN
+								SET rOutSegment.ns:Direction = 'OUT';
+							END IF;
+							
+							SET rOutSegment.ns:Carrier = rFlights.*:Airline;   
+							SET rOutSegment.ns:Flight = rFlights.*:FlightNo; 
+							SET rOutSegment.ns:Departure.ns:Airport = rFlights.*:DepartureAirport; 
+							SET rOutSegment.ns:Departure.ns:ActualTime = CAST(CAST(rFlights.*:DepartureDateTime AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT FormatZ);
+							SET rOutSegment.ns:Arrival.ns:Airport = rFlights.*:ArrivalAirport;
+							SET rOutSegment.ns:Arrival.ns:ActualTime = CAST(CAST(rFlights.*:ArrivalDateTime AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT FormatZ);
+						END FOR;
+						    SET rEnv.ResAirIndependent.Departure = NULL;
+						    SET rEnv.ResAirIndependent.Arrival = NULL;
+					END FOR;
+				END IF;	
+				SET rEnv.AirIndependents.AirIndependent = NULL;
+				SET guestRefs = NULLIF(LTRIM(SUBSTRING(guestRefs AFTER ' ')),'');
+			END WHILE;					
+		END FOR;
+		DETACH rEnv.GuestCheckList;
+		-- End for ResAirIndependent section.
+		
+		-- This FOR loop Creates StandardDinings
+		CREATE FIELD rOutResp.ns:StandardDinings;
+		FOR rInDining AS rLdBkngRes.*:ResShell.*:ResStdDinigs.*:Dining[] DO
+			CREATE LASTCHILD OF rOutResp.ns:StandardDinings AS rOutDinig IDENTITY ns:Dinig;
+			SET rOutDinig.ns:Ship = rInDining.Ship;
+			SET rOutDinig.ns:RestaurantName = rInDining.Restaurant;
+			SET rOutDinig.ns:StartDateTime = CAST(rInDining.StartDateTime AS TIMESTAMP FORMAT 'IU');
+
+			FOR rGuest AS rInDining.*:ExtraGuestInfos.*:ExtraGuestInfo[] DO
+				CREATE LASTCHILD OF rOutDinig.ns:GuestDetails AS rOutGuest IDENTITY ns:Guest;
+				SET rOutGuest.ns:LoyaltyMembershipID = THE(SELECT A.ClientID FROM rLdBkngRes.*:ResGuests.*:ResGuest[] AS A WHERE A.GuestSeqN = rGuest.GuestSeqN);
+				SET rOutGuest.ns:AdditionalGuestCount = rGuest.ExtraGuestCount;
+			END FOR;
+		END FOR;		
+		-- End for StandardDinings section.
+		SET rEnv.ResComponents.ResComponent[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResComponents.*:ResComponent[] AS A WHERE A.Type='AIR-OUT' OR A.Type='AIR-RET'
+												OR A.Type='AIRPORT TO HTL' OR A.Type='AIRPORT TO PORT' OR A.Type='HTL TO AIRPORT' OR A.Type='HTL TO PORT'
+												OR A.Type='PORT TO AIRPORT' OR A.Type='PORT TO HTL';
+		-- IN ( 'AIR-OUT','AIR-RET','AIRPT,TO,HTL','AIRPT,TO,PT','HTL,TO,AIRPT','HTL,TO,PT','PT,TO,AIRPT','PT,TO,HTL'
+		CREATE FIELD rOutResp.ns:ResTransfers;
+		FOR rResTrans AS rEnv.ResComponents.ResComponent[] DO
+		--	CREATE LASTCHILD OF rOutResp.ns:ResTransfers AS rOutTrans IDENTITY ns:Transfers;
+			DECLARE guestRefs,Currguest CHAR TRIM(rResTrans.GuestRefs)||' ';			
+			DECLARE rOutTransfer,rGuestTracker REFERENCE TO rOutTrans;
+			CREATE FIELD rEnv.TrackGuest;
+			WHILE COALESCE(guestRefs,'')<> '' DO
+				SET Currguest = SUBSTRING(guestRefs BEFORE ' ');
+				IF NOT EXISTS(rEnv.TrackGuest.{'Guest'||Currguest}[]) THEN
+					
+					SET rEnv.TrackGuest.{'Guest'||Currguest}.GuestRef = Currguest;
+					MOVE rGuestTracker  TO rEnv.TrackGuest.{'Guest'||Currguest};
+				ELSE	
+					MOVE rGuestTracker  TO rEnv.TrackGuest.{'Guest'||Currguest};
+				END IF;	
+			--	CREATE LASTCHILD OF rOutTrans IDENTITY ns:GuestRef VALUE SUBSTRING(guestRefs BEFORE ' ');
+			--	SET rOutTrans.ns:GuestRef = SUBSTRING(guestRefs BEFORE ' ');
+				
+			--	CREATE LASTCHILD OF rOutTrans AS rOutTransfer IDENTITY ns:Transfer;
+				CREATE LASTCHILD OF rGuestTracker AS rOutTransfer IDENTITY ns:Transfer;
+				SET rOutTransfer.ns:Type = rResTrans.Type;
+				SET rOutTransfer.ns:Location.ns:From.ns:Type = rResTrans.Location.From.Type ;
+				SET rOutTransfer.ns:Location.ns:From.ns:Code = rResTrans.Location.From.Code;
+				SET rOutTransfer.ns:Location.ns:From.ns:DateTime= com.ncl.ais.utils.ConvertGmtToLocalTime(rResTrans.DateTimeRange.From);
+				--CAST(CAST(rResTrans.DateTimeRange.From AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT 'IU');
+	
+				SET rOutTransfer.ns:Location.ns:To.ns:Type = rResTrans.Location.To.Type ;
+				SET rOutTransfer.ns:Location.ns:To.ns:Code = rResTrans.Location.To.Code;
+				SET rOutTransfer.ns:Location.ns:To.ns:DateTime= com.ncl.ais.utils.ConvertGmtToLocalTime(rResTrans.DateTimeRange.To);
+				SET rOutTransfer.ns:Code = rResTrans.Code;
+				SET rOutTransfer.ns:DateTime = CAST(CAST(rResTrans.EffectiveDate AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+				
+				
+				SET guestRefs = NULLIF(LTRIM(SUBSTRING(guestRefs AFTER ' ')),'');
+			END WHILE;	
+		END FOR;
+		DETACH rEnv.ResComponents;
+		
+		
+		IF EXISTS(rEnv.TrackGuest[]) THEN
+			DECLARE ptrGuest REFERENCE to rEnv.TrackGuest.*[1]; 
+			WHILE LASTMOVE(ptrGuest) DO
+				
+				CREATE LASTCHILD OF rOutResp.ns:ResTransfers AS rOutTrans IDENTITY ns:Transfers;
+				SET rOutTrans = ptrGuest;
+				MOVE ptrGuest NEXTSIBLING REPEAT TYPE;
+				
+			END WHILE;	
+		END IF;
+		--External Component SPA Changes 
+		FOR rExtComps AS rLdBkngRes.*:ResShell.*:ExternalComponents.*:ExternalComponent[] DO
+			IF rExtComps.CompType = 'SPA' THEN
+				CREATE LASTCHILD OF rOutResp.ns:Packages AS rOutPkgs IDENTITY ns:Package;
+				SET rOutPkgs.(XMLNSC.Attribute)ID =  rExtComps.RecordID;
+				-- Need to Call the PkgTypeCd_Query
+				SET rOutPkgs.(XMLNSC.Attribute)PackageTypeCode = 4;
+				SET rOutPkgs.ns:Type = rExtComps.CompType;	
+				SET rOutPkgs.ns:Code = rExtComps.ExtCode;
+				SET rOutPkgs.ns:Name = rExtComps.ExtName;
+				SET rOutPkgs.ns:ExtStatus = rExtComps.Status;
+				SET rOutPkgs.ns:DateRange.ns:PackageStartDate = CAST(CAST( rExtComps.DateTimeRange.From AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT 'IU');
+				SET rOutPkgs.ns:DateRange.ns:PackageEndDate = CAST(CAST(rExtComps.DateTimeRange.To AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT 'IU');				
+				DECLARE cGuestRefs CHARACTER TRIM(rExtComps.GuestRefs);
+				--This Proc Splits the GuestReference from GuestRefs
+				CALL com.ncl.ais.utils.SplitGuestRef(cGuestRefs,rEnv);
+				FOR rSplit AS rEnv.Split.VALUE[] DO
+					CREATE LASTCHILD OF rOutPkgs.ns:Price AS rPrice_Guest IDENTITY ns:Guest;
+					SET rPrice_Guest.ns:GuestRefNumber = rSplit;
+					SET rEnv.Temp.SPA = THE(SELECT SUM(CAST(A.Amount AS DECIMAL))  FROM rLdBkngRes.*:ResShell.*:ResInvoice.*:ResInvoiceItem[] AS A 																												
+										WHERE A.Source.ExternalComponent.ExtID = rExtComps.ExtID AND rSplit = A.GuestSeqN);
+					SET rPrice_Guest.ns:PackagePrice.(XMLNSC.Attribute)Amount =COALESCE(CAST(rEnv.Temp.SPA*100 AS INTEGER),0);
+				END FOR;
+				SET rOutPkgs.ns:Location.ns:From.ns:Code = rExtComps.Location.From.Code;
+				SET rOutPkgs.ns:Location.ns:From.ns:Type = rExtComps.Location.From.Type;
+				SET rOutPkgs.ns:Location.ns:To.ns:Code = rExtComps.Location.From.Code;
+				SET rOutPkgs.ns:Location.ns:To.ns:Type = rExtComps.Location.From.Type;				
+			END IF;
+		END FOR;
+
+		SET OutputRoot = NULL;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut NAMESPACE ns NAME 'NCL_CruiseRetrievePackagesRS';
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		SET rOut = rEnv.NCL_CruiseRetrievePackagesRS;
+
+		IF rEnv.Temp.Protocol = 'MQ' THEN
+
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise RetrivePackages Response', 'xml', rEnv);
+			END IF;
+			-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+		END IF;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_DBSearchResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rClient,rPkges REFERENCE TO Environment.Variables;
+		-- CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'DBSerachResponse';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+
+		IF EXISTS(rIn.PackageTypes.PackageType[]) THEN
+			CREATE LASTCHILD OF rEnv.DBSearchResponse AS rPkges NAME 'DBPackages';
+			SET rPkges = rIn.PackageTypes;
+		ELSEIF EXISTS(rIn.Clients.Client[]) THEN
+			CREATE LASTCHILD OF rEnv.DBSearchResponse AS rClient NAME 'DBClients' ;
+			SET rClient = rIn.Clients;
+		END IF;
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rRfh2 REFERENCE TO Environment.Variables;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		--SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;

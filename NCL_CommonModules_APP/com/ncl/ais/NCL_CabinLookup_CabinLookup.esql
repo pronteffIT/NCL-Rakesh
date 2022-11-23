@@ -1,0 +1,225 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CabinLookup_CabinLookup
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CREATE FIELD Environment.Variables;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		-- Check the input request for the operation which is to be performed.
+		
+		
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Executing Cabin Lookup logic', rEnv);
+			DECLARE cabinDetailsSqlQuery CHARACTER 'SELECT JA.CABIN_NUMBER,JB.EXTERNAL_TABLE,JA.CABIN_ATTR_COUNTER, JA.CABIN_ATTR_CODE, JB.EXTERNAL_CODE  FROM
+			(SELECT SHIP_CODE, CABIN_NUMBER, CABIN_ATTR_COUNTER, CABIN_ATTR_CODE FROM
+			CABIN_ATTRIBUTE_LINK CAL INNER JOIN CABIN_ATTRIBUTE CA ON CAL.CABIN_ATTR_ID = CA.CABIN_ATTR_ID) JA
+			INNER JOIN (SELECT EXTERNAL_TABLE,DETAILS.SW_CODE, DETAILS.EXTERNAL_CODE, DETAILS.DESCRIPTION FROM
+			SEA.EXTERNAL_XREF_DETAIL DETAILS,SEA.EXTERNAL_XREF XREF
+			WHERE DETAILS.EXTERNAL_XREF_ID = XREF.EXTERNAL_XREF_ID and EXTERNAL_TABLE IN( ''CabinBed'',''CabinLocation'') AND
+			EXTERNAL_NAMES_ID =
+			(SELECT NAMES.EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES NAMES WHERE EXTERNAL_NAME = ?)) JB ON JA.CABIN_ATTR_CODE = JB.SW_CODE WHERE JA.SHIP_CODE = ? ';
+
+
+			DECLARE shipCode,externalSystemName,extendQuery,extentionToQuery CHARACTER;
+			SET shipCode = rEnv.XMLNSC.CabinLookupDetails.CabinLookupReq.ShipCode;
+			SET externalSystemName = rEnv.XMLNSC.CabinLookupDetails.CabinLookupReq.ExternalSystemName;
+			DECLARE totalNumberofCabin,QueryIndex INTEGER;
+			-- Implement the logic to modify the query and then hit the database with the updated query.
+			SET QueryIndex = 0;
+			SET totalNumberofCabin = CARDINALITY(rEnv.XMLNSC.CabinLookupDetails.CabinLookupReq.CabinNumbers.Cabins[]);
+			SET extendQuery = ' AND JA.CABIN_NUMBER in (';
+
+			FOR source AS rEnv.XMLNSC.CabinLookupDetails.CabinLookupReq.CabinNumbers.Cabins[] DO
+				SET extentionToQuery = ''''||FIELDVALUE(source)||'''';
+				SET extendQuery = extendQuery || extentionToQuery;
+				IF QueryIndex < (totalNumberofCabin-1) THEN
+					SET extendQuery = extendQuery || ',';
+					SET QueryIndex = QueryIndex+1;
+				END IF;
+			END FOR;
+
+			SET extendQuery = extendQuery || ')';
+			SET cabinDetailsSqlQuery = cabinDetailsSqlQuery || extendQuery || 'ORDER BY CABIN_NUMBER ASC';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Query building completed', rEnv);
+			-- execute the query to obtain the details
+			SET rEnv.DBResults.cabinLookup.Details[] = PASSTHRU(cabinDetailsSqlQuery VALUES(externalSystemName,shipCode));
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Successfully executed the Cabin Lookup Query', rEnv);
+			CREATE LASTCHILD OF OutputRoot.XMLNSC NAME 'CabinLookupRes';
+			DECLARE resOut REFERENCE TO OutputRoot.XMLNSC.CabinLookupRes;
+			-- remove the duplicates and send the final response
+		
+			DECLARE CabinIndex,CabinBathIndex,CabinBedIndex INTEGER;
+			-- ids acts as iteration to hold index values and make easy to update the existing records
+			DECLARE CabinId,BathIndex,BedIndex INTEGER 0;
+			-- flag to check the duplicate value if false then create an new record else update the existing.
+			DECLARE IsDuplicate BOOLEAN FALSE;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Starting to build the final response of Cabin lookup', rEnv);
+			FOR source AS rEnv.DBResults.cabinLookup.Details[] DO
+				SET IsDuplicate = FALSE;
+				-- Update the existing record if the conditions are matched		
+				IF EXISTS(resOut.CabinDetails[]) THEN
+					FOR innerSource AS resOut.CabinDetails[] DO
+						IF source.CABIN_NUMBER = innerSource.(XMLNSC.Attribute)CabinNumber THEN
+							SET IsDuplicate = TRUE;
+							SET CabinIndex = innerSource.id;
+							SET CabinBathIndex = innerSource.id1;
+							SET CabinBedIndex = innerSource.id2;
+							IF source.EXTERNAL_TABLE = 'CabinLocation' THEN
+
+								IF source.CABIN_ATTR_CODE = 'LOC-STARBOARD' OR source.CABIN_ATTR_CODE = 'LOC-PORT' THEN
+									SET resOut.CabinDetails[CabinIndex].(XMLNSC.Attribute)ShipSide = source.EXTERNAL_CODE;
+									SET resOut.CabinDetails[CabinIndex].(XMLNSC.Attribute)CabinNumber = source.CABIN_NUMBER;
+								END IF;
+								IF source.CABIN_ATTR_CODE = 'LOC-AFT' OR source.CABIN_ATTR_CODE = 'LOC-FORWARD' OR source.CABIN_ATTR_CODE = 'LOC-MIDSHIP' THEN
+									SET resOut.CabinDetails[CabinIndex].(XMLNSC.Attribute)PositionInShip = source.EXTERNAL_CODE;
+								END IF;
+								IF source.CABIN_ATTR_CODE = 'LOC-OCEANVIEW' OR source.CABIN_ATTR_CODE = 'LOC-INSIDE' THEN
+									SET resOut.CabinDetails[CabinIndex].(XMLNSC.Attribute)CategoryLocation = source.EXTERNAL_CODE;
+								END IF;
+
+							ELSE IF source.EXTERNAL_TABLE = 'CabinBed' THEN
+
+								IF STARTSWITH(source.CABIN_ATTR_CODE,'BATH') THEN
+									SET CabinBathIndex = CabinBathIndex + 1;
+									CREATE LASTCHILD OF resOut.CabinDetails[CabinIndex] NAME 'CabinBathConfiguration';
+									SET resOut.CabinDetails[CabinIndex].CabinBathConfiguration[CabinBathIndex].(XMLNSC.Attribute)BathCount = source.CABIN_ATTR_COUNTER;
+									SET resOut.CabinDetails[CabinIndex].CabinBathConfiguration[CabinBathIndex].(XMLNSC.Attribute)BathConfigurationCode = source.EXTERNAL_CODE;
+									SET resOut.CabinDetails[CabinIndex].id1 = CabinBathIndex;
+								END IF;
+
+								IF STARTSWITH(source.CABIN_ATTR_CODE,'BED') THEN
+									SET CabinBedIndex = CabinBedIndex + 1;
+									CREATE LASTCHILD OF resOut.CabinDetails[CabinIndex] NAME 'CabinConfiguration';
+									SET resOut.CabinDetails[CabinIndex].CabinConfiguration[CabinBedIndex].(XMLNSC.Attribute)BedCount = source.CABIN_ATTR_COUNTER;
+									SET resOut.CabinDetails[CabinIndex].CabinConfiguration[CabinBedIndex].(XMLNSC.Attribute)BedConfigurationCode = source.EXTERNAL_CODE;
+									SET resOut.CabinDetails[CabinIndex].id2 = CabinBedIndex;
+								END IF;
+
+							END IF;
+						END IF;
+					END IF;
+
+				END FOR;
+
+		END IF;
+
+		IF IsDuplicate = FALSE THEN
+				
+				CREATE LASTCHILD OF resOut NAME 'CabinDetails';
+				SET CabinId = CabinId+1;
+				SET BathIndex = 0;
+				SET BedIndex = 0;
+				SET resOut.CabinDetails[CabinId].id = CabinId;
+				SET resOut.CabinDetails[CabinId].id1 = BathIndex;
+				SET resOut.CabinDetails[CabinId].id2 = BedIndex;
+				
+				SET resOut.CabinDetails[CabinId].(XMLNSC.Attribute)CabinNumber = source.CABIN_NUMBER;
+				
+				IF source.EXTERNAL_TABLE = 'CabinLocation' THEN
+
+					IF source.CABIN_ATTR_CODE = 'LOC-STARBOARD' OR source.CABIN_ATTR_CODE = 'LOC-PORT' THEN
+						SET resOut.CabinDetails[CabinId].(XMLNSC.Attribute)ShipSide = source.EXTERNAL_CODE;
+						SET resOut.CabinDetails[CabinId].(XMLNSC.Attribute)CabinNumber = source.CABIN_NUMBER;
+					END IF;
+					IF source.CABIN_ATTR_CODE = 'LOC-AFT' OR source.CABIN_ATTR_CODE = 'LOC-FORWARD' OR source.CABIN_ATTR_CODE = 'LOC-MIDSHIP' THEN
+						SET resOut.CabinDetails[CabinId].(XMLNSC.Attribute)PositionInShip = source.EXTERNAL_CODE;
+					END IF;
+					IF source.CABIN_ATTR_CODE = 'LOC-OCEANVIEW' OR source.CABIN_ATTR_CODE = 'LOC-INSIDE' THEN
+						SET resOut.CabinDetails[CabinId].(XMLNSC.Attribute)CategoryLocation = source.EXTERNAL_CODE;
+					END IF;
+
+				ELSE IF source.EXTERNAL_TABLE = 'CabinBed' THEN
+
+					IF STARTSWITH(source.CABIN_ATTR_CODE,'BATH') THEN
+						SET BathIndex = BathIndex+1;
+						SET resOut.CabinDetails[CabinId].id1 = BathIndex;
+						CREATE LASTCHILD OF resOut.CabinDetails[CabinId] NAME 'CabinBathConfiguration';
+						SET resOut.CabinDetails[CabinId].CabinBathConfiguration[BathIndex].(XMLNSC.Attribute)BathCount = source.CABIN_ATTR_COUNTER;
+						SET resOut.CabinDetails[CabinId].CabinBathConfiguration[BathIndex].(XMLNSC.Attribute)BathConfigurationCode = source.EXTERNAL_CODE;
+
+					END IF;
+
+					IF STARTSWITH(source.CABIN_ATTR_CODE,'BED') THEN
+						SET BedIndex = BedIndex+1;
+						SET resOut.CabinDetails[CabinId].id2 = BedIndex;						
+						CREATE LASTCHILD OF resOut.CabinDetails[CabinId] NAME 'CabinConfiguration';
+						SET resOut.CabinDetails[CabinId].CabinConfiguration[BedIndex].(XMLNSC.Attribute)BedCount = source.CABIN_ATTR_COUNTER;
+						SET resOut.CabinDetails[CabinId].CabinConfiguration[BedIndex].(XMLNSC.Attribute)BedConfigurationCode = source.EXTERNAL_CODE;
+						
+					END IF;
+
+				END IF;
+			END IF;
+			
+		END IF;
+	END FOR;
+
+	FOR source AS resOut.CabinDetails[] DO
+		DELETE FIELD source.id;
+		DELETE FIELD source.id1;
+		DELETE FIELD source.id2;
+	END FOR;
+	CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Successfully completed building final response of Cabin Lookup', rEnv);
+
+		
+
+	END;
+
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CabinLookup_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.CabinLookupResponse;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+
+		CREATE FIELD OutputRoot.XMLNSC.CabinLookupResponse AS rResp;
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET rResp.runtimeError.(XMLNSC.Attribute)Code = '12228';
+		SET rResp.runtimeError.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET rResp.runtimeError.(XMLNSC.Attribute)Type = '3';
+		SET rResp.runtimeError = cErrorText;
+
+		RETURN TRUE;
+
+	END;
+
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CabinLookup_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+
+	END;
+END MODULE;

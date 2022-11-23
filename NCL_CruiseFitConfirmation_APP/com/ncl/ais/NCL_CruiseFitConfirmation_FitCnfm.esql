@@ -1,0 +1,179 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_FIT_CNFM_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseFitConfirmation
+* MODULE NAME : NCL_CruiseFitConfirmation_FitCnfm
+* Description : This module retrieves error if there any
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/06/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseFitConfirmation_FitCnfm
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseFitConfirmationRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseFitConfirmationRS;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+--		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- create IIB log event
+	   CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+       CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												'',
+												'',
+											 	rEnv);
+	  --- add payload
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'Fit Confirmation request message', 'xml', rEnv);
+		END IF;
+		
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		-- add metadata to log event
+		--CALL com.ncl.iib.log.CreateMetaData('p_Res_ID', COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''), 'Reservation ID', rEnv);
+		--CALL com.ncl.iib.log.CreateMetaData('p_Email', COALESCE(rIn.*:Email, ''), 'Email ID', rEnv);
+		-- Call Procedure
+		CALL Fit_Confirmation(COALESCE(CAST(rIn.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER),0),COALESCE(rIn.*:Email,''),rEnv.p_error);
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFitConfirmationRS AS rOut;
+	--	CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+	    SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOut.ns:Success = '';
+		--IF (rEnv.p_error <>'') THEN
+			--SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = rEnv.p_error;
+			--SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Insert Failed';
+	--	ELSE
+			
+		--END IF;
+		-- add response msg to log event
+
+		IF(LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Fit Confirmation response message', 'xml', rEnv);
+		END IF;
+		
+--			SET OutputRoot.XMLNSC = NULL;
+--        	SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE Fit_Confirmation(IN p_Res_ID INTEGER,IN p_Email CHARACTER,OUT p_error CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_WESB_FIT_CONFIRMATION";
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseFitConfirmation
+* MODULE NAME : NCL_CruiseFitConfirmation_Exception
+* Description : This module handles exception
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/06/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseFitConfirmation_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEn
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Fit Confirmation Invalid request message', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseFitConfirmation
+* MODULE NAME : NCL_CruiseFitConfirmation_FaultHandling
+* Description : This module handles Fault errors
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/06/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseFitConfirmation_FaultHandling
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseFitConfirmationRS;
+		
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseFitConfirmationRS AS runTimeErr;
+		
+		SET runTimeErr.Errors.Error = cErrorText;
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)ShortText = RIGHT(cErrorText,64);
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;

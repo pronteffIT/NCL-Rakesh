@@ -1,0 +1,214 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     ProcessStoreAmenityResp
+ * Description       :     This module processes the response from the StoreAmenityOrders Versonix 
+ *							API. If it is an error, it sends a generic error message to the caller
+ *							else it sends the message for guest information enrichment
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateAmenityOrderItems_ProcessStoreAmenityResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutmsg,rOutResp,rOutWarnings,rOutWarning,rAmenityOrder,rRequesterInfo,rRecipientInfo,
+			rGiftCardInfo,rAmenityOrderInfo,rCurrency, rAmenityOrderItemsInfo, rAmenityOrderItems, rAmenityOrderItem REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateAmenityOrder_OUT;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		--DECLARE bPayload BLOB InputRoot.XMLNSC;
+		DECLARE bPayload BLOB;
+		
+		-- Log the StoreAmenity API response payload
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'StoreAmenity response message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from StoreAmenity service...', rEnv);	
+		
+		/*IF ((EXISTS (rIn.Errors.Error[])) AND (rIn.Errors.Error.ErrorCode = '25048' OR
+												rIn.Errors.Error.ErrorSeverity='ERROR' OR
+												rIn.Errors.Error.ErrorSeverity='FATAL' OR
+												rIn.Errors.Error.ErrorSeverity='EXCEPTION' OR
+												EXISTS(rIn.Errors.Error.ErrorMessage[]))) */
+		IF (rIn.Errors.Error.ErrorCode = '25048' OR	rIn.Errors.Error.ErrorSeverity='ERROR' OR
+			rIn.Errors.Error.ErrorSeverity='FATAL' OR rIn.Errors.Error.ErrorSeverity='EXCEPTION' OR
+			EXISTS(rIn.Errors.Error.ErrorMessage[])) 
+			AND NOT (rIn.Errors.Error.ErrorSeverity='INFO' OR rIn.Errors.Error.ErrorSeverity='WARNING')
+			--AND NOT (rIn.AmenityOrder.AmOrderHeader.OrderID > '0')
+			--AND NOT (LENGTH(rIn.AmenityOrder.AmOrderHeader.OrderID) > 0 AND rIn.AmenityOrder.AmOrderHeader.OrderID <> '0')
+			AND NOT(( NOT com.ncl.ais.utils.IsEmpty(rIn.AmenityOrder.AmOrderHeader.OrderID)) AND CAST(rIn.AmenityOrder.AmOrderHeader.OrderID AS INTEGER) > 0)
+		THEN						
+			CALL CopyEntireMessage();
+						
+			PROPAGATE TO LABEL 'ERROR';
+			RETURN FALSE;
+		END IF;
+		
+		IF (rIn.Errors.Error.ErrorSeverity='E' OR
+			rIn.Errors.Error.ErrorSeverity='F') 
+			AND (CAST(rIn.AmenityOrder.AmOrderItems.AmOrderItem.AmenityOrderItemID AS INTEGER) = -1)
+		THEN
+
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Remove Amenity Service...', rEnv);
+		
+			SET rEnv.AmenityOrderID = CAST(rIn.AmenityOrder.AmOrderHeader.OrderID AS INTEGER);
+			SET rEnv.Errors = 	rIn.Errors;		
+			
+			CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'RemoveAmenityOrder';
+			RETURN FALSE;
+		END IF;
+		
+		-- Perform mapping and build response message in Environment Tree
+		CREATE FIELD rEnv.OutMsg AS rOutmsg;
+		
+		CREATE LASTCHILD OF rOutmsg DOMAIN('XMLNSC') NAME 'XMLNSC';
+		--SET rOutmsg.XMLNSC = InputRoot.XMLNSC;
+
+		CREATE LASTCHILD OF rOutmsg.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseCreateAmenityOrderItemsRS;
+		-- Copy root level attributes from environment
+		CALL com.ncl.ais.utils.CopyAttributes (rEnvIn, rOutResp);	
+		
+		-- If an non-fatal Error was returned, log the warning
+		--IF LENGTH(rIn.AmenityOrder.AmOrderHeader.OrderID) > 0 AND rIn.AmenityOrder.AmOrderHeader.OrderID <> '0'
+		--IF EXISTS (rIn.Errors.Error[])
+		IF NOT(LENGTH(rIn.AmenityOrder.AmOrderHeader.OrderID) > 0)
+		THEN
+			CREATE LASTCHILD OF rOutResp AS rOutWarnings IDENTITY sc:Warnings;
+			DECLARE rInErrors REFERENCE TO rIn.Errors;
+			DECLARE type CHARACTER '3';
+			
+			FOR rError AS rInErrors.*:Error[] 
+			DO
+				CREATE LASTCHILD OF rOutWarnings AS rOutWarning IDENTITY sc:Warning;					
+				IF rError.ErrorSeverity='WARNING' OR rError.ErrorSeverity='INFO'
+				THEN
+					SET type = '';
+				END IF;
+				-- Map warnings to error
+				-- TODO FieldValue is not really needed here. But have to check how the target assignment works
+				SET rOutWarning = FIELDVALUE(rError.ErrorMessage);
+				SET rOutWarning.(XMLNSC.Attribute)Code = CAST(COALESCE(NULLIF(rError.ErrorCode,''), 99999) AS INTEGER);
+				SET rOutWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(rError.ErrorMessage FROM 1 FOR 64);
+				SET rOutWarning.(XMLNSC.Attribute)Type = type;
+			END FOR;							
+		ELSE
+			DECLARE rInAmenityOrder REFERENCE TO rIn.AmenityOrder;
+			DECLARE rInAmOrderHeader REFERENCE TO rInAmenityOrder.AmOrderHeader;
+			
+			DECLARE code CHARACTER COALESCE(rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC');
+			CREATE LASTCHILD OF rOutResp IDENTITY sc:Success;
+			-- Create the AmenityOrder Structure
+			CREATE LASTCHILD OF rOutResp AS rAmenityOrder IDENTITY sc:AmenityOrder;
+			
+			SET rAmenityOrder.(XMLNSC.Attribute)ID = rInAmOrderHeader.OrderID;
+			SET rAmenityOrder.(XMLNSC.Attribute)OrderDate = rInAmOrderHeader.OrderDate || 'Z';			
+			SET rAmenityOrder.(XMLNSC.Attribute)Status = com.ncl.ais.utils.FindExternalCode(rInAmOrderHeader.OrderStatus, code);
+			
+			CREATE LASTCHILD OF rAmenityOrder AS rRequesterInfo IDENTITY sc:RequestorInfo;
+			SET rRequesterInfo.(XMLNSC.Attribute)ID = rInAmOrderHeader.RequesterID;
+			SET rRequesterInfo.(XMLNSC.Attribute)OriginatorType = rInAmOrderHeader.RequesterType;
+			SET rRequesterInfo.sc:Name.sc:Surname = rInAmOrderHeader.RequesterName;
+
+			CREATE LASTCHILD OF rAmenityOrder AS rRecipientInfo IDENTITY sc:RecipientInfo;
+			SET rRecipientInfo.(XMLNSC.Attribute)ID = rInAmOrderHeader.RecipientID;
+			SET rRecipientInfo.(XMLNSC.Attribute)Status = com.ncl.ais.utils.FindExternalStatus(rInAmOrderHeader.RecipientStatus, code);
+			SET rRecipientInfo.(XMLNSC.Attribute)Type = 'FIT';
+			
+			CREATE LASTCHILD OF rAmenityOrder AS rGiftCardInfo IDENTITY sc:GiftCardInfo;
+			SET rGiftCardInfo.sc:GiftCardComplimentsOf = rInAmOrderHeader.ComplimentsOf;
+			SET rGiftCardInfo.sc:GiftCardTo.sc:Surname = rInAmOrderHeader.GiftCardTo;
+			SET rGiftCardInfo.sc:GiftCardMessage = rInAmOrderHeader.GiftCardMessage;
+			
+			CREATE LASTCHILD OF rAmenityOrder AS rAmenityOrderInfo IDENTITY sc:AmenityOrderInfo;
+			CREATE LASTCHILD OF rAmenityOrderInfo AS rCurrency IDENTITY sc:Currency;
+			SET rCurrency.(XMLNSC.Attribute)CurrencyCode = rInAmOrderHeader.CurrencyCode;
+			
+			SET rAmenityOrderInfo.sc:ISOrderValid = rInAmOrderHeader.OrderValid;
+			SET rAmenityOrderInfo.sc:ISDispatchedOK = rInAmOrderHeader.DispatchedOK;
+			SET rAmenityOrderInfo.sc:ISTerminationCompleted = rInAmOrderHeader.TerminationCompleted;
+			SET rAmenityOrderInfo.sc:ISInvoiceValid = rInAmOrderHeader.InvoiceValid;
+			SET rAmenityOrderInfo.sc:ISRefundDoneAfterCancellation = COALESCE(rInAmOrderHeader.RefundDoneAfterCancellation, 'N');
+		
+			-- Populate Amenity Order Items only if they exist
+			IF EXISTS (rInAmenityOrder.AmOrderItems.AmOrderItem[]) 
+			THEN
+				DECLARE rInAmOrderItems REFERENCE TO rInAmenityOrder.AmOrderItems;
+				DECLARE rAmenityItemDelivery REFERENCE TO Environment.Variables;
+				CREATE LASTCHILD OF rAmenityOrder AS rAmenityOrderItemsInfo IDENTITY sc:AmenityOrderItemsInfo;
+				CREATE LASTCHILD OF rAmenityOrderItemsInfo AS rAmenityOrderItems IDENTITY sc:AmenityOrderItems;
+				
+				FOR rInAmOrderItem AS rInAmOrderItems.AmOrderItem[] 
+				DO	
+					CREATE LASTCHILD OF rAmenityOrderItems AS rAmenityOrderItem IDENTITY sc:AmenityOrderItem;
+					SET rAmenityOrderItem.(XMLNSC.Attribute)AmenityType = rInAmOrderItem.AmenityType;
+					SET rAmenityOrderItem.(XMLNSC.Attribute)ID = rInAmOrderItem.AmenityOrderItemID;
+
+					SET rAmenityOrderItem.sc:AmenityCategory = rInAmOrderItem.AmCategory;
+					SET rAmenityOrderItem.sc:AmenityCode = rInAmOrderItem.AmenityCode;
+					SET rAmenityOrderItem.sc:AmenitySubCode = COALESCE(rInAmOrderItem.AmenitySubCode,'');
+					SET rAmenityOrderItem.sc:AmenityName = rInAmOrderItem.AmenityName;
+					SET rAmenityOrderItem.sc:Quantity = rInAmOrderItem.Quantity;
+					SET rAmenityOrderItem.sc:AmenityPlaceCode = rInAmOrderItem.AmPlaceCode;
+					
+					CREATE LASTCHILD OF rAmenityOrderItem AS rAmenityItemDelivery IDENTITY sc:AmenityItemDeliveryInfo;
+					SET rAmenityItemDelivery.sc:DeliveryType = rInAmOrderItem.AmDeliveryType;
+					SET rAmenityItemDelivery.sc:DayDeliveryBasis = rInAmOrderItem.DayDeliveryBasis;
+					SET rAmenityItemDelivery.sc:ItemDeliveryDay = rInAmOrderItem.ItemDeliveryDay;
+					SET rAmenityItemDelivery.sc:ItemDeliveryDate = rInAmOrderItem.ItemDeliveryTime || 'Z';
+					
+					SET rAmenityOrderItem.sc:Guest.(XMLNSC.Attribute)LoyaltyMembershipID = rInAmOrderItem.GuestID;
+					SET rAmenityOrderItem.sc:Comments.sc:Text = rInAmOrderItem.Comments;
+											
+					--insert track activity record		
+ 					DECLARE strSQL CHARACTER;
+					DECLARE DB ROW;
+					SET strSQL ='INSERT INTO NCLSEA.NCL_TRACK_GUEST_ACTIVITY(RES_ID, GUEST_ID, AM_ORDER_ID, AMENITY_CD, CHANNEL_TXT, CREATED_DAT) ' ||
+						        'SELECT rg.RES_id, rg.guest_ID, ?, ?, ?, ? ' || 
+								'FROM RES_GUEST rg WHERE rg.RES_ID = ? and rg.GUEST_ID = ? ';
+					
+					SET DB.result[] = PASSTHRU(strSQL VALUES(CAST(rInAmOrderHeader.OrderID AS INTEGER),rInAmOrderItem.AmenityCode, rEnvIn.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code, CURRENT_TIMESTAMP, CAST(rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID AS INTEGER), CAST(rInAmOrderItem.GuestID AS INTEGER)));
+ 				END FOR;				
+				-- For further enriching of GuestInfo using AmenityRetrieveHelper
+				PROPAGATE TO TERMINAL 'out';				 
+			ELSE
+				-- Build Response message from Env and dispatch
+				CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+				-- Set the MQMD header details from the Environment
+				SET OutputRoot.MQMD = Environment.MQMD;				
+				--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+				
+				CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+				SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+				SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+				
+				SET OutputRoot.XMLNSC = rOutmsg.XMLNSC;						
+				PROPAGATE TO TERMINAL 'out1';
+				
+				-- Logout of the session
+   				PROPAGATE TO TERMINAL 'out2'; 			
+				
+			END IF;			
+		END IF;			
+		
+		RETURN FALSE;
+	END;
+	
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;	
+END MODULE;
+
+
+

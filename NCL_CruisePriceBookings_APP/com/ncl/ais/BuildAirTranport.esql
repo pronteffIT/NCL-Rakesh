@@ -1,0 +1,202 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE BuildAirTranport_CreateAirTransportReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRQ;
+		--DECLARE rAvailTimeReq REFERENCE TO OutputRoot.XMLNSC.GetAvailTimings_IN;
+		DECLARE rAvailGtwReq REFERENCE TO OutputRoot.XMLNSC.GetAvailGateways_IN;
+	--	DECLARE rAvailTimeResp REFERENCE TO rEnv.Temp.Message.GetAvailTimings_OUT;
+		DECLARE rAvailGtwResp REFERENCE TO rEnv.Temp.Message.GetAvailGateways_OUT;
+		DECLARE rAirTrans REFERENCE TO rEnv;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		DECLARE cGuestRefNum, cLocaltionCode, cTimingOut, cTimingRet, cSortSeq CHARACTER '';
+		DECLARE bPayload BLOB;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB search call to get city code ...', rEnv);
+		--Get transfer Components
+		SET rEnv.Temp.TransferExclusion[]=SELECT G.*:ExcludeTransfer FROM rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] AS G 
+				WHERE G.*:GuestTransportation.(XMLNSC.Attribute)Mode='14' AND G.*:GuestTransportation.*:ExcludeTransfer='Y';
+		IF EXISTS(rEnv.Temp.TransferExclusion[])
+		THEN
+			PROPAGATE TO LABEL 'GET_TRANSFER_COMPONENTS';			
+		END IF;
+		SET OutputRoot = NULL;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+		SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rOut.MsgHeader.CallerInfo.UserInfo.Internal = '';		
+		SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+		SET rOut.Cities.AirportCode = rEnv.Temp.AirCode;
+
+		PROPAGATE TO LABEL 'CITY_CODE';
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to get available Gateways ...', rEnv);
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.GetAvailGateways_IN AS rAvailGtwReq;
+		
+--		SET rAvailGtwReq.MsgHeader.Version = VersonixAPIVersion;
+--		SET rAvailGtwReq.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rAvailGtwReq);
+		SET rAvailGtwReq.MsgHeader.Language = 'ENG';
+		--SET rAvailGtwReq.SearchParams.City = rEnv.Temp.CityCode;
+		SET rAvailGtwReq.ResShellRef = rEnv.Temp.ReservationId;
+		SET rAvailGtwReq.SearchOptions.CalcPrices ='N';	
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get available Gateways api request', 'xml', rEnv);
+		END IF;
+		
+		
+		-- Commented For Airbundle changes on 08/24/2018
+	/*/	-- loop thru the guest details		
+		FOR rGuestDtl AS rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+			SET cGuestRefNum = COALESCE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber, '1');
+			
+			-- loop thru the guest transportation
+			FOR rGuestTran AS rGuestDtl.ns:GuestTransportation[] DO
+				IF rGuestTran.(XMLNSC.Attribute)Mode = '14' THEN
+					SET cLocaltionCode = rGuestTran.ns:GatewayCity.(XMLNSC.Attribute)LocationCode;
+					SET cTimingOut = COALESCE(rGuestTran.ns:TimingOut, '');
+					SET cTimingRet = COALESCE(rGuestTran.ns:TimingRet, '');
+					
+					IF cLocaltionCode <> '' THEN
+						-- check if transportation is already retrieved for a location code
+						IF EXISTS(rEnv.Temp.Objects.GuestTransport.{cLocaltionCode}[]) THEN
+							CREATE LASTCHILD OF rEnv.Temp.Objects.AirTransportations AS rAirTrans NAME 'AirTransportation';
+							SET rAirTrans = rEnv.Temp.Objects.GuestTransport.{cLocaltionCode};
+							SET rAirTrans.GuestRefs = cGuestRefNum;
+						ELSE
+							-- add audit trail
+							CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling api to get available timings ...', rEnv);
+							
+							SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+							CREATE FIELD OutputRoot.XMLNSC.GetAvailTimings_IN AS rAvailTimeReq;
+														
+							SET rAvailTimeReq.MsgHeader.Version = VersonixAPIVersion;
+							SET rAvailTimeReq.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+							SET rAvailTimeReq.SearchParams.Gateway = cLocaltionCode;
+							SET rAvailTimeReq.ResShellRef = rEnv.Temp.ReservationId;
+							
+							-- log payload
+							IF LogPayload THEN
+								SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+								CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get available timings api request', 'xml', rEnv);
+							END IF;
+							
+							-- call VX api to get transport timings
+							PROPAGATE;
+							
+							-- process the GetAvailTimings response
+							MOVE rAvailTimeResp TO rEnv.Temp.Message.GetAvailTimings_OUT;
+							
+							IF EXISTS(rAvailTimeResp.Errors.Error[]) THEN
+								SET rEnv.Temp.Objects.AirTransportations.Error.errorCode = rAvailGtwResp.Errors.Error.ErrorCode;
+								SET rEnv.Temp.Objects.AirTransportations.Error.errorMsg = rAvailGtwResp.Errors.Error.ErrorMessage;
+								
+								-- end the loop and return if any errors
+								RETURN FALSE;
+							ELSE
+								CREATE LASTCHILD OF rEnv.Temp.Objects.AirTransportations AS rAirTrans NAME 'AirTransportation';
+								
+								FOR rAvailTime AS rAvailTimeResp.AvailTimings.AvailTiming[] DO
+									SET cSortSeq = COALESCE(rAvailTime.SortSeqN, '1');
+									
+									IF rAvailTime.Direction = 'RET' THEN
+										IF (cTimingRet <> '' AND UPPER(cTimingRet) = UPPER(rAvailTime.Timing)) OR (cTimingRet = '' AND cSortSeq = '1') THEN
+											SET rAirTrans.GatewayRet = cLocaltionCode;
+											SET rAirTrans.TimingRet = rAvailTime.Timing;
+										END IF;
+									ELSE
+										IF (cTimingOut <> '' AND UPPER(cTimingOut) = UPPER(rAvailTime.Timing)) OR (cTimingOut = '' AND cSortSeq = '1') THEN
+											SET rAirTrans.GatewayOut = cLocaltionCode;
+											SET rAirTrans.TimingOut = rAvailTime.Timing;
+										END IF;
+									END IF;
+									
+									SET rAirTrans.Mode = 'REGULAR';
+									SET rAirTrans.GuestRefs = cGuestRefNum;
+								END FOR;
+								
+								SET rEnv.Temp.Objects.GuestTransport.{cLocaltionCode} = rAirTrans;
+								SET rEnv.Temp.Message.GetAvailTimings_OUT = NULL;
+							END IF;
+						END IF;
+					END IF;
+				END IF;
+			END FOR;
+		END FOR;		
+
+		-- cleaning up temporary objects
+		SET rEnv.Temp.Objects.GuestTransport = NULL;
+		
+		RETURN FALSE; */
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE BuildAirTranport_SaveAirTransportInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rDbSerchReq REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB;
+		
+		SET Environment.Variables.Temp.Message.GetAvailGateways_OUT = InputRoot.XMLNSC.GetAvailGateways_OUT;		
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get available timings api response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(InputRoot.XMLNSC.GetAvailGateways_OUT.AvailGateways.AvailGateway[] ) THEN
+			
+				-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Calling DB search for One way Air  ...', rEnv);
+					-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+
+			CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDbSerchReq;
+--			SET rDbSerchReq.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+--			SET rDbSerchReq.MsgHeader.Version = VersonixAPIVersion;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rDbSerchReq);
+			SET rDbSerchReq.Packages.PackageID = rEnv.Temp.VoyageId;
+			
+			PROPAGATE TO LABEL 'ONEWAY_AIR';
+					
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE BuildAirTranport_SaveAirportCityCode
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		
+		SET rEnv.Temp.CityCode = rIn.Cities.City.CityCode;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE BuildAirTranport_SaveSailDetails
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT.Packages.Package;
+		SET rEnv.Temp.SailDetails[] = SELECT A FROM rIn.Components.Component[] AS A WHERE A.Type = 'SAIL';
+	
+		RETURN FALSE;
+	END;
+END MODULE;

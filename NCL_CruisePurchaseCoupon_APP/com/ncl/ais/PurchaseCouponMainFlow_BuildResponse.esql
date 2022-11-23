@@ -1,0 +1,37 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE PurchaseCouponMainFlow_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutPay,rOutPayOption REFERENCE TO Environment.Variables;	
+		DECLARE rInPay REFERENCE TO rEnv.PayReq;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePurchaseCouponRS AS rOutPay;
+		CALL com.ncl.ais.utils.CopyAttributes(rInPay,rOutPay);  					
+		DECLARE rInMngTrnsfr REFERENCE TO InputRoot.XMLNSC.ManageAccTrans_OUT;		
+		IF EXISTS(rInMngTrnsfr.Errors.Error[]) THEN	
+			CALL com.ncl.ais.utils.getAdvisoryCode(rInMngTrnsfr.Errors.Error.ErrorCode,rEnv.Temp.Channel,rEnv);
+			SET rOutPay.ns:Warnings.ns:Warning = rInMngTrnsfr.Errors.Error.ErrorMessage;
+			SET rOutPay.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rEnv.Temp.FinalResp.EXTERNAL_CODE;
+			SET rOutPay.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rEnv.Temp.FinalResp.DESCRIPTION;
+			SET rOutPay.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			CREATE FIELD rOutPay.ns:Success;		
+			SET rEnv.status = COALESCE(rInMngTrnsfr.Transactions.Transaction.Status,'CC QUEUE');
+			SET rEnv.comments = COALESCE(rInMngTrnsfr.Transactions.Transaction.Comments,'CC QUEUE');
+			CREATE LASTCHILD OF rOutPay AS rOutPayOption NAMESPACE ns NAME 'PaymentOption';
+				
+			SET rOutPayOption.(XMLNSC.Attribute)PaymentStatus = 
+				CASE rEnv.status
+					WHEN 'OK' THEN '1'
+					WHEN 'CC DECLINED' THEN '4'
+					WHEN 'CC QUEUE' THEN '9'
+					ELSE '3'
+				END;
+			SET rOutPayOption.(XMLNSC.Attribute)TransactionReferenceNumber = rInMngTrnsfr.Transactions.Transaction.TransID;			
+		END IF;							
+		RETURN TRUE;
+	END;
+END MODULE;

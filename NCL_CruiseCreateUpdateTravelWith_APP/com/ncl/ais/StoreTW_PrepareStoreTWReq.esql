@@ -1,0 +1,44 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE StoreTW_PrepareStoreTWReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.*:NCL_CruiseCreateUpdateTravelWithRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateTW_OUT;
+		DECLARE rOut, rStoreTWReq, rOptions, rTwID REFERENCE TO OutputRoot;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];		
+		--Preserve the temporary TwID from UpdateTW_OUT for add transactions
+		IF UPPER(rEnv.TwAction) = 'ADD' THEN
+			SET rEnv.Temp.TWID = rIn.*:TwShell.*:TwHeader.*:TwID;
+		END IF;
+			
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'			
+			THEN
+				SET bFatalError = TRUE;
+			END IF;	
+			MOVE rError NEXTSIBLING;
+		END WHILE;	
+		IF bFatalError = TRUE
+		THEN
+			CALL CopyEntireMessage();		
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;	
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE FIELD OutputRoot.XMLNSC.StoreTW_IN AS rStoreTWReq;		
+	    CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rStoreTWReq);	
+	    
+	    SET rStoreTWReq.Options.Unlock = 'Y';
+		SET rStoreTWReq.TwID = rIn.*:TwShell.*:TwHeader.*:TwID;	
+									
+		RETURN TRUE;	
+	END;
+	
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

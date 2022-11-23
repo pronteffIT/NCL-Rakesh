@@ -1,0 +1,411 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE AdvCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CacheMap EXTERNAL CHARACTER 'EXTERNAL_ERROR_CODE.LUT';
+DECLARE XC10UserInfoMap EXTERNAL CHARACTER 'VXUSERINFO.LUT';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER 'XC10ConnectionConfig';
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_ExtractInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreateRQBooking;
+		DECLARE rUpdtBkgReq REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.recordId, ''),
+												COALESCE(rIn.bookingChannel, ''),
+												COALESCE(rIn.collectionName, '') || '-' || COALESCE(rIn.collectionID, ''),
+												COALESCE(rIn.agencyID, ''),
+												COALESCE(rIn.PackageID, ''),
+											 	rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Create RQ booking request message', 'xml', rEnv);
+		END IF;
+		
+		SET rEnv.endpoint = InputRoot.XMLNSC.*[1].Endpoint;
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseCreateRQBooking = rIn;
+		
+		SET rEnv.Temp.Channel = rIn.bookingChannel;
+		SET rEnv.Temp.SessionID = rIn.sessionGUID;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling update booking service ...', rEnv);
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endpoint;
+		-- update booking request (use this if session login not required)
+		CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rUpdtBkgReq;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rUpdtBkgReq);
+--		SET rUpdtBkgReq.MsgHeader.Version = VersonixAPIVersion;
+--		SET rUpdtBkgReq.MsgHeader.SessionGUID = rEnv.Temp.SessionID;
+		SET rUpdtBkgReq.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResShipRequests';
+		SET rUpdtBkgReq.ResShell.ResHeader.AgencyID = rIn.agencyID;
+		SET rUpdtBkgReq.ResShell.ResHeader.CollectionID = rIn.collectionID;
+		SET rUpdtBkgReq.ResShell.ResHeader.ResStatus = 'RQ';
+		SET rUpdtBkgReq.ResShell.ResHeader.SourceCode = rEnv.Temp.Channel;
+		SET rUpdtBkgReq.ResShell.ResHeader.OfficeCode = rIn.officeCode;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api request', 'xml', rEnv);
+		END IF;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_UpdateBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLoginResp REFERENCE TO InputRoot.XMLNSC.Login_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rUpdtBkgReq REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		
+		SET rEnv.Temp.SessionID = rLoginResp.MsgHeader.SessionGUID;
+				
+		IF EXISTS(rLoginResp.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Login failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateRQBookingRS', rEnv, rOrgMsg, rLoginResp, rOutRoot);
+			
+			MOVE rOut TO OutputRoot.XMLNSC.*:NCL_CruiseCreateRQBookingRS;
+			CALL CopyCollectionDetails(rOrgMsg, rOut);
+								
+			RETURN TRUE;
+		ELSE
+			-- update booking request
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rUpdtBkgReq;
+			
+			SET rUpdtBkgReq.MsgHeader = rLoginResp.MsgHeader;
+			SET rUpdtBkgReq.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResShipRequests';
+			SET rUpdtBkgReq.ResShell.ResHeader.AgencyID = rOrgMsg.agencyID;
+			SET rUpdtBkgReq.ResShell.ResHeader.CollectionID = rOrgMsg.collectionID;
+			SET rUpdtBkgReq.ResShell.ResHeader.ResStatus = 'RQ';
+			SET rUpdtBkgReq.ResShell.ResHeader.SourceCode = rEnv.Temp.Channel;
+			SET rUpdtBkgReq.ResShell.ResHeader.OfficeCode = rOrgMsg.officeCode;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_UpdateBookingPromos
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rUpdtBkgResp REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rUpdtBkgReq REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		DECLARE rResPromo REFERENCE TO rUpdtBkgReq.ResShell.ResPromotions.ResPromotion;
+		
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api response', 'xml', rEnv);
+		END IF;
+		
+		IF COALESCE(rUpdtBkgResp.ResShell.ResHeader.ResID,'')='' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Update booking failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateRQBookingRS', rEnv, rOrgMsg, rUpdtBkgResp, rOutRoot);
+			
+			MOVE rOut TO OutputRoot.XMLNSC.*:NCL_CruiseCreateRQBookingRS;
+			CALL CopyCollectionDetails(rOrgMsg, rOut);
+								
+			RETURN TRUE;
+		ELSE
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endpoint;
+			-- update booking request
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rUpdtBkgReq;
+			
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rUpdtBkgReq);
+			--SET rUpdtBkgReq.MsgHeader = rUpdtBkgResp.MsgHeader;
+			SET rUpdtBkgReq.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResShipRequests';
+			SET rUpdtBkgReq.ResShell.ResHeader = rUpdtBkgResp.ResShell.ResHeader;
+			
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[1].GuestSeqN = '1';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[1].GuestID = '-1';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[1].GuestType = 'REGULAR';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[1].ClientID = '0';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[1].Insurance = 'NO';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[1].Seating = 'N/A';
+
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[2].GuestSeqN = '2';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[2].GuestID = '-2';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[2].GuestType = 'REGULAR';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[2].ClientID = '0';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[2].Insurance = 'NO';
+			SET rUpdtBkgReq.ResShell.ResGuests.ResGuest[2].Seating = 'N/A';
+			
+			SET rUpdtBkgReq.ResShell.ResPackages.ResPackage.PackageID = rOrgMsg.PackageID;
+			SET rUpdtBkgReq.ResShell.ResPackages.ResPackage.GuestRefs = '1 2';
+			SET rUpdtBkgReq.ResShell.ResPackages.ResPackage.PriceCategory = rOrgMsg.categoryCode;
+			
+			FOR rPromo AS rOrgMsg.PromoCodes[] DO
+				CREATE LASTCHILD OF rUpdtBkgReq.ResShell.ResPromotions AS rResPromo NAME 'ResPromotion';
+				
+				SET rResPromo.PromoCode = rPromo;
+				SET rResPromo.Mode = 'FORCED';
+				SET rResPromo.GuestRefs = '1 2';
+			END FOR;
+			
+			SET rUpdtBkgReq.ResShell.ResShipRequests.ResShipRequest.PriceCategory = rOrgMsg.categoryCode;
+			SET rUpdtBkgReq.ResShell.ResShipRequests.ResShipRequest.Category = rOrgMsg.categoryCode;
+			SET rUpdtBkgReq.ResShell.ResShipRequests.ResShipRequest.InventoryReqType = 'GTY ONLY';
+
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Update booking ap with promos ...', rEnv);
+
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking (with promos) api request', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_StoreBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rUpdtBkgResp REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rStrBkgReq REFERENCE TO OutputRoot.XMLNSC.StoreBooking_IN;
+
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking (with promos) api response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rUpdtBkgResp.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Update booking failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateRQBookingRS', rEnv, rOrgMsg, rUpdtBkgResp, rOutRoot);
+			
+			MOVE rOut TO OutputRoot.XMLNSC.*:NCL_CruiseCreateRQBookingRS;
+			CALL CopyCollectionDetails(rOrgMsg, rOut);
+								
+			RETURN TRUE;
+		ELSE
+			SET rEnv.Temp.ReservationId = rUpdtBkgResp.ResShell.ResHeader.ResID;
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endpoint;
+			-- update booking request
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rStrBkgReq;
+			
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rStrBkgReq);
+		--	SET rStrBkgReq.MsgHeader = rUpdtBkgResp.MsgHeader;
+			SET rStrBkgReq.Options.Unlock = 'Y';
+			SET rStrBkgReq.ResShellOptions.IncludeElements = 'ResHeader ResGuests ResPackages ResPromotions ResShipRequests';
+			SET rStrBkgReq.ResID = rUpdtBkgResp.ResShell.ResHeader.ResID;
+
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling store booking api to save booking ...', rEnv);
+
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Store booking api request', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_CreateStatusMsg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rStrBkgResp REFERENCE TO InputRoot.XMLNSC.StoreBooking_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+
+		DECLARE bPayload BLOB;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Store booking api response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rStrBkgResp.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Store booking failed ...', rEnv);
+
+			CALL CreateWarningResponseForVXErrors('NCL_CruiseCreateRQBookingRS', rEnv, rOrgMsg, rStrBkgResp, rOutRoot);
+			
+			MOVE rOut TO OutputRoot.XMLNSC.*:NCL_CruiseCreateRQBookingRS;
+			CALL CopyCollectionDetails(rOrgMsg, rOut);
+		ELSE
+			SET rEnv.Temp.ReservationId = rStrBkgResp.ResShell.ResHeader.ResID;
+			
+			-- update booking request
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS AS rOut;
+			
+			SET rOut.ns:resId = rStrBkgResp.ResShell.ResHeader.ResID;
+			CALL CopyCollectionDetails(rOrgMsg, rOut);
+		END IF;
+		
+		RETURN TRUE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_SaveStatus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		
+		DECLARE msg CHARACTER '';
+		
+		IF EXISTS(InputRoot.XMLNSC.*:NCL_CruiseCreateRQBookingRS.*:Warnings.*:Warning[]) THEN
+			SET msg = CAST(ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546) AS CHARACTER CCSID 1208 ENCODING 546);
+		END IF;
+		
+		INSERT INTO Database.NCLSEA.NCL_AIS_FS_GROUP_DETAIL(RECORD_ID, COLLECTION_ID, CATEGORY, RES_SEQ_NUMBER, RES_ID, ERROR_MSG) 
+				VALUES(rOrgMsg.recordId, rOrgMsg.collectionID, rOrgMsg.categoryCode, rOrgMsg.requestNumber, rEnv.Temp.ReservationId, msg);
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseCreateRQBooking;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+		
+		CALL CopyCollectionDetails(rOrgMsg, rOut);
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateRQBooking_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB;
+		
+		SET OutputRoot = InputRoot;
+		
+		-- save status in database tables
+		PROPAGATE TO LABEL 'SAVE_STATUS';
+		
+		-- call API to logout from session
+		IF EXISTS(rEnv.Temp.SessionID[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionID;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Create RQ booking response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

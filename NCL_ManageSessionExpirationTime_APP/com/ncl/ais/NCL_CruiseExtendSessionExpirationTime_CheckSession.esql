@@ -1,0 +1,101 @@
+BROKER SCHEMA com.ncl.ais
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseExtendSessionExpirationTime
+ * MODULE NAME       :     CheckSession
+ * Description       :     This module is used for checking the session and errors obtained and navigate based upon the condition to the next path.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseExtendSessionExpirationTime_CheckSession
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseExtendSessionExpirationTimeRQ AS rIn;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns6:NCL_CruiseExtendSessionExpirationTimeRS AS rOut;
+		DECLARE CompanyNameCode CHARACTER rIn.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				
+		-- Call the DB and route the message in different ways
+		--CALL GetExpireTime(rEnv);
+		CALL resGetLockExtendExpiration(rEnv.XMLNSC.GUID,SESSION_EXT_MINS,rEnv.XMLNSC.ChannelName,
+						rEnv.Temp.DbResponse.TIMERELEASE,rEnv.Temp.DbResponse.ERRORCODE,
+						rEnv.Temp.DbResponse.ERRORMSG);
+		
+		IF (rEnv.Temp.DbResponse.TIMERELEASE) IS NULL THEN
+			-- If the result returned from the DB doesnot exist then send Record not found
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			CREATE FIELD rOut.ns5:Success;
+	
+			SET rOut.ns5:Warnings.ns5:Warning = 'no record found';
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = rEnv.Temp.DbResponse.ERRORCODE;
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = rEnv.Temp.DbResponse.ERRORMSG;
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+			-- Map the value here from the message obtained from the db call
+			
+			-- Logging framework implementation
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time DB Record not found payload...', 'xml', rEnv);
+		
+		ELSEIF SQLCODE <> 0 THEN
+			-- prepare the Generic Exception tree
+			-- if there are SQL exception then send this response
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			CREATE FIELD rOut.ns5:Success;
+			SET rOut.ns5:Warnings.ns5:Warning = SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]');
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '35001';
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Generic error in get expiration time';
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+			-- Map the value here from the message obtained from the db call
+			
+			-- Logging framework implementation
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time DB Exception payload...', 'xml', rEnv);
+		ELSE
+			-- prepare the final output response Success response
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.ns5:Success;
+			SET rOut.ns5:ExpiryTime = rEnv.Temp.DbResponse.TIMERELEASE;
+			-- Logging framework implementation
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Success response payload...', 'xml', rEnv);
+		END IF;
+		
+				
+--			-- /body/ShowSessionDetail_OUT/Errors/Error/ErrorMessage
+--				--create error getting session message
+--				CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+--				CREATE FIELD rOut.ns6:Success;
+--				SET rOut.ns6:Warnings.ns6:Warning = 'No Session found'; 
+--				SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Code = '12228';
+--				SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)ShortText = 'Error retrieving session info';
+--				SET rOut.ns6:Warnings.ns6:Warning.(XMLNSC.Attribute)Type = '3';
+	
+		RETURN TRUE;		
+	END;
+END MODULE;
+
+
+
+CREATE PROCEDURE resGetLockExtendExpiration(IN SESSIONID CHARACTER, IN TIME_INTERVAL INTEGER, IN CHANNEL CHARACTER,OUT TIMEOFRELEASE CHARACTER,
+		OUT ERRORCODE CHARACTER,OUT ERRORMSG CHARACTER)
+	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_RES_LOCK_EXTEND_EXPIRATION";
+

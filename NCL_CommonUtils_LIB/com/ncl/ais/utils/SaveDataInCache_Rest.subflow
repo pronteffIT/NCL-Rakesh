@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmWSRequest.msgnode="ComIbmWSRequest.msgnode" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="com/ncl/ais/utils/SaveDataInCache_Rest.subflow" nsPrefix="com_ncl_ais_utils_SaveDataInCache_Rest.subflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1" useDefaults="true" udpSupport="true">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CacheBaseUrl" name="CacheBaseUrl" lowerBound="1" defaultValueLiteral="http://167.118.110.104">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CacheGrid" name="CacheGrid" lowerBound="1" defaultValueLiteral="IIBCache_Grid">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CacheMap" name="CacheMap" lowerBound="1" defaultValueLiteral="AGENCY.LAT.P">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CacheUser" name="CacheUser" lowerBound="1" defaultValueLiteral="IIBUser">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CachePwd" name="CachePwd" lowerBound="1" defaultValueLiteral="IIB@User">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="SaveDataInCache_Rest" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CommonUtils_LIB/icons/full/obj16/SaveDataInCache_Rest.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CommonUtils_LIB/icons/full/obj30/SaveDataInCache_Rest.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="125,100" computeExpression="esql://routine/com.ncl.ais.utils#SaveDataInCache_Rest_CacheRequest.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="CacheRequest"/>
+      </nodes>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="234,101" URLSpecifier="http://167.118.110.104" timeoutForServer="30" httpVersion="1.1" protocol="TLS" messageDomainProperty="BLOB">
+        <translation xmi:type="utility:ConstantString" string="SaveToCache"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_5" location="335,99" computeExpression="esql://routine/com.ncl.ais.utils#SaveDataInCache_Rest_SaveCacheResponse.Main">
+        <translation xmi:type="utility:ConstantString" string="SaveCacheReply"/>
+      </nodes>
+      <nodes xmi:type="eflow:FCMSource" xmi:id="InTerminal.Input" location="40,100">
+        <translation xmi:type="utility:TranslatableString" key="InTerminal.Input" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+      </nodes>
+      <nodes xmi:type="eflow:FCMSink" xmi:id="OutTerminal.Output" location="463,100">
+        <translation xmi:type="utility:TranslatableString" key="OutTerminal.Output" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_12" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_13" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.error" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_1" sourceNode="InTerminal.Input" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="OutTerminal.Output" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CacheBaseUrl">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.CacheBaseUrl" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CacheGrid">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.CacheGrid" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CacheMap">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.CacheMap" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CacheUser">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.CacheUser" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CachePwd">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.CachePwd" bundleName="com/ncl/ais/utils/SaveDataInCache_Rest" pluginId="NCL_CommonUtils_LIB"/>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

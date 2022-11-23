@@ -1,0 +1,106 @@
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_REGISTER_CASINO_REWARDS_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE MaxDocSendLimit EXTERNAL INTEGER 3;
+
+CREATE COMPUTE MODULE NCL_RegisterCasinoRewards_ProcessMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRegisterCasinoRewardsRQ;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		'', '','',rEnv);
+
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL CruiseSailingUserAttributes Request', 'xml', rEnv);
+		END IF;
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRegisterCasinoRewardsRQ = rIn;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRegisterCasinoRewardsRS AS rOut;
+		CREATE FIELD rOut.Success;
+
+		DECLARE CLIENT_ID_CD, EMAIL_TXT, DOCUMENT_SENT_TXT, DOCUMENT_ID_TXT, REQ_COUNT,PHONE_NUM, YEAR_NUM, SQLInsertStmt, SQLSelectStmt, COMPANY_NAME, FIRST_NAME, LAST_NAME CHAR;
+		SET CLIENT_ID_CD = COALESCE(rIn.*:ClientID, '');
+		SET EMAIL_TXT = COALESCE(rIn.*:Email, '');
+		SET PHONE_NUM = COALESCE(rIn.*:PhoneNumber, '');
+		SET YEAR_NUM = COALESCE(rIn.*:Year, '');
+		SET COMPANY_NAME = COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		SET DOCUMENT_SENT_TXT = 'N';
+		SET FIRST_NAME = COALESCE(rIn.*:FirstName, '');
+		SET LAST_NAME = COALESCE(rIn.*:LastName, '');
+		
+		SET SQLSelectStmt = 'SELECT COUNT(*) AS CNT FROM 
+		(SELECT CLIENT_ID_CD, EMAIL_TXT, PHONE_NUM, YEAR_NUM, NVL(COMPANY_CD, ''NCLWEBC'') AS COMPANY_CD 
+		FROM NCLSEA.NCL_REGISTR_CASINO_REWARDS WHERE CLIENT_ID_CD = ? AND YEAR_NUM = ?) A
+		WHERE COMPANY_CD = ?';
+		SET rEnv.QueryResult.SelectRecords[] = PASSTHRU(SQLSelectStmt,CLIENT_ID_CD, YEAR_NUM, COMPANY_NAME);
+		IF EXISTS(rEnv.QueryResult.SelectRecords[]) AND CAST(rEnv.QueryResult.SelectRecords.CNT AS INTEGER)>=MaxDocSendLimit THEN
+			SET DOCUMENT_SENT_TXT = 'Y';
+			SET REQ_COUNT = CAST(rEnv.QueryResult.SelectRecords.CNT AS INTEGER);
+			SET rOut.Email = EMAIL_TXT;
+			SET rOut.CreatedDateTime = rEnv.QueryResult.SelectRecords[1].CREATE_TS;
+			SET DOCUMENT_ID_TXT = 'Already ' || CAST(REQ_COUNT AS CHAR) || ' requests this year';
+		ELSE
+			SET DOCUMENT_SENT_TXT = 'N';
+			SET REQ_COUNT = CAST(rEnv.QueryResult.SelectRecords.CNT AS INTEGER);
+			SET rOut.Email = EMAIL_TXT;
+			SET rOut.CreatedDateTime = rEnv.QueryResult.SelectRecords[1].CREATE_TS;
+			SET DOCUMENT_ID_TXT = '';
+		END IF;
+
+		SET SQLInsertStmt = 'INSERT INTO NCLSEA.NCL_REGISTR_CASINO_REWARDS (CLIENT_ID_CD, EMAIL_TXT, PHONE_NUM, YEAR_NUM, DOCUMENT_SENT_TXT, ENVELOPE_ID_TXT, COMPANY_CD, FIRST_NAME, LAST_NAME)
+		VALUES ('''||CLIENT_ID_CD||''','''||EMAIL_TXT||''','''||PHONE_NUM||''','''||YEAR_NUM||''','''||DOCUMENT_SENT_TXT||''','''||DOCUMENT_ID_TXT||''','''||COMPANY_NAME||''','''||FIRST_NAME||''','''||LAST_NAME||''')';
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Executing the Insert into NCLSEA.NCL_REGISTR_CASINO_REWARDS', rEnv);
+		SET rEnv.QueryResult.InsertRecords[] = PASSTHRU(SQLInsertStmt);
+		--IF EXISTS(rEnv.QueryResult.InsertRecords[]) THEN
+			--SET rOut.SqlInsertRecords = CAST(rEnv.QueryResult.InsertRecords.CNT AS INTEGER);
+		--ELSE
+			--SET rOut.SqlInsertRecords = '-1';
+		--END IF;
+		
+		SET rOut.ClientID = CLIENT_ID_CD;
+		SET rOut.Email = EMAIL_TXT;
+		SET rOut.PhoneNumber = PHONE_NUM;
+		SET rOut.Year = YEAR_NUM;
+		SET rOut.DocumentSent = DOCUMENT_SENT_TXT;
+		SET rOut.ReqCount = REQ_COUNT;
+		SET rOut.DocumentId = DOCUMENT_ID_TXT;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

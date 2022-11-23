@@ -1,0 +1,325 @@
+BROKER SCHEMA com.ncl.ais
+-- Declaring the UDPs and NameSpaces
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVE_BKNG_RESP';
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+
+DECLARE CacheConfigService EXTERNAL CHARACTER '';
+DECLARE AgencyMap EXTERNAL CHARACTER '';
+DECLARE ValidBookingChannels EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveBooking_LoginRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveBookingRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		-- add metadata to log event		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												'','',rEnv);
+		
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Retrive Booking Request', 'xml', rEnv);
+		END IF;	
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ = rIn;
+		
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+
+		SET rEnv.ReservationID = FIELDVALUE(rIn.*:ReservationID.(XMLNSC.Attribute)ID);
+		SET rEnv.BkingChnlCompCd = UPPER(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code));
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling verify agency ...', rEnv);
+		
+		-- Checking if ReturnTempState flag is set then call ManageSession_APP
+		IF COALESCE(UPPER(rIn.*:ReturnTempState), 'FALSE') = 'TRUE' THEN
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ as rOut;
+			SET rOut.*:POS = rIn.*:POS;
+			SET rOut.*:GetOrCreateSession = 'Y';
+			SET rOut.*:ReservationId = rEnv.ReservationID;
+			RETURN TRUE;		
+		ELSE
+			-- create verify agency request
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+			SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+			
+			--PROPAGATE TO TERMINAL 'out1';
+			DECLARE cRequestorId CHARACTER COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, '0');
+			DECLARE cPCC CHARACTER COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '');
+			DECLARE cSystemName CHARACTER COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'SABRE');
+			
+			CALL com.ncl.ais.utils.LookupAgencyInfo(cRequestorId, cPCC, cSystemName, AgencyMap, CacheConfigService, rEnv);
+						
+			--CALL Get_Agency(rIn.*:POS,rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';			
+		END IF;
+		
+		RETURN FALSE;
+	END;
+
+	/*CREATE PROCEDURE Get_Agency(IN rPOS REFERENCE,IN rEnv REFERENCE) BEGIN
+		DECLARE cRequestorId CHARACTER COALESCE(rPOS.*:Source.*:RequestorID.ID, '0');
+		DECLARE cPCC CHARACTER COALESCE(rPOS.*:Source.PseudoCityCode, '');
+		DECLARE cSystemName CHARACTER COALESCE(rPOS.*:Source.*:BookingChannel.*:CompanyName.Code, 'NCLWEBC');		
+		DECLARE cQuery CHARACTER;
+		IF cRequestorId <> '0' THEN
+			SET cQuery = 'SELECT A.AGENCY_ID, A.AGENCY_NAME, A.DEFAULT_CURRENCY, A.OFFICE_CODE' || 
+							' FROM SEA.AGENCY A' || 
+							' WHERE A.AGENCY_ID = ? AND A.IS_ACTIVE = ''Y''';
+			
+			SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(cRequestorId));					
+		ELSE 
+			IF cPCC <> '' THEN				
+				SET cQuery = 'SELECT B.DEFAULT_CURRENCY, B.AGENCY_ID, B.AGENCY_NAME, B.OFFICE_CODE FROM SEA.AGENCY_EXTERNAL A, SEA.AGENCY B' ||
+								' WHERE A.AGENCY_ID = B.AGENCY_ID AND B.IS_ACTIVE = ''Y'' AND A.PSEUDO_CITY_CODE = ? AND A.EXTERNAL_NAMES_ID = ' ||
+								'(SELECT EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES WHERE EXTERNAL_NAME = ?)';
+				
+				SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(cPCC, cSystemName));
+			
+			END IF;
+		END IF;
+		IF NOT EXISTS(rEnv.Temp.AgencyInfo[]) THEN
+			SET rEnv.Temp.VerifyAgencyResponse.agencyNotFound.(XMLNSC.Attribute)Code = '12805';
+			SET rEnv.Temp.VerifyAgencyResponse.agencyNotFound.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file'; 
+			SET rEnv.Temp.VerifyAgencyResponse.agencyNotFound.(XMLNSC.Attribute)Type = '3';
+		END IF;			
+	END;*/
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveBooking_VerifyAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE rInManageSession REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		DECLARE RefInReq,rOut REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ;
+
+		-- If ManageSession_APP is getting invoked		
+		IF LASTMOVE(rInManageSession) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Manage Session invoked', rEnv);
+			SET rEnv.SessionGUID = rInManageSession.SessionInfo.SessionToken;
+			SET rEnv.agencyID = rInManageSession.agencyID;
+			SET rEnv.agencyCurrency = rInManageSession.agencyCurrency;					
+			SET rEnv.Endpoint = COALESCE(rInManageSession.SessionInfo.Endpoint,'');
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;			
+			SET rOut.ResID = rEnv.ReservationID ;
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling LoadBooking service ...', rEnv);
+			-- Load Booking
+			RETURN TRUE;
+		END IF;
+		
+		-- if verify agency is being invoked
+		IF EXISTS(rEnv.Temp.AgencyInfo[] ) THEN
+			-- Success
+			SET rEnv.agencyID = rEnv.Temp.AgencyInfo.AGENCY_ID;
+			SET rEnv.agencyCurrency = rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY;
+
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+			SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			CREATE FIELD rOut.MsgHeader.CallerInfo.UserInfo.Internal;
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+			--SET rOut.ResShellOptions.IncludeElements = 'ResHeader, ResPackages, ResGuests,ResComponents, ResShipRequests, ResPromotions, ResPaymentSchedule, ResTransportations, ResShipRequests, SpecialRequests, TravelWith, ResInvoice,AccTransactions,ResRoomRequests';
+			SET rOut.ResID = rEnv.ReservationID ;
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling LoadBooking service ...', rEnv);
+			-- Load Booking
+
+			RETURN TRUE;
+		ELSE
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrieveBookingRS;
+			
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq, rOutResp);
+			
+			-- Construct The Error Response from Verify Agecncy Response
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rEnv.Temp.AgencyInfoError, rOutResp);
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Or Warning not returned From Verify Agency...', rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveBooking_LoadBookingResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		IF (LogPayLoad) THEN
+				-- Add response msg to log event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'LoadBooking Response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rIn.Errors.Error[] ) THEN
+			-- Error Recieved from LoadBooking
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Load booking returned errors ...', rEnv);
+
+			DECLARE cErrorCode CHARACTER rIn.Errors.Error.ErrorCode;
+			DECLARE cExternalCodeInfo CHARACTER '';
+			
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.BkingChnlCompCd || '#' || ExternalCodeType, cErrorCode, XC10CacheMap, XC10ConnectionConfig);
+
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = rEnv.BkingChnlCompCd;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+				
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveBookingRS AS rOut;			
+				
+				-- This Proc creates/copy the attributes for Root Element
+				CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOut);
+
+
+				CALL CreateResponseFromAdvisoryCode('', rEnv.BkingChnlCompCd, cErrorCode, ExternalCodeType, rIn, rOut);
+				
+				
+			ELSE
+				
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveBookingRS AS rOut;
+				
+				-- This Proc creates/copy the attributes for Root Element
+				CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOut);
+
+				CALL CreateResponseFromAdvisoryCode(cExternalCodeInfo, rEnv.BkingChnlCompCd, cErrorCode, ExternalCodeType,rIn, rOut);
+				
+				
+			END IF;
+						
+			PROPAGATE TO TERMINAL 'out1';
+			
+			RETURN FALSE;
+			
+			
+		ELSE
+			-- Success Recieved from LoadBooking
+			CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'LoadBkingResp';
+			SET rEnv.Temp.LoadBkingResp = InputRoot.XMLNSC.LoadBooking_OUT;
+			
+			DECLARE isInvalidChannel BOOLEAN FALSE;
+
+			
+			IF rEnv.BkingChnlCompCd ='CRUISESERVICE' AND rIn.ResShell.ResHeader.OfficeCode <> 'NCL BRAZIL' THEN
+
+				SET isInvalidChannel = TRUE;
+
+			ELSEIF rEnv.BkingChnlCompCd ='JOYAPP' AND rIn.ResShell.ResHeader.OfficeCode <> 'NCL CHINA' THEN
+
+				SET isInvalidChannel = TRUE;
+			
+			ELSEIF (rIn.ResShell.ResHeader.SourceCode <> rEnv.BkingChnlCompCd AND rIn.ResShell.ResHeader.AgencyID <> rEnv.agencyID) THEN
+
+			--	IF (rEnv.BkingChnlCompCd <>'CRUISESERVICE' OR rEnv.BkingChnlCompCd <>'NCLWEBC' OR
+				--	rEnv.BkingChnlCompCd <>'DXP' OR rEnv.BkingChnlCompCd <>'JOYAPP') THEN
+
+					--SET isInvalidChannel = rEnv.BkingChnlCompCd NOT IN('CRUISESERVICE','NCLWEBC','DXP','JOYAPP');
+					 SET isInvalidChannel = NOT CONTAINS(UCASE(ValidBookingChannels), '#'|| UCASE(rEnv.BkingChnlCompCd) || '#');
+
+			--	END IF;
+				
+			END IF;
+
+			IF isInvalidChannel THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invalid Channel Recieved ...', rEnv);
+				
+				CALL InvalidChannel_Warning(rEnv);
+				
+				PROPAGATE TO TERMINAL 'out1';
+				
+				RETURN FALSE;
+			ELSE
+				-- Success
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking RetrivePackages Service ...', rEnv);
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut DOMAIN('XMLNSC') IDENTITY ns:NCL_CruiseRetrievePackagesRQ;
+				--CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseRetrievePackagesRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOut);		
+				SET rOut.POS = RefInReq.*:POS;
+				SET rOut.ReservationID.(XMLNSC.Attribute)ID = rEnv.ReservationID;
+				SET rOut.RetrieveAmenities = 'false';
+				SET rOut.SessionId.SessionToken = rEnv.SessionGUID;
+				SET OutputLocalEnvironment.CallableFlow.EndPoint = rEnv.Endpoint;
+				
+				RETURN TRUE;
+			END IF;				
+		END IF;
+		RETURN FALSE;
+	END;	
+	
+
+
+	CREATE PROCEDURE InvalidChannel_Warning (IN rEnv REFERENCE)
+	BEGIN
+		DECLARE refOut REFERENCE TO OutputRoot;
+		DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS refOut IDENTITY ns:NCL_CruiseRetrieveBookingRS;
+		-- This Proc creates/copy the attributes for Root Element
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,refOut);
+		SET refOut.Warnings.Warning.(XMLNSC.Attribute)Code = '16551';
+		SET refOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Access denied to retrive requested booking.';
+		SET refOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+
+	END;
+		
+END MODULE;

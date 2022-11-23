@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<MessagePool xmlns="http://wwww.ibm.com/iib/test/1.0.0">
+    <MQInputMessage timestamp="1526161277087" nodeId="FCMComposite_1_1" name="new message 1" id="1526161277087-7">
+        <plainText>%3CNCL_CruiseGetCountryCodesRQ+SequenceNmbr%3D%221%22+AltLangID%3D%22en-us%22+TransactionIdentifier%3D%22Reservation-36824679-2018-03-14T12%3A01%3A36%22+PrimaryLangID%3D%22en-us%22+EchoToken%3D%22String%22+Target%3D%22Production%22+Version%3D%223.1%22+xmlns%3D%22http%3A%2F%2Fnclapi%2Fschemas%22%3E%0D%0A+%3CPOS%3E%0D%0A++%3CSource%3E%0D%0A+++%3CRequestorID+Type%3D%225%22+ID%3D%22215807%22%3E%0D%0A++++%3CCompanyName+Code%3D%22NCLWEBC%22+CodeContext%3D%22IATA%22%2F%3E%0D%0A+++%3C%2FRequestorID%3E%0D%0A+++%3CBookingChannel+Type%3D%221%22%3E%0D%0A++++%3CCompanyName+Code%3D%22NCLWEBC%22+CodeContext%3D%22IATA%22%2F%3E%0D%0A+++%3C%2FBookingChannel%3E%0D%0A++%3C%2FSource%3E%0D%0A+%3C%2FPOS%3E%0D%0A+%3CCountries%2F%3E%0D%0A%3C%2FNCL_CruiseGetCountryCodesRQ%3E</plainText>
+        <MessageHeader backoutCount="0" characterSet="0" encoding="0" expiry="-1" feedback="0" messageFlags="0" messageType="8" messageSequenceNumber="1" offset="0" originalLength="-1" persistence="2" priority="-1" putApplicationType="0" report="0"/>
+    </MQInputMessage>
+</MessagePool>

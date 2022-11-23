@@ -1,0 +1,223 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGTBRQ
+* MODULE NAME : CruiseGTBRQ
+* Description : This module is used to capture the initial request and process the message to create final output.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayload EXTERNAL BOOLEAN;
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_GTB_RESP';
+DECLARE ns10 NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseGTBRQ_CruiseGTBRQ
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD; 
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise_GTBRQ input request...', 'xml', rEnv);
+		END IF;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseGTBRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseGTBRQ AS rIn;
+		-- Uncomment the below block once GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationId, ''),
+												'',
+												'',
+											 	rEnv);
+		SET OutputRoot.MQMD = rEnv.MQMD;		
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns10:NCL_CruiseGTBRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns10:NCL_CruiseGTBRS AS rOut;
+		SET rEnv.Temp.DBResult[] = PASSTHRU('SELECT * FROM gtb_request WHERE gtb_request.res_id =?' VALUES(rIn.*:ReservationId));
+
+		CASE
+			
+		WHEN NOT EXISTS(rIn.*:ReservationId[]) OR rIn.*:ReservationId = '' OR rIn.*:ReservationId IS NULL THEN
+			SET rOut.ns10:Errors.ns10:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns10:Errors.ns10:Error.(XMLNSC.Attribute)ShortText = 'Field value for ReservationID is missing';
+			SET rOut.ns10:Errors.ns10:Error.(XMLNSC.Attribute)Type = '3';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Reservation Id is missing in the request', rEnv);
+			
+		WHEN NOT EXISTS(rEnv.Temp.DBResult[]) THEN
+			-- no records found
+			SET rOut.ns10:Warnings.ns10:Warning.(XMLNSC.Attribute)Code = '88799';
+			SET rOut.ns10:Warnings.ns10:Warning.(XMLNSC.Attribute)ShortText = 'No Match Found';
+			SET rOut.ns10:Warnings.ns10:Warning.(XMLNSC.Attribute)Type = '3';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB call returned No match found response', rEnv);
+		WHEN CARDINALITY(rEnv.Temp.DBResult[]) > 100 THEN
+			-- Match Exceeds records
+			SET rOut.ns10:Warnings.ns10:Warning.(XMLNSC.Attribute)Code = '88798';
+			SET rOut.ns10:Warnings.ns10:Warning.(XMLNSC.Attribute)ShortText = 'Matches Exceeded Limit';
+			SET rOut.ns10:Warnings.ns10:Warning.(XMLNSC.Attribute)Type = '3';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB call returned Matches Exceeded Limit response', rEnv);
+			
+		ELSE
+			
+			CREATE FIELD rOut.ns10:Success;
+			CREATE FIELD rOut.ns10:Records;
+			DECLARE rRecord REFERENCE TO rOut.ns10:Records;
+			FOR source AS rEnv.Temp.DBResult[] DO
+				CREATE LASTCHILD OF rOut.ns10:Records AS rRecord NAMESPACE ns10 NAME 'Record';
+				SET rRecord.ns10:ID = source.REQUEST_ID;
+				SET rRecord.ns10:AirLastCheckDate = source.AIR_LAST_CHECK_DATE;
+				SET rRecord.ns10:AirGotDate = source.AIR_GOT_DATE;
+				SET rRecord.ns10:BatchCode = source.BATCH_CODE;
+				SET rRecord.ns10:BookletID = source.BOOKLET_ID;
+				SET rRecord.ns10:ErrorMsg = source.ERROR_MSG;
+				SET rRecord.ns10:GuestID = source.GUEST_ID;
+				SET rRecord.ns10:PrintDate = CAST(source.PRINT_DATE AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss.S');
+				SET rRecord.ns10:RequestDate = CAST(source.REQUEST_DATE AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss.S');
+				SET rRecord.ns10:RequestStatus = source.REQUEST_STATUS;
+				SET rRecord.ns10:RequestType = source.REQUEST_TYPE;
+				SET rRecord.ns10:ResID = source.RES_ID;
+				SET rRecord.ns10:VacationDate = CAST(source.VACATION_DATE AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss.S');
+				SET rRecord.ns10:ForcedByUser = source.FORCED_BY_USER;
+				SET rRecord.ns10:TktAuthID = CAST(source.TKT_AUTH_ID AS DECIMAL);
+				SET rRecord.ns10:BarCode = source.BARCODE;
+				SET rRecord.ns10:MailingName = source.MAILING_NAME;
+				SET rRecord.ns10:MailingAddressLine1 = source.MAILING_ADDRESS_LINE1;
+				SET rRecord.ns10:MailingAddressLine2 = source.MAILING_ADDRESS_LINE2;
+				SET rRecord.ns10:MailingCity = source.MAILING_CITY;
+				SET rRecord.ns10:MailingState = source.MAILING_STATE;
+				SET rRecord.ns10:MailingZip = source.MAILING_ZIP;
+				SET rRecord.ns10:MailingCountry = source.MAILING_COUNTRY;
+				SET rRecord.ns10:MailingPhone = source.MAILING_PHONE;
+				SET rRecord.ns10:FedexTrackingNo = source.FEDEX_TRACK_NUM;
+				SET rRecord.ns10:FedexShipDate = source.FEDEX_SHIP_DATE;
+				SET rRecord.ns10:FedexServType = source.FEDEX_SERV_TYPE;
+				SET rRecord.ns10:LanguageCode = source.LANGUAGE_CODE;
+				SET rRecord.ns10:CarriedName = source.CARRIER_NAME;
+				SET rRecord.ns10:TrackingNumber = source.TRACK_NUMBER;
+				SET rRecord.ns10:ShippingDate = CAST(source.SHIPPING_DATE AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss.S');
+				SET rRecord.ns10:AdvancedDeliveryFeedback = source.ADVANCED_DELIVERY_FEEDBACK;
+			END FOR;
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise_GTBRQ Success response payload...', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+			
+		END CASE;
+		
+	END;
+
+END MODULE;
+
+
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGTBRQ
+* MODULE NAME : Exception
+* Description : This module is used for capturing the exception occurred in the IIB flow and send it for error logging.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseGTBRQ_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGTBRQ
+* MODULE NAME : ExceptionHandler
+* Description : This module is used to send exception message to the caller in case of IIB Runtime error.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseGTBRQ_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns10:NCL_CruiseGTBRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns10:NCL_CruiseGTBRS AS runTimeErr;
+		
+		SET runTimeErr.ns10:Errors.ns10:Error = cErrorText;
+		SET runTimeErr.ns10:Errors.ns10:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns10:Errors.ns10:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET runTimeErr.ns10:Errors.ns10:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;

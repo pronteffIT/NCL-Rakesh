@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project>
+	<Folder FolderName="DTD/Schemas" ExtStr="dtd;dcd;xdr;biz;xsd">
+		<File FilePath="Agency.xsd" HomeFolder="Yes"/>
+		<File FilePath="AgencyProgram.xsd" HomeFolder="Yes"/>
+		<File FilePath="BaseTypes.xsd" HomeFolder="Yes"/>
+		<File FilePath="Client.xsd" HomeFolder="Yes"/>
+		<File FilePath="CouponShell.xsd" HomeFolder="Yes"/>
+		<File FilePath="GroupShell.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgAccounting.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgAir.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgAll.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgAmenity.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgAvail.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgBooking.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgDbSearch.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgInsurance.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgMaster.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgPrintDocs.xsd" HomeFolder="Yes"/>
+		<File FilePath="MsgSession.xsd" HomeFolder="Yes"/>
+		<File FilePath="ResShell.xsd" HomeFolder="Yes"/>
+	</Folder>
+</Project>

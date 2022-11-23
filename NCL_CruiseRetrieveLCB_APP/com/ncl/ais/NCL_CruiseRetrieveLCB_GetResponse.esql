@@ -1,0 +1,275 @@
+BROKER SCHEMA com.ncl.ais
+
+
+DECLARE LogPayload EXTERNAL BOOLEAN FALSE;
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVELCB_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveLCB_GetSession
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveLCBRQ;
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRetrieveLCBRQ = rIn;
+		SET rEnv.Temp.LCBID = rIn.*:LCBID;
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rEnv.Temp.PCC = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+		SET rEnv.Temp.RequestorId = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.Temp.RequestorId, COALESCE(rEnv.Temp.PCC, '')),
+		COALESCE(rEnv.Temp.Channel, ''),COALESCE(rEnv.Temp.LCBID, ''),'','',rEnv);
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveLCB Request', 'xml', rEnv);
+		END IF;
+
+		IF com.ncl.ais.utils.IsEmpty(rIn.*:LCBID) THEN
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseRetrieveLCBRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'LCBID is null ';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		ELSE
+
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Check LCBID ...', rEnv);
+			-- create verify agency request
+			SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Verify Agency ...', rEnv);
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api request', 'xml', rEnv);
+			END IF;
+			RETURN TRUE;
+
+		END IF;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveLCB_LoadTWReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rCstmDBOut,rLoadTWIn REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveLCBRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS;
+		DECLARE bPayload BLOB;
+		-- if verify agency is being invoked
+		IF LASTMOVE(rIn) THEN
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api response', 'xml', rEnv);
+			END IF;
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			IF EXISTS(rIn.*:agencyNotFound[]) OR EXISTS(rIn.*:loginError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS AS rOut;
+
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+				IF EXISTS(rIn.*:agencyNotFound[]) THEN
+					SET rOut.ns:Warnings.ns:Warning = rIn.agencyNotFound;
+				ELSE
+					SET rOut.ns:Warnings.ns:Warning = rIn.loginError;
+				END IF;
+
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+				
+			ELSEIF EXISTS(rIn.*:runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS AS rOut;
+
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+				SET rOut.ns:Errors.ns:Error = rIn.runtimeError;
+
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke LoadTW VX Api ...', rEnv);
+
+				SET rEnv.Temp.SessionId = rIn.sessionGUID;
+				SET rEnv.Temp.agencyId = rIn.agencyID;
+				SET rEnv.Temp.Endpoint = rIn.endpoint;
+
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+
+				CREATE FIELD OutputRoot.XMLNSC.LoadTW_IN AS rLoadTWIn;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rLoadTWIn);
+			--	SET rLoadTWIn.MsgHeader.Version = VersonixAPIVersion;
+			--	SET rLoadTWIn.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+				SET rLoadTWIn.TwID = rEnv.Temp.LCBID;
+
+			END IF;
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveLCB_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut,rRefOut,rCstmDBIn,rLoadref REFERENCE TO Environment.Variables;
+		DECLARE rRefIn REFERENCE TO InputRoot.XMLNSC.LoadTW_OUT;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveLCBRQ;
+		DECLARE bPayload BLOB;
+
+		IF EXISTS(rRefIn.*:Errors[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseRetrieveLCBRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			SET rOut.Errors = rRefIn.*:Errors;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Errors recieved from LoadTW service ...', rEnv);
+
+		ELSEIF rOrgMsg.*:ReturnBookingsSummary = 'true' THEN
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.CustomDbSearch_IN AS rCstmDBIn;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rCstmDBIn);
+		--	SET rCstmDBIn.MsgHeader.Version = VersonixAPIVersion;
+	--		SET rCstmDBIn.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			SET rCstmDBIn.Options.SortItems.SortItem.NodeName = 'ResSearchShort';
+			SET rCstmDBIn.Options.SortItems.SortItem.OrderBy.(XMLNSC.Attribute)Mode = 'Columns';
+			SET rCstmDBIn.Options.SortItems.SortItem.OrderBy = 'sail_date_from DESC';
+
+			SET rCstmDBIn.ResSearchShort.TwID = rEnv.Temp.LCBID;
+			SET rCstmDBIn.ResSearchShort.ResStatuses = 'BK CL OF QT SH TM WL';
+
+			PROPAGATE TO LABEL 'CustomDbSearch';
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS AS rOut;
+			CREATE FIELD rOut.Success;
+
+			SET rOut.Type = rRefIn.*:TwShell.*:TwHeader.*:Type;
+			SET rOut.LCBID = rRefIn.*:TwShell.*:TwHeader.*:TwID;
+			SET rOut.ResponsibleClient = rRefIn.*:TwShell.*:TwHeader.*:ResponsibleClient;
+			SET rOut.Comments = rRefIn.*:TwShell.*:TwHeader.*:Comments;
+
+
+			FOR rInref AS rEnv.CstmDBResp.ResSearchShort.Reservation[] DO
+				CREATE LASTCHILD OF rOut.LinkedBookings AS rRefOut NAME 'Bookings';
+				SET rRefOut.ID = rInref.ResID;
+				SET rRefOut.ResStatus = rInref.ResStatus;
+				SET rRefOut.GuestCount = rInref.GuestCount;
+				SET rRefOut.FirstGuestFullName = rInref.FirstGuestFullName;
+				SET rRefOut.Ship = rInref.Ship;
+				SET rRefOut.CabinNumber = rInref.CabinNumber;
+				SET rRefOut.PackageType = rInref.PackageType;
+				SET rRefOut.SourceCode = rInref.SourceCode;
+				SET rRefOut.SailFromDate = rInref.SailFromDate;
+				SET rRefOut.SailToDate = rInref.SailToDate;
+				SET rRefOut.Currency = rInref.DefaultCurrency;
+				SET rRefOut.Price = rInref.Price;
+			END FOR;
+
+			RETURN TRUE;
+
+		ELSE
+
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveLCBRS AS rOut;
+			CREATE FIELD rOut.Success;
+			SET rOut.Type = rRefIn.*:TwShell.*:TwHeader.*:Type;
+			SET rOut.LCBID = rRefIn.*:TwShell.*:TwHeader.*:TwID;
+			SET rOut.ResponsibleClient = rRefIn.*:TwShell.*:TwHeader.*:ResponsibleClient;
+			SET rOut.Comments = rRefIn.*:TwShell.*:TwHeader.*:Comments;
+
+			FOR rLoadref AS rRefIn.TwShell.TwDetails.TwDetail[] DO
+				CREATE LASTCHILD OF rOut.TwDetails AS rRefOut NAME 'TwDetail';
+				SET rRefOut = rLoadref;
+
+			END FOR;
+		END IF;
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF LogPayload THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveLCB response..', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveLCB_CustomDbSearchRes
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'CstmDBResp';
+		SET rEnv.CstmDBResp = InputRoot.XMLNSC.*:CustomDbSearch_OUT;
+
+		RETURN TRUE;
+
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.Endpoint;
+		IF EXISTS(InputRoot.BLOB[]) THEN
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		PROPAGATE TO TERMINAL 'out';
+		IF LENGTH(COALESCE(rEnv.Temp.SessionId,'')) > 0 THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Log Out..', rEnv);
+	
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+	
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;

@@ -1,0 +1,200 @@
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_ONLINE_CHKIN_CLNT_RESP';
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseOnlineCheckInClientRQ
+* MODULE NAME : Request
+* Description : This module is used to Select checkin details from database.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseOnlineCheckInClient_Request
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseOnlineCheckInClientRS;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		--
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InputReq';
+		SET rEnv.TempHeader.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.TempHeader.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.TempHeader.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.TempHeader.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;
+
+		SET rEnv.InputReq = InputRoot.XMLNSC.*:NCL_CruiseOnlineCheckInClientRQ;
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.InputReq.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '',
+												COALESCE( rEnv.InputReq.*:ClientId,''),
+												'',
+											 	rEnv);
+		---add input payload to logging									 	
+	    
+	    IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'OnlineCheckInClient request message', 'xml', rEnv);
+	END IF;
+		SET rEnv.Statement[] =SELECT A.CLIENT_ID,A.WEB_LOGIN_NAME,A.FIRST_NAME,A.LAST_NAME,A.MIDDLE_NAME,A.TITLE, A.BIRTHDAY,
+		A.COUNTRY_OF_BIRTH,A.CITIZENSHIP,A.LANGUAGE_CODE,A.EMAIL,A.CLIENT_TYPE,A.SEX,A.ADDRESS_LINE1,A.ADDRESS_LINE2,
+		A.ADDRESS_LINE4,A.ADDRESS_CITY,A.STATE_CODE,A.COUNTRY_CODE,A.ZIP, A.PRIMARY_PHONE_TYPE,A.PRIMARY_PHONE_NUMBER,A.SECONDARY_PHONE_TYPE,A.SECONDARY_PHONE_NUMBER,A.HOUSEHOLD_ID
+		FROM Database.ncl_online_checkin_client AS A where A.client_id = rEnv.InputReq.*:ClientId;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseOnlineCheckInClientRS AS rOut;
+		
+		IF CARDINALITY(rOut.ns:Client[]) > 100 THEN
+			SET rOut.ns:Warnings.ns:Warning = InputRoot.XMLNSC.message;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '88798';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Matches Exceeded Limit';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+		ELSEIF NOT EXISTS(rEnv.Statement[]) THEN
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '88799';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'No Match Found';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			CREATE FIELD rOut.ns:Success ;
+			FOR source AS rEnv.Statement[] DO
+				CREATE LASTCHILD OF rOut AS rOut NAMESPACE ns NAME 'Client';
+				SET rOut.ns:ClientID = source.CLIENT_ID;
+				SET rOut.ns:WebLoginName =COALESCE( source.WEB_LOGIN_NAME ,'');
+				SET rOut.ns:FirstName = COALESCE(source.FIRST_NAME ,'');
+				SET rOut.ns:LastName = COALESCE(source.LAST_NAME,'');
+				SET rOut.ns:MiddleName = COALESCE(source.MIDDLE_NAME,'');
+				SET rOut.ns:Title = COALESCE(source.TITLE,'');
+				SET rOut.ns:BirthDay = COALESCE(CAST(CAST(source.BIRTHDAY AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ss.SSS') AS DATE FORMAT 'yyyy-MM-dd'),'');
+				SET rOut.ns:CountryOfBirth = COALESCE(source.COUNTRY_OF_BIRTH,'');
+				SET rOut.ns:Citizenship= COALESCE(source.CITIZENSHIP,'');
+				SET rOut.ns:LanguageCode = COALESCE(source.LANGUAGE_CODE,'');
+				SET rOut.ns:Email = COALESCE(source.EMAIL,'');
+				SET rOut.ns:ClientType = COALESCE(source.CLIENT_TYPE,'');
+				SET rOut.ns:Sex= COALESCE(source.SEX,'');
+				SET rOut.ns:Address.ns:Line1= COALESCE(source.ADDRESS_LINE1,'');
+				SET rOut.ns:Address.ns:Line2 = COALESCE(source.ADDRESS_LINE2,'');
+				SET rOut.ns:Address.ns:Line4 = COALESCE(source.ADDRESS_LINE4,'');
+				SET rOut.ns:Address.ns:State = COALESCE(source.STATE_CODE,'');
+				SET rOut.ns:Address.ns:City = COALESCE(source.ADDRESS_CITY,'');
+				SET rOut.ns:Address.ns:Zip = COALESCE(source.ZIP,'');
+				SET rOut.ns:Address.ns:Country = COALESCE(source.COUNTRY_CODE,'');
+				SET rOut.ns:Phone.ns:Primary = COALESCE(source.PRIMARY_PHONE_NUMBER,'');
+				SET rOut.ns:Phone.ns:Secondary = COALESCE(source.SECONDARY_PHONE_NUMBER,'');
+				SET rOut.ns:HouseHoldID = COALESCE(source.HOUSEHOLD_ID,'');
+			END FOR;
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'OnlineCheckInClient Response message', 'xml', rEnv);
+		END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseOnlineCheckInClientRQ
+* MODULE NAME : ExceptionHandler
+* Description : This module is used to handle exception.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseOnlineCheckInClient_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'OnlineCheckInClient Invalid request message', 'xml', rEnv);
+		END IF ;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseOnlineCheckInClientRQ
+* MODULE NAME : FaultHandler
+* Description : This module is used to handle Fault.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseOnlineCheckInClient_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	    DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE ref REFERENCE TO rEnv.XMLNSC.InputReq;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseOnlineCheckInClientRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseOnlineCheckInClientRS AS rOut;
+		DECLARE cErrorText CHARACTER;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code= '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+

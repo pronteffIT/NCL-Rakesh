@@ -1,0 +1,332 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE AdvCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE InsCodeType EXTERNAL CHARACTER 'Insurance';
+DECLARE PromoCodeType EXTERNAL CHARACTER 'PromosToDisplay';
+DECLARE SpclReqCodeType EXTERNAL CHARACTER 'SpecialRequests';
+DECLARE BridgeStatementCodeType EXTERNAL CHARACTER 'BridgeStatement';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE XC10SessionMap EXTERNAL CHARACTER '';
+DECLARE XUpstreamHeader EXTERNAL CHARACTER 'x-upstream';
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_StatefulCreateUpdateShorexAndOnBoardPackages_BuildPromos
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rEnvProms REFERENCE TO rEnv;
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET rEnv.Stateless = FALSE;
+					
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+		
+		-- save frequently used elements in environment tree
+		SET rEnv.Temp.ReservationId = rIn.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rEnv.Temp.PCC = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+		SET rEnv.Temp.RequestorId = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		--SET rEnv.Temp.VoyageId = rIn.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID;
+		SET rEnv.Temp.ModeOfOperation = rIn.*:ModeOfOperation;
+		
+		-- for keeping track of which code table is requested to be loaded to cache
+		SET rEnv.Temp.CacheLoadRequested = '#';
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaData('ReservationId', rEnv.Temp.ReservationId, 'Reservation Id', rEnv);
+		-- Uncomment the below block after GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.Temp.RequestorId, COALESCE(rEnv.Temp.PCC, '')),
+												COALESCE(rEnv.Temp.Channel, ''),
+												COALESCE(rEnv.Temp.ReservationId,''),
+												'',
+												'',
+											 	rEnv);
+
+--		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+--		IF (LogPayload) THEN
+--		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateShorexAndOnBoardPackages request message', 'xml', rEnv);
+--		END IF;
+		-- build promotions
+		/*IF EXISTS(rIn.*:ReservationInfo.*:GuestDetails.*:GuestDetail[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Building promotions ...', rEnv);
+
+			CREATE FIELD rEnv.Temp.Objects.VXPromotions AS rEnvProms;
+			CALL BuildPromotions(rIn, rEnvProms);
+		END IF; */
+		
+		-- check if session token present
+		IF InputLocalEnvironment.CallableFlow.State = 'STATEFUL' THEN
+			--IF EXISTS(rIn.*:SessionId.*:SessionToken[]) THEN
+			--Prepare NCL_CruiseGetSessionTokenRQ
+			--This call check if session exists in cache associated with reservation id
+			-- If it is valid it is returned else a new session is obtained
+			DECLARE rOut REFERENCE TO Environment.Variables;				
+			SET rEnv.Temp.SessionId = rIn.*:SessionId.*:SessionToken;
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ as rOut;
+			SET rOut.*:POS = rIn.*:POS;
+			SET rOut.*:GetOrCreateSession = 'Y';
+			SET rOut.*:ReservationId = rEnv.Temp.ReservationId;				
+			--END IF;			
+			RETURN TRUE;
+		ELSE
+			SET rEnv.Stateless = TRUE;
+			-- create verify agency request
+			SET OutputRoot.MQMD = InputRoot.MQMD;
+			 
+			--SET OutputRoot.XMLNSC.sc:VerifyAgencyRequest.sc:source = rIn.*:POS.*:Source;
+			SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+			
+			PROPAGATE TO TERMINAL 'out1';	
+		END IF;
+		
+		RETURN FALSE;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_StatefulCreateUpdateShorexAndOnBoardPackages_PrepareLoadBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rInManageSession REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		--DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+		DECLARE rLoadBkngReq REFERENCE TO InputRoot.XMLNSC.LoadBooking_IN;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		IF LASTMOVE(rInManageSession) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Manage Session invoked', rEnv);
+			SET rEnv.Temp.SessionId = rInManageSession.SessionInfo.SessionToken;
+		--	SET rEnv.Temp.Endpoint =  GetSessionInfoFromCache(rEnv.Temp.SessionId,XC10SessionMap,XC10ConnectionConfig);			
+			SET rEnv.Temp.Endpoint = rInManageSession.SessionInfo.Endpoint;			
+		END IF;
+		-- if verify agency is being invoked
+		IF LASTMOVE(rIn) THEN
+			IF EXISTS(rIn.agencyNotFound[]) OR EXISTS(rIn.loginError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+				
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+				
+				IF EXISTS(rIn.agencyNotFound[]) THEN
+					--SET rOut.ns:Warnings.ns:Warning = rIn.agencyNotFound
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = FIELDVALUE(rIn.agencyNotFound.(XMLNSC.Attribute)Code);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = FIELDVALUE(rIn.agencyNotFound.(XMLNSC.Attribute)ShortText);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = FIELDVALUE(rIn.agencyNotFound.(XMLNSC.Attribute)Type);
+				ELSE
+					--SET rOut.ns:Warnings.ns:Warning = rIn.loginError;
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = FIELDVALUE(rIn.loginError.(XMLNSC.Attribute)Code);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = FIELDVALUE(rIn.loginError);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = FIELDVALUE(rIn.loginError.(XMLNSC.Attribute)Type);
+					
+				END IF;
+				-- Default value
+				SET rOut.ns:Errors = '';
+				
+				RETURN TRUE;
+			ELSEIF EXISTS(rIn.runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+	
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+							
+				SET rOut.ns:Errors.ns:Error = rIn.runtimeError;
+				
+				RETURN TRUE;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Session established ...', rEnv);
+				
+				SET rEnv.Temp.SessionId = rIn.sessionGUID;
+				SET rEnv.Temp.agencyId = rIn.agencyID;
+				SET rEnv.Temp.Endpoint = rIn.endpoint;
+				
+				-- Check mode and route accordingly
+				IF rEnv.Temp.ModeOfOperation = 'Store' THEN
+					-- This amounts to stateless with Store. Call Loadbooking
+					CALL CreateLoadBookingReq(rEnv, rOutRoot);
+					PROPAGATE TO TERMINAL 'out2';					
+				END IF;
+			END IF;
+		END IF;	
+		
+		-- Check Mode And Route accordingly		
+		IF rEnv.Temp.ModeOfOperation = 'Store' 
+		THEN
+			-- Control comes here for 'Store' mode check only if it was in stateful mode
+			-- Create Store Booking Request					
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling StoreBooking API ...', rEnv);
+			SET rOutRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rOut;
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rOut);
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+			-- Setting this option to avoid calling UnlockBooking later
+			--SET rOut.Options.Unlock = 'Y';
+			SET rOut.ResShellOptions.ExcludeElements = 'SpecialRequests';
+			SET rOut.ResID = rEnv.Temp.ReservationId;
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+			
+		ELSEIF rEnv.Temp.ModeOfOperation = 'Edit' THEN
+			-- Load and Update Booking
+			--DETACH OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+			CALL CreateLoadBookingReq(rEnv, rOutRoot);
+			PROPAGATE TO TERMINAL 'out2';
+		ELSEIF rEnv.Temp.ModeOfOperation = 'Update' THEN
+			CALL CreateLoadBookingReq(rEnv, rOutRoot);
+			PROPAGATE TO TERMINAL 'out2';			
+		ELSE
+			-- Undefined Mode
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Undefined Mode ...', rEnv);
+
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+	
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+						
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '11901';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Undefined Mode of operation should be Edit,Update or Store';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';	
+			RETURN TRUE;				
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_StatefulCreateUpdateShorexAndOnBoardPackages_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		--DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_StatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		--DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_StatefulCreateUpdateShorexAndOnBoardPackagesRS;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		--CREATE FIELD OutputRoot.XMLNSC.ns:NCL_StatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';		
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_StatefulCreateUpdateShorexAndOnBoardPackages_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot = InputRoot;
+		SET OutputLocalEnvironment.RFH2.EndPoint = Environment.Variables.Temp.Endpoint;
+		--SET OutputRoot.XMLNSC.*:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS.(XMLNSC.Attribute)Endpoint = Environment.Variables.Temp.Endpoint;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_StatefulCreateUpdateShorexAndOnBoardPackages_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		--SET rEnv.Temp.Protocol = 'MQ';
+		
+		--IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[]) THEN
+		--	SET rEnv.Temp.Protocol = 'CALLABLE';
+		--END IF;
+		
+		SET rEnv.Temp.Protocol = 'CALLABLE';
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_StatefulCreateUpdateShorexAndOnBoardPackages_MapErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		--DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_StatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		--DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		
+		--DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC;
+		MOVE rIn FIRSTCHILD;
+		MOVE rIn NEXTSIBLING;
+		
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		
+		CALL CreateWarningResponseForVXErrors(rEnv, rEnvInMsg, rIn, rOutRoot);
+		-- Add session token and res ID details
+		SET	rOutRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS.ns:SessionId.ns:SessionToken = rEnv.Temp.SessionId;
+		SET	rOutRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS.ns:ReservationID.(XMLNSC.Attribute)ID = rEnv.Temp.ReservationId;
+		
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE PROCEDURE SaveSessionInfoToCache(IN sessionId CHARACTER, IN endpointId CHARACTER, IN cacheExpiry CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+CREATE PROCEDURE GetSessionInfoFromCache(IN sessionId CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	

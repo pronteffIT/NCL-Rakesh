@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <xs:include schemaLocation="ResShell.xsd"/>
+    <xs:element name="ExtCompChangeData">
+        <xs:annotation>
+            <xs:documentation>The root element for the event data field</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="OldRes" type="ResShell" minOccurs="0">
+                    <xs:annotation>
+                        <xs:documentation>Reservation state before store: status and external components, if any</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="NewRes" type="ResShell">
+                    <xs:annotation>
+                        <xs:documentation>Reservation state after store: status and external components</xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element> 
+</xs:schema>

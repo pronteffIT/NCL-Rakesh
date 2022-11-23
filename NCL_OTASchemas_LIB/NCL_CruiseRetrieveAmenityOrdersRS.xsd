@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://nclapi/schemas" version="3.0" xmlns="http://nclapi/schemas" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseRetrieveAmenityOrdersRS">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Retrieve Amenity Orders Response message contains the detail information about the Amenity Orders that are associated to a booking
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="Success" type="SuccessType">
+						<xs:annotation>
+							<xs:documentation> Standard way to indicate successful 
+processing of an OTA message. Returning an empty element of this type indicates 
+success.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element minOccurs="0" name="Warnings" type="WarningsType">
+						<xs:annotation>
+							<xs:documentation> Standard way to indicate successful 
+processing of an OTA message, but one in which warnings are 
+generated.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element minOccurs="0" name="AmenityOrders">
+						<xs:complexType>
+							<xs:annotation>
+								<xs:documentation>Specifies the list of Amenity Orders associated with a booking</xs:documentation>
+							</xs:annotation>
+							<xs:sequence>
+								<xs:element maxOccurs="99" name="AmenityOrder" type="AmenityOrderType"/>
+								<xs:element name="AmenityGiftCardMessages" type="GiftCardAvailableMessageType"/>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element minOccurs="0" name="Errors" type="ErrorsType">
+					<xs:annotation>
+						<xs:documentation> A collection of errors that occurred during 
+the processing of a message.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

@@ -1,0 +1,833 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_refException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'User Authentication and Retrieve input request message', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+
+
+--Ncl_CruiseCreateClient_APP_UpdatingPreferences
+CREATE COMPUTE MODULE Ncl_CruiseCreateClient_APP_UpdatingPreferences
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE inRef REFERENCE TO InputRoot.XMLNSC.Identifier;
+		DECLARE OnBoardpref REFERENCE TO rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)FutureCruisePlan;
+
+		DECLARE p_type,p_code,p_comment,p_ErrorCode,p_clientID CHARACTER '';
+		---Routing OnBoardpref
+		IF inRef='OnBoardpref' THEN
+			SET p_type =rEnv.OnBoardpref.OnBoardPreferences.Type;
+			Set p_code=rEnv.OnBoardpref.OnBoardPreferences.Code;
+			Set p_comment='';
+			CALL OnBoardpref (p_type,p_code,p_comment,rEnv.p_ErrorCode[],p_clientID,rEnv.Data[]);
+			---Routing VacationPref
+		ELSEIF inRef ='VacationPref' THEN
+			DECLARE VacationPref REFERENCE TO Environment.Variables.reqRequest.VacationPreference;
+			DECLARE I INTEGER;
+			FOR inRef AS VacationPref.DesiredDestination[] DO
+				SET Environment.DesiredDestination[I] = inRef;
+			END FOR;
+
+			IF VacationPref.PreviousCruiseLines >0 THEN
+				DECLARE J INTEGER;
+				FOR inRef AS VacationPref.PreviousCruiseLines[] DO
+					SET Environment.PreviousCruiseLines[J] = inRef;
+				END FOR;
+			END IF;
+
+			DECLARE p_Destination,p_Destination_cnt,p_Cruise_lines,p_Cruise_lines_cnt,p_Error_msg,p_Error_code CHARACTER'';
+			DECLARE p_ClientID INTEGER;
+			CALL VacationPref (p_ClientID,p_Destination,p_Destination_cnt,p_Cruise_lines,p_Cruise_lines_cnt,p_Error_code,p_Error_msg,rEnv.Data[]);
+			---Routing AnyPreferences
+		ELSEIF inRef='AnyPreferences'THEN
+			DECLARE p_CompanionClientID ,p_clientID INTEGER '1';
+			CALL AnyPreferences (p_CompanionClientID,p_clientID,p_ErrorCode,rEnv.Data[]);
+		END IF;
+			
+			IF (LogPayLoad) THEN
+				DECLARE OPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'CruiseCreateClient Update Pref Response', 'xml', rEnv);
+			END IF;
+
+		RETURN TRUE;
+	END;
+	--Inserting OnBoardpref Data into 'Ncl_WEsb_Create_OnBoard_Pref'
+
+	CREATE PROCEDURE OnBoardpref(IN p_type CHARACTER,IN p_code CHARACTER,IN p_clientID CHARACTER,IN p_comment CHARACTER,OUT p_ErrorCode CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "Ncl_WEsb_Create_OnBoard_Pref";
+	--Inserting VacationPref Data into 'NCL_WESB_CREATE_CLIENT_PARM_V1'
+
+	CREATE PROCEDURE VacationPref(INOUT p_ClientID INTEGER,IN p_Destination CHARACTER,IN p_Destination_cnt CHARACTER,IN p_Cruise_lines CHARACTER,IN p_Cruise_lines_cnt CHARACTER,OUT p_Error_msg CHARACTER,OUT p_Error_code CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCL_WESB_CREATE_CLIENT_PARM_V1";
+	--Inserting AnyPreferences Data into 'Ncl_WEsb_Create_Companion_Xref'
+
+	CREATE PROCEDURE AnyPreferences(INOUT p_CompanionClientID INTEGER,INOUT p_clientID INTEGER,OUT p_ErrorCode CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "Ncl_WEsb_Create_Companion_Xref";
+
+END MODULE;
+
+CREATE PROCEDURE createHash(IN cPassword CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.PasswordHash.createHash";
+
+CREATE COMPUTE MODULE Ncl_CruiseCreateClient_RoutingPreferences
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE FIELD rEnv.Temp;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') PARSE(InputRoot.BLOB.BLOB CCSID 1208 ENCODING 546);
+		
+		SET Environment.Password = rEnv.Temp.XMLNSC.*:NCL_CruiseCreateClientRQ.*:UserLogin.(XMLNSC.Attribute)Password;
+		-- Declare Variables for the Logging framework.
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE bPayload BLOB ASBITSTREAM(rEnv.Temp CCSID 1208 ENCODING 546);
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- Calling the Logging framework to log the initial request with the payload.	
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+  		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+		 SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;  		
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE DecryptString CHARACTER rEnv.Temp.XMLNSC.*:NCL_CruiseCreateClientRQ.*:UserLogin.(XMLNSC.Attribute)Password;
+		DECLARE rInAuthRet REFERENCE TO rEnv.Temp.XMLNSC.*:NCL_CruiseCreateClientRQ;
+		
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		IF EXISTS(rInAuthRet.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID[]) THEN
+			CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rInAuthRet.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rInAuthRet.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rInAuthRet.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',
+												COALESCE(rInAuthRet.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID,''),
+												'',
+											 	rEnv);
+		END IF;									 	
+
+		SET rEnv.XMLNSC = rEnv.Temp.XMLNSC.*:NCL_CruiseCreateClientRQ;
+		
+		
+		SET rEnv.Password_new = createHash(DecryptString);
+		DECLARE p_ClientId INTEGER 0;
+		
+		DECLARE p_action,p_title,p_first,p_middle,p_last,p_gender,p_dob,p_occp,p_usrname,p_passwd,p_email,p_citizenshp,p_add1,p_add2,
+		p_addcity,p_state,p_zip,p_cntry,p_addrtyp,p_phntype,p_phn,p_addinfo,p_maritalstatus,p_child,p_agncy_name,p_agnt_first,p_agnt_last,
+		p_contact_pref,p_anvy_date,p_pref_cruise_lngth,p_future_cruise_plan,p_pref_cruise_time,p_prvsly_cruised,p_prvs_cruised_nbr,
+		p_pref_booking_mode,p_RecreateHousehold,p_booking_channel,p_mainclient,p_errorcode, p_comments CHARACTER;
+		
+		DECLARE p_firstname_ntv,p_middlename_ntv,p_lastname_ntv,p_title_ntv,p_suffix_native,p_addrline1_ntv,p_addrline2_ntv,
+		p_addrline3_ntv,p_addrline4_ntv,p_addrcity_ntv BLOB;
+
+		DECLARE sc NAMESPACE 'http://nclapi/schemas';
+		DECLARE crcm NAMESPACE 'http://NCL_CruiseRetrieveClient_Module';
+		SET rEnv.ClientID = rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+		SET p_booking_channel = COALESCE(rInAuthRet.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		SET p_action = rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)Action;
+		SET p_title = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:NamePrefix[1];
+		SET p_first = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:GivenName[1];
+		SET p_middle = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:MiddleName[1];
+		SET p_last = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:Surname;
+		SET p_gender = SUBSTRING(UPPER(rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)Gender) FROM 1 FOR 1);
+		SET p_RecreateHousehold = COALESCE(rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)RecreateHousehold,'false');
+		
+		IF rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)BirthDate <> '' AND rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)BirthDate IS NOT NULL THEN
+  			SET p_dob = CAST(CAST(rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)BirthDate AS DATE FORMAT 'yyyy-MM-dd') AS CHARACTER FORMAT 'MMddyyyy'); 
+  		END IF;
+  		
+		SET p_occp = rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)GuestOccupation;
+		SET p_usrname = UPPER(rEnv.XMLNSC.*:UserLogin.(XMLNSC.Attribute)UserLoginName);
+		SET p_passwd = rEnv.Password_new;
+		SET p_email = FIELDVALUE(rEnv.XMLNSC.*:ClientInfo.*:Email);
+		SET p_citizenshp = rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)Nationality;
+		SET p_add1 = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLine[1];
+		SET p_add2 = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLine[2];
+		SET p_addcity = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:CityName;
+		SET p_state = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:StateProv.(XMLNSC.Attribute)StateCode;
+		SET p_zip = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:PostalCode;
+		SET p_cntry = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:CountryName.(XMLNSC.Attribute)Code;
+		SET p_addrtyp = 'HOME ADDRESS';
+		SET p_phntype = 'HOME';
+		SET p_phn = rEnv.XMLNSC.*:ClientInfo.*:Telephone[1].(XMLNSC.Attribute)PhoneNumber;
+		SET p_comments = FIELDVALUE(rEnv.XMLNSC.*:ClientInfo.*:Comment);
+
+		IF
+			rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)FutureCruisePlan <> NULL OR
+			rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreferredBookingMode <> NULL OR
+			rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreferredCruiseLength <> NULL OR
+			rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreferredCruiseTime <> NULL OR
+			rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreviouslyCruised <> NULL
+			THEN
+			SET p_addinfo = 'Y';
+		ELSE
+			SET p_addinfo = 'N';
+		END IF;
+		SET p_maritalstatus = rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)RPH;
+		SET p_child = rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)NumberOfChildren;
+		SET p_pref_cruise_lngth = rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreferredCruiseLength;
+		SET p_future_cruise_plan = rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)FutureCruisePlan;
+		SET p_pref_cruise_time = rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreferredCruiseTime;
+		SET p_prvsly_cruised = rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreviouslyCruised;
+		SET p_prvs_cruised_nbr = rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreviouslyCruisedNumber;
+		SET p_pref_booking_mode = rEnv.XMLNSC.*:VacationPreference.(XMLNSC.Attribute)PreferredBookingMode;
+/*		SET p_firstname_ntv = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:GivenNameNative[1];
+		SET p_middlename_ntv = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:MiddleNameNative[1];
+		SET p_lastname_ntv = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:SurnameNative;
+		SET p_title_ntv = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:NameTitleNative[1];
+		SET p_suffix_native = rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:NameSuffixNative[1];
+		SET p_addrline1_ntv = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[1];
+		SET p_addrline2_ntv = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[2];
+		SET p_addrline3_ntv = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[3];
+		SET p_addrline4_ntv = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[4];
+		SET p_addrcity_ntv = rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:CityNameNative;*/
+		
+		
+		SET p_firstname_ntv =CAST(rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:GivenNameNative[1] AS BLOB CCSID 1202);
+		SET p_middlename_ntv =CAST( rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:MiddleNameNative[1] AS BLOB CCSID 1202);
+		SET p_lastname_ntv = CAST(rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:SurnameNative AS BLOB CCSID 1202);
+		SET p_title_ntv =  CAST(rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:NameTitleNative AS BLOB CCSID 1202);
+		SET p_suffix_native = CAST(rEnv.XMLNSC.*:ClientInfo.*:PersonName.*:NameSuffixNative AS BLOB CCSID 1202);
+		SET p_addrline1_ntv = CAST(rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[1] AS BLOB CCSID 1202);
+		SET p_addrline2_ntv = CAST(rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[2] AS BLOB CCSID 1202);
+		SET p_addrline3_ntv = CAST(rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[3] AS BLOB CCSID 1202);
+		SET p_addrline4_ntv = CAST(rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:AddressLineNative[4] AS BLOB CCSID 1202);
+		SET p_addrcity_ntv = CAST(rEnv.XMLNSC.*:ClientInfo.*:Address[1].*:CityNameNative AS BLOB CCSID 1202);
+		SET p_mainclient = 'Y';
+		SET p_ClientId = CAST(rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID AS INTEGER);
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Create Client SP...', rEnv);
+				
+		CALL CREATE_CLIENT(p_action,p_title,p_first,p_middle,p_last,p_gender,p_dob,p_occp,p_usrname,p_passwd,p_email,
+		p_citizenshp,p_add1,p_add2,p_addcity,p_state,p_zip,p_cntry,p_addrtyp,p_phntype,p_phn,
+		p_addinfo,p_maritalstatus,p_child,p_agncy_name,p_agnt_first,p_agnt_last,p_contact_pref,p_anvy_date,
+		p_pref_cruise_lngth,p_future_cruise_plan,p_pref_cruise_time,p_prvsly_cruised,p_prvs_cruised_nbr,p_pref_booking_mode, p_comments, p_RecreateHousehold,
+		p_firstname_ntv,p_middlename_ntv,p_lastname_ntv,p_title_ntv,p_suffix_native,p_addrline1_ntv,p_addrline2_ntv,p_addrline3_ntv,p_addrline4_ntv,
+		p_addrcity_ntv,p_booking_channel,p_mainclient,p_ClientId,p_errorcode);
+		
+		PASSTHRU('COMMIT');
+		
+		IF NOT EXISTS (rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID[])  THEN
+			CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',
+												COALESCE(CAST(p_ClientId AS CHARACTER),''),
+												'',
+											 	rEnv);
+		END IF;
+					
+		-- log the status of the stored proc.
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc to update and validate is successful', rEnv);
+		--SET rEnv.ClientID =p_ClientId ;
+		
+		IF p_errorcode = 0 THEN
+			SET rEnv.ClientID =p_ClientId ;
+			--SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseRetrieveClientRQ;
+			DECLARE refOut REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseRetrieveClientRQ;
+			SET refOut.(XMLNSC.Attribute)AltLangID = COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)AltLangID,'EN');
+			SET refOut.(XMLNSC.Attribute)EchoToken =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)EchoToken,'');
+			SET refOut.(XMLNSC.Attribute)PrimaryLangID = COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)PrimaryLangID,'');
+			SET refOut.(XMLNSC.Attribute)RetransmissionIndicator =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)RetransmissionIndicator,'');
+			SET refOut.(XMLNSC.Attribute)SequenceNumbr =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)SequenceNumbr,'');
+			SET refOut.(XMLNSC.Attribute)Target =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)Target,'');
+			SET refOut.(XMLNSC.Attribute)TimeStamp=COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)TimeStamp,'');
+			SET refOut.(XMLNSC.Attribute)TranscationIdentifier =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier,'TI');
+			SET refOut.(XMLNSC.Attribute)TranscationStatusCode =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)TranscationStatusCode,'');
+			SET refOut.(XMLNSC.Attribute)Version =COALESCE(rEnv.XMLNSC.(XMLNSC.Attribute)Version,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)AgentDutyCode = COALESCE(rEnv.XMLNSC.POS.*:Source.(XMLNSC.Attribute)AgentDutyCode,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)AgentSine =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)AgentSine,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)AirlineVendorID =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)AirlineVendorID,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)AirportCode =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)AirportCode,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)ERSP_UserID =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)ERSP_UserID,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)FirstDearPoint =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)FirstDearPoint,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)ISOCountry = COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)ISOCountry,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)ISOCurrency =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)ISOCurrency,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)PseudoCityCode =COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode,'');
+			SET refOut.sc:POS.sc:Source.(XMLNSC.Attribute)TerminalID=COALESCE(rEnv.XMLNSC.*:POS.*:Source.(XMLNSC.Attribute)TerminalID,'');
+			SET refOut.sc:POS.sc:Source.sc:RequestorID.(XMLNSC.Attribute)ID =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID,'');
+			SET refOut.sc:POS.sc:Source.sc:RequestorID.(XMLNSC.Attribute)ID_Context =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID_Context,'');
+			SET refOut.sc:POS.sc:Source.sc:RequestorID.(XMLNSC.Attribute)Instance =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)Instance,'');
+			SET refOut.sc:POS.sc:Source.sc:RequestorID.(XMLNSC.Attribute)Type=COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)Type,'');
+			SET refOut.sc:POS.sc:Source.sc:RequestorID.(XMLNSC.Attribute)URL=COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)URL,'');
+			SET refOut.sc:POS.sc:Source.sc:RequestorID.(XMLNSC.Attribute)MessagePassword=COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)MessagePassword,'');
+			SET refOut.sc:POS.sc:Source.sc:Position.(XMLNSC.Attribute)Altitude =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:Position.(XMLNSC.Attribute)Altitude,'');
+			SET refOut.sc:POS.sc:Source.sc:Position.(XMLNSC.Attribute)AltitudeUnitOfMeasureCode = COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:Position.(XMLNSC.Attribute)AltitudeUnitOfMeasureCode,'');
+			SET refOut.sc:POS.sc:Source.sc:Position.(XMLNSC.Attribute)Latitude =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:Position.(XMLNSC.Attribute)Latitude,'');
+			SET refOut.sc:POS.sc:Source.sc:Position.(XMLNSC.Attribute)Longtitude = COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:Position.(XMLNSC.Attribute)Longtitude,'');
+			SET refOut.sc:POS.sc:Source.sc:BookingChannel.(XMLNSC.Attribute)Primary =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.(XMLNSC.Attribute)Primary,'');
+			SET refOut.sc:POS.sc:Source.sc:BookingChannel.(XMLNSC.Attribute)Type =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.(XMLNSC.Attribute)Type,'');
+			SET refOut.sc:POS.sc:Source.sc:BookingChannel.sc:CompanyName.(XMLNSC.Attribute)Code =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code,'');
+			SET refOut.sc:POS.sc:Source.sc:BookingChannel.sc:CompanyName.(XMLNSC.Attribute)CodeContext =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)CodeContext,'');
+			SET refOut.sc:POS.sc:Source.sc:BookingChannel.sc:CompanyName.(XMLNSC.Attribute)CompanyShortName =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)CompanyShortName,'');
+			SET refOut.sc:POS.sc:Source.sc:BookingChannel.sc:CompanyName.(XMLNSC.Attribute)TravelSector =COALESCE(rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)TravelSector,'');
+			SET refOut.sc:LoyaltyInfo.(XMLNSC.Attribute)MembershipID = p_ClientId;
+			SET refOut.sc:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID = p_ClientId;
+			SET refOut.(XMLNSC.Attribute)SkipCache ='True';
+			SET refOut.(XMLNSC.Attribute)IncludeNative = rEnv.XMLNSC.*:IncludeNative;
+			PROPAGATE To Terminal 'out1';
+		ELSE
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			
+			
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			DECLARE refOut REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			SET refOut.(XMLNSC.Attribute)AltLangID = rEnv.XMLNSC.(XMLNSC.Attribute)AltLangID;
+			SET refOut.(XMLNSC.Attribute)EchoToken = rEnv.XMLNSC.(XMLNSC.Attribute)EchoToken;
+			SET refOut.(XMLNSC.Attribute)PrimaryLangID = rEnv.XMLNSC.(XMLNSC.Attribute)PrimaryLangID;
+			SET refOut.(XMLNSC.Attribute)RetransmissionIndicator = rEnv.XMLNSC.(XMLNSC.Attribute)RetransmissionIndicator;
+			SET refOut.(XMLNSC.Attribute)SequenceNmbr = rEnv.XMLNSC.(XMLNSC.Attribute)SequenceNmbr;
+			SET refOut.(XMLNSC.Attribute)Target = rEnv.XMLNSC.(XMLNSC.Attribute)Target;
+			SET refOut.(XMLNSC.Attribute)TimeStamp = rEnv.XMLNSC.(XMLNSC.Attribute)TimeStamp;
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier;
+			SET refOut.(XMLNSC.Attribute)TransactionStatusCode = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionStatusCode;
+			SET refOut.(XMLNSC.Attribute)Version = rEnv.XMLNSC.(XMLNSC.Attribute)Version;
+			CREATE FIELD refOut.sc:Success;		
+			SET refOut.sc:Warnings.sc:Warning = p_mainclient;
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = p_errorcode;
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'Error Creating Client';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+			
+			IF (LogPayLoad) THEN
+				DECLARE OPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'Error Creating Client', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE To Terminal 'out3';
+		END IF;
+		IF rEnv.XMLNSC.*:TravelCompanions.TravelCompanion.(XMLNSC.Attribute)LoyaltyMembershipID > 1 THEN
+
+			Set OutputRoot.XMLNSC.Identifier ='AnyPreferences';
+			PROPAGATE To Terminal 'out2';
+		END IF;
+		IF (rEnv.XMLNSC.*:OnBoardPreferences.OnBoardPreference.Comment.Text.value) > 0 OR (rEnv.XMLNSC.*:OnBoardPreferences.OnBoardPreference.(XMLNSC.Attribute)Code) > 0 OR (rEnv.XMLNSC.*:OnBoardPreferences.OnBoardPreference.(XMLNSC.Attribute)Type) > 0 THEN
+
+			Set OutputRoot.XMLNSC.Identifier ='OnBoardpref';
+			PROPAGATE To Terminal 'out2';
+
+		END IF;
+		IF (rEnv.XMLNSC.*:VacationPreference.DesiredDestination) > 0 OR (rEnv.XMLNSC.*:VacationPreference.OnBoardPreference.PreviousCruiseLines) > 0 THEN
+
+			Set OutputRoot.XMLNSC.Identifier ='VacationPref';
+			PROPAGATE To Terminal 'out2';
+
+		END IF;
+		RETURN TRUE;	
+		END;
+
+	CREATE PROCEDURE CREATE_CLIENT( IN p_Action CHARACTER,IN p_Title CHARACTER,IN p_First CHARACTER,IN p_Middle CHARACTER,IN p_Last CHARACTER,IN p_Gender CHARACTER, IN p_DOB CHARACTER,IN p_Occupation CHARACTER, IN p_UserName CHARACTER, IN p_Password CHARACTER,IN p_Email CHARACTER, IN p_CitizenShip CHARACTER, IN p_Add1 CHARACTER, IN p_Add2 CHARACTER,IN p_Add_City CHARACTER, IN p_State CHARACTER,IN p_Zip CHARACTER, IN p_Country CHARACTER, IN p_Address_Type CHARACTER,IN p_Phone_Type CHARACTER, IN p_Phone CHARACTER, IN p_Additional_Info CHARACTER,IN p_Marital_Status CHARACTER, IN p_No_OF_Children INTEGER,IN p_Agency_Name CHARACTER,IN p_Agent_First CHARACTER,IN p_Agent_Last CHARACTER,IN p_Contact_Pref CHARACTER, IN p_AnniversayDate CHARACTER,IN p_Pref_Cruise_length CHARACTER,IN p_Future_Cruise_Plan CHARACTER, IN p_Pref_Cruise_Time CHARACTER,IN p_Previously_Cruised CHARACTER,IN p_Previous_Cruise_Number CHARACTER,IN p_Pref_Booking_Mode CHARACTER, IN p_comments CHARACTER, IN p_RecreateHousehold CHARACTER, IN p_FIRST_NAME_NATIVE BLOB,IN p_MIDDLE_NAME_NATIVE BLOB,IN p_LAST_NAME_NATIVE BLOB,
+	IN p_TITLE_NATIVE BLOB,IN p_SUFFIX_NATIVE BLOB, IN p_ADDRESS_LINE1_NATIVE BLOB,IN p_ADDRESS_LINE2_NATIVE BLOB,IN p_ADDRESS_LINE3_NATIVE BLOB,IN p_ADDRESS_LINE4_NATIVE BLOB,IN p_ADDRESS_CITY_NATIVE BLOB,IN p_booking_channel CHARACTER,INOUT p_Mainclient CHARACTER,INOUT p_ClientID INTEGER,OUT p_ErrorCode CHARACTER)
+	LANGUAGE DATABASE
+--	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_CREATE_CLIENT_PRO_V9";
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateClientRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateClientRS AS runTimeErr;
+		
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE Ncl_CruiseCreateClientAndRetrive_FinalResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE sc NAMESPACE 'http://nclapi/schemas';
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+--		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD =  rEnv.MQMD;
+		-- BLOB to XML conversion
+--		DECLARE inCCSID INT InputProperties.CodedCharSetId; 
+--		DECLARE inEncoding INT InputProperties.Encoding; 
+--		DECLARE inBitStream BLOB ASBITSTREAM(InputRoot.BLOB, inEncoding, inCCSID); 
+--		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') PARSE(inBitStream, inEncoding, inCCSID,'BLOB', 'XMLNSC');
+
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS ;
+		DECLARE refOUT REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+		DECLARE rInRet REFERENCE TO Environment.Variables.RetrieveClientResp;
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+		
+		CREATE LASTCHILD OF rInRet DOMAIN('XMLNSC') PARSE(InputRoot.BLOB.BLOB CCSID 1208 ENCODING 546);
+		ELSE
+			CREATE LASTCHILD OF rInRet DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			SET rInRet.XMLNSC = InputRoot.XMLNSC;
+		END IF;		
+		DECLARE rIn REFERENCE TO rInRet.XMLNSC.*:NCL_CruiseRetrieveClientRS;
+
+		-- Mapping for bulid response
+		SET refOUT.(XMLNSC.Attribute)AltLangID = rIn.(XMLNSC.Attribute)AltLangID;
+		SET refOUT.(XMLNSC.Attribute)EchoToken = rIn.(XMLNSC.Attribute)EchoToken;
+		SET refOUT.(XMLNSC.Attribute)PrimaryLangID = rIn.(XMLNSC.Attribute)PrimaryLangID;
+		SET refOUT.(XMLNSC.Attribute)RetransmissionIndicator = rIn.(XMLNSC.Attribute)RetransmissionIndicator;
+		SET refOUT.(XMLNSC.Attribute)SequenceNmbr = rIn.(XMLNSC.Attribute)SequenceNmbr;
+		SET refOUT.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;
+		SET refOUT.(XMLNSC.Attribute)TimeStamp = rIn.(XMLNSC.Attribute)TimeStamp;
+		SET refOUT.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier;
+		SET refOUT.(XMLNSC.Attribute)TransactionStatusCode = rIn.(XMLNSC.Attribute)TransactionStatusCode;
+		SET refOUT.(XMLNSC.Attribute)Version = rEnv.XMLNSC.(XMLNSC.Attribute)Version;
+		-- Checking for warnings and Errors
+--		CREATE FIELD refOUT.sc:Success;
+		IF FIELDVALUE(rIn.Success) IS NULL AND FIELDVALUE(rIn.*:Warnings.sc:Warning.ShortText) IS NULL AND FIELDVALUE(rIn.*:Errors.sc:Error.ShortText) IS NULL THEN
+			CREATE FIELD refOUT.sc:Success;
+		END IF;
+		-- Warnings mapping
+
+		IF rIn.sc:Warnings.Warning THEN
+			SET refOUT.sc:Warnings.sc:Warning = rIn.sc:Warnings.Warning;		
+			SET refOUT.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = rIn.sc:Warnings.Warning.(XMLNSC.Attribute)Code;
+			SET refOUT.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = rIn.sc:Warnings.Warning.(XMLNSC.Attribute)ShortText;
+			SET refOUT.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = rIn.sc:Warnings.Warning.(XMLNSC.Attribute)Type;
+
+		END IF;
+
+		CREATE FIELD refOUT.sc:ClientInfo;
+		-- Client info mapping
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)BirthDate = rIn.*:ClientInfo.(XMLNSC.Attribute)BirthDate;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)Comment = rIn.*:ClientInfo.(XMLNSC.Attribute)Comment;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)ContactType = rIn.*:ClientInfo.(XMLNSC.Attribute)ContactType;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)DefaultInd = rIn.*:ClientInfo.(XMLNSC.Attribute)DefaultInd;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)EmergencyFlag = rIn.*:ClientInfo.(XMLNSC.Attribute)EmergencyFlag;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)Gender = rIn.*:ClientInfo.(XMLNSC.Attribute)Gender;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)GuestOccupation = rIn.*:ClientInfo.(XMLNSC.Attribute)GuestOccupation;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)GuestRefNumber = rIn.*:ClientInfo.(XMLNSC.Attribute)GuestRefNumber;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)LoyalLevel = rIn.*:ClientInfo.(XMLNSC.Attribute)LoyalLevel;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID = rIn.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)Nationality = rIn.*:ClientInfo.(XMLNSC.Attribute)Nationality;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)Relation = rIn.*:ClientInfo.(XMLNSC.Attribute)Relation;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)RPH = rIn.*:ClientInfo.(XMLNSC.Attribute)RPH;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)ShareMarketInd = rIn.*:ClientInfo.(XMLNSC.Attribute)ShareMarketInd;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)ShareSynchInd = rIn.*:ClientInfo.(XMLNSC.Attribute)ShareSynchInd;
+		SET refOUT.sc:ClientInfo.(XMLNSC.Attribute)HouseholdID = rIn.*:ClientInfo.(XMLNSC.Attribute)HouseholdID;
+
+		SET refOUT.sc:ClientInfo.sc:PersonName.(XMLNSC.Attribute)ShareMarketInd = rIn.*:ClientInfo.sc:PersonName.(XMLNSC.Attribute)ShareMarketInd;
+		SET refOUT.sc:ClientInfo.sc:PersonName.(XMLNSC.Attribute)ShareSynchInd = rIn.*:ClientInfo.sc:PersonName.(XMLNSC.Attribute)ShareSynchInd;
+		SET refOUT.sc:ClientInfo.sc:PersonName.(XMLNSC.Attribute)NameType = rIn.*:ClientInfo.sc:PersonName.(XMLNSC.Attribute)NameType;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:NamePrefix = rIn.*:ClientInfo.sc:PersonName.sc:NamePrefix;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:GivenName = rIn.*:ClientInfo.sc:PersonName.sc:GivenName;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:MiddleName = rIn.*:ClientInfo.sc:PersonName.sc:MiddleName;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:SurnamePrefix = rIn.*:ClientInfo.sc:PersonName.sc:SurnamePrefix;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:Surname = rIn.*:ClientInfo.sc:PersonName.sc:Surname;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:NameSuffix = rIn.*:ClientInfo.sc:PersonName.sc:NameSuffix;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:NameTitle = rIn.*:ClientInfo.sc:PersonName.sc:NameTitle;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:NameTitleNative = rIn.*:ClientInfo.sc:PersonName.sc:NameTitleNative;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:NameSuffixNative = rIn.*:ClientInfo.sc:PersonName.sc:NameSuffixNative;
+
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:GivenNameNative = rIn.*:ClientInfo.sc:PersonName.sc:GivenNameNative;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:MiddleNameNative = rIn.*:ClientInfo.sc:PersonName.sc:MiddleNameNative;
+		SET refOUT.sc:ClientInfo.sc:PersonName.sc:SurnameNative = rIn.*:ClientInfo.sc:PersonName.sc:SurnameNative;
+		-- SET refOUT.sc:ClientInfo.sc:PersonName.sc:GivenNameNative = rEnv.XMLNSC.*:ClientInfo.*:GivenNameNative;
+		-- SET refOUT.sc:ClientInfo.sc:PersonName.sc:MiddleNameNative = rEnv.XMLNSC.*:ClientInfo.*:MiddleNameNative;
+		-- SET refOUT.sc:ClientInfo.sc:PersonName.sc:SurnameNative = rEnv.XMLNSC.*:ClientInfo.*:SurnameNative;
+
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)AreaCityCode = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)AreaCityCode;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)CountryAccessCode = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)CountryAccessCode;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)DefaultInd = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)DefaultInd;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)Extension = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)Extension;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)FormattedInd = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)FormattedInd;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneLocationType = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneLocationType;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneNumber = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneNumber;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneTechType = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneTechType;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PIN = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PIN;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)ShareMarketInd = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)ShareMarketInd;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)ShareSynchInd = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)ShareSynchInd;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneUseType = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)PhoneUseType;
+		SET refOUT.sc:ClientInfo.sc:Telephone.(XMLNSC.Attribute)RPH = rIn.*:ClientInfo.sc:Telephone.(XMLNSC.Attribute)RPH;
+		IF EXISTS(rEnv.XMLNSC.*:ClientInfo.*:Address[])THEN		
+
+
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)DefaultInd = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)DefaultInd;
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)FormattedInd = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)FormattedInd;
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)ShareMarketInd = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)ShareMarketInd;
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)ShareSynchInd = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)ShareSynchInd;
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)Type = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)Type;
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)UseType = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)UseType;
+			SET refOUT.sc:ClientInfo.sc:Address.(XMLNSC.Attribute)RPH = rIn.*:ClientInfo.sc:Address.(XMLNSC.Attribute)RPH;
+
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StreetNmbr.value = rIn.*:ClientInfo.sc:Address.sc:StreetNmbr.value;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)PO_Box = rIn.*:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)PO_Box;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)RuralrefOUTeNmbr = rIn.*:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)RuralrefOUTeNmbr;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)StreetDirection = rIn.*:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)StreetDirection;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)StreetNmbrSuffix = rIn.*:ClientInfo.sc:Address.sc:StreetNmbr.(XMLNSC.Attribute)StreetNmbrSuffix;
+
+			SET refOUT.sc:ClientInfo.sc:Address.sc:BldgRoom = rIn.*:ClientInfo.sc:Address.sc:BldgRoom;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:AddressLine = rIn.*:ClientInfo.sc:Address.sc:AddressLine;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:CityName = rIn.*:ClientInfo.sc:Address.sc:CityName;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:PostalCode = rIn.*:ClientInfo.sc:Address.sc:PostalCode;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:Country = rIn.*:ClientInfo.sc:Address.sc:Country;
+
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StateProv = rIn.*:ClientInfo.sc:Address.sc:StateProv;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:StateProv.(XMLNSC.Attribute)StateCode = rIn.*:ClientInfo.sc:Address.sc:StateProv.(XMLNSC.Attribute)StateCode;
+
+			SET refOUT.sc:ClientInfo.sc:Address.sc:CountryName.value = rIn.*:ClientInfo.sc:Address.sc:CountryName.value;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:CountryName.(XMLNSC.Attribute)Code = rIn.*:ClientInfo.sc:Address.sc:CountryName.(XMLNSC.Attribute)Code;
+
+			SET refOUT.sc:ClientInfo.sc:Address.sc:CityNameNative = rIn.*:ClientInfo.sc:Address.sc:CityNameNative;
+			SET refOUT.sc:ClientInfo.sc:Address.sc:AddressLineNative = rIn.*:ClientInfo.sc:Address.sc:AddressLineNative;
+			IF EXISTS(rEnv.XMLNSC.*:ClientInfo.*:Address.*:CountryNameNative[])THEN
+				SET refOUT.sc:ClientInfo.sc:Address.sc:CountryNameNative.(XMLNSC.Attribute)Code = rIn.*:ClientInfo.sc:Address.sc:CountryNameNative.Code;
+			END IF;
+			IF EXISTS(rEnv.XMLNSC.*:ClientInfo.*:Address.*:CountryNameNative[])THEN
+				SET refOUT.sc:ClientInfo.sc:Address.sc:StateProvNative.value = rIn.*:ClientInfo.sc:Address.sc:StateProvNative.value;
+				SET refOUT.sc:ClientInfo.sc:Address.sc:StateProvNative.(XMLNSC.Attribute)StateProvNativeCode = rIn.*:ClientInfo.sc:Address.sc:StateProvNative.StateProvNativeCode;
+			END IF;
+			IF EXISTS(rEnv.XMLNSC.*:ClientInfo.*:Address.*:CountryNameNative[])THEN
+				SET refOUT.sc:ClientInfo.sc:Address.sc:CountryNameNative.value = rIn.*:ClientInfo.sc:Address.sc:CountryNameNative.value;
+				SET refOUT.sc:ClientInfo.sc:Address.sc:CountryNameNative.(XMLNSC.Attribute)Code = rIn.*:ClientInfo.sc:Address.sc:CountryNameNative.Code;
+			END IF;
+		END IF;
+		SET refOUT.sc:ClientInfo.sc:Email = rIn.*:ClientInfo.sc:Email;
+		SET refOUT.sc:ClientInfo.sc:Email.(XMLNSC.Attribute)DefaultInd = rIn.*:ClientInfo.sc:Email.(XMLNSC.Attribute)DefaultInd;
+		SET refOUT.sc:ClientInfo.sc:Email.(XMLNSC.Attribute)ShareMarketInd = rIn.*:ClientInfo.sc:Email.(XMLNSC.Attribute)ShareMarketInd;
+		SET refOUT.sc:ClientInfo.sc:Email.(XMLNSC.Attribute)ShareSynchInd = rIn.*:ClientInfo.sc:Email.(XMLNSC.Attribute)ShareSynchInd;
+		SET refOUT.sc:ClientInfo.sc:Email.(XMLNSC.Attribute)EmailType = rIn.*:ClientInfo.sc:Email.(XMLNSC.Attribute)EmailType;
+		SET refOUT.sc:ClientInfo.sc:Email.(XMLNSC.Attribute)RPH = rIn.*:ClientInfo.sc:Email.(XMLNSC.Attribute)RPH;
+		
+		-- --SET refOUT.sc:ClientInfo.sc:URL.value = rIn.*:ClientInfo.sc:URL.value;
+		-- SET refOUT.sc:ClientInfo.sc:URL.(XMLNSC.Attribute)DefaultInd = rIn.*:ClientInfo.sc:URL.(XMLNSC.Attribute)DefaultInd;
+		-- SET refOUT.sc:ClientInfo.sc:URL.(XMLNSC.Attribute)ShareMarketInd = rIn.*:ClientInfo.sc:URL.(XMLNSC.Attribute)ShareMarketInd;
+		-- SET refOUT.sc:ClientInfo.sc:URL.(XMLNSC.Attribute)ShareSynchInd = rIn.*:ClientInfo.sc:URL.(XMLNSC.Attribute)ShareSynchInd;
+		-- SET refOUT.sc:ClientInfo.sc:URL.(XMLNSC.Attribute)Type = rIn.*:ClientInfo.sc:URL.(XMLNSC.Attribute)Type;
+		--
+		-- --SET refOUT.sc:ClientInfo.sc:CompanyName.value = rIn.*:ClientInfo.sc:CompanyName.value;
+		-- SET refOUT.sc:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)Code = rIn.*:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)Code;
+		-- SET refOUT.sc:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)CodeContext = rIn.*:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)CodeContext;
+		-- SET refOUT.sc:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)CompanyShortName = rIn.*:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)CompanyShortName;
+		-- SET refOUT.sc:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)TravelSector = rIn.*:ClientInfo.sc:CompanyName.(XMLNSC.Attribute)TravelSector;
+		--
+		-- --SET refOUT.sc:ClientInfo.sc:EmployeeInfo.value = rIn.*:ClientInfo.sc:EmployeeInfo.value;
+		-- SET refOUT.sc:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeId = rIn.*:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeId;
+		-- SET refOUT.sc:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeLevel = rIn.*:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeLevel;
+		-- SET refOUT.sc:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeStatus = rIn.*:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeStatus;
+		-- SET refOUT.sc:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeTitle = rIn.*:ClientInfo.sc:EmployeeInfo.(XMLNSC.Attribute)EmployeeTitle;
+		--
+		-- LoyaltyInfo Mapping
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)EffectiveDate = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)EffectiveDate;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)ExpireDate = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)ExpireDate;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)LoyalLevel = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)LoyalLevel;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)MembershipID = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)MembershipID;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)ProgramID = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)ProgramID;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)RPH = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)RPH;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)ShareMarketInd = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)ShareMarketInd;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)ShareSynchInd = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)ShareSynchInd;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)SignupDate = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)SignupDate;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)SingleVendorInd = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)SingleVendorInd;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)TravelSector = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)TravelSector;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)VendorCode = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)VendorCode;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)EnrollmentFlag = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)EnrollmentFlag;
+		SET refOUT.sc:LoyaltyInfo.(XMLNSC.Attribute)TotalPoints = rIn.*:LoyaltyInfo.(XMLNSC.Attribute)TotalPoints;
+		-- user login mapping
+		--SET refOUT.sc:UserLogin.(XMLNSC.Attribute)Password = rIn.*:UserLogin.(XMLNSC.Attribute)Password;
+		IF rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)Action = 'U' THEN
+			SET refOUT.sc:UserLogin.(XMLNSC.Attribute)Password = rIn.*:UserLogin.(XMLNSC.Attribute)Password;
+			SET refOUT.sc:UserLogin.(XMLNSC.Attribute)UserLoginName = rIn.*:UserLogin.(XMLNSC.Attribute)UserLoginName;
+			SET refOUT.sc:UserLogin.(XMLNSC.Attribute)UserType = rIn.*:UserLogin.(XMLNSC.Attribute)UserType;
+		ELSEIF rEnv.XMLNSC.*:ClientInfo.(XMLNSC.Attribute)Action = 'A' THEN
+			SET refOUT.sc:UserLogin.(XMLNSC.Attribute)Password = rIn.*:UserLogin.(XMLNSC.Attribute)Password;
+			SET refOUT.sc:UserLogin.(XMLNSC.Attribute)UserLoginName = rIn.*:UserLogin.(XMLNSC.Attribute)UserLoginName;
+			SET refOUT.sc:UserLogin.(XMLNSC.Attribute)UserType = rIn.*:UserLogin.(XMLNSC.Attribute)UserType;
+		END IF;
+		-- VacationPreference mapping
+		SET refOUT.sc:VacationPreference.(XMLNSC.Attribute)FutureCruisePlan = rIn.*:VacationPreference.(XMLNSC.Attribute)FutureCruisePlan;
+		SET refOUT.sc:VacationPreference.(XMLNSC.Attribute)PreferredBookingMode = rIn.*:VacationPreference.(XMLNSC.Attribute)PreferredBookingMode;
+		SET refOUT.sc:VacationPreference.(XMLNSC.Attribute)PreferredCruiseLength = rIn.*:VacationPreference.(XMLNSC.Attribute)PreferredCruiseLength;
+		SET refOUT.sc:VacationPreference.(XMLNSC.Attribute)PreferredCruiseTime = rIn.*:VacationPreference.(XMLNSC.Attribute)PreferredCruiseTime;
+		SET refOUT.sc:VacationPreference.(XMLNSC.Attribute)PreviouslyCruised = rIn.*:VacationPreference.(XMLNSC.Attribute)PreviouslyCruised;
+		SET refOUT.sc:VacationPreference.(XMLNSC.Attribute)PreviouslyCruisedNumber = rIn.*:VacationPreference.(XMLNSC.Attribute)PreviouslyCruisedNumber;
+		SET refOUT.sc:VacationPreference.sc:DesiredDestination = rIn.*:VacationPreference.sc:DesiredDestination;
+		SET refOUT.sc:VacationPreference.sc:PreviousCruiseLines = rIn.*:VacationPreference.sc:PreviousCruiseLines;
+		-- LoyaltyPrograms mapping
+		CREATE FIELD refOUT.LoyaltyPrograms;
+		DECLARE i INTEGER 1;
+		FOR inref AS rInRet.XMLNSC.*:NCL_CruiseRetrieveClientRS.*:LoyaltyPrograms.LoyaltyInfo[] DO
+			CREATE LASTCHILD OF refOUT.LoyaltyPrograms.LoyaltyInfo[i] NAME 'LoyalLevel' VALUE inref.LoyalLevel;
+			CREATE LASTCHILD OF refOUT.LoyaltyPrograms.LoyaltyInfo[i] NAME 'MemberShipID' VALUE inref.MemberShipID;
+			CREATE LASTCHILD OF refOUT.LoyaltyPrograms.LoyaltyInfo[i] NAME 'ProgramID' VALUE inref.ProgramID;
+			SET i=i+1;
+		END FOR;
+		-- Error mapping
+		SET refOUT.sc:Errors = rIn.*:Errors;
+		-- Log the response with payload.
+		
+		IF (LogPayLoad) THEN
+			DECLARE OPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);	
+			CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'CruiseCreateClient Response Message', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot.BLOB.BLOB = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC=NULL;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_Client_Error
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			DECLARE refOUT REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			
+			
+			DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveClientRQ;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS AS refOUT;
+			SET refOUT.(XMLNSC.Attribute)AltLangID = rIn.XMLNSC.(XMLNSC.Attribute)AltLangID;
+			SET refOUT.(XMLNSC.Attribute)EchoToken = rIn.XMLNSC.(XMLNSC.Attribute)EchoToken;
+			SET refOUT.(XMLNSC.Attribute)PrimaryLangID = rIn.XMLNSC.(XMLNSC.Attribute)PrimaryLangID;
+			SET refOUT.(XMLNSC.Attribute)RetransmissionIndicator = rIn.XMLNSC.(XMLNSC.Attribute)RetransmissionIndicator;
+			SET refOUT.(XMLNSC.Attribute)SequenceNmbr = rIn.XMLNSC.(XMLNSC.Attribute)SequenceNmbr;
+			SET refOUT.(XMLNSC.Attribute)Target = rIn.XMLNSC.(XMLNSC.Attribute)Target;
+			SET refOUT.(XMLNSC.Attribute)TimeStamp = rIn.XMLNSC.(XMLNSC.Attribute)TimeStamp;
+			SET refOUT.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier;
+			SET refOUT.(XMLNSC.Attribute)TransactionStatusCode = rIn.XMLNSC.(XMLNSC.Attribute)TransactionStatusCode;
+			SET refOUT.(XMLNSC.Attribute)Version = rEnv.XMLNSC.(XMLNSC.Attribute)Version;
+
+			CREATE FIELD refOUT.sc:Success;
+			SET refOUT.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '9920';
+   			
+			DECLARE ptrException REFERENCE to InputExceptionList.*[1];
+			DECLARE messageNumber INTEGER;
+			DECLARE messageText CHARACTER;
+   	    	-- keep looping while the moves to the child of exception list work 
+			WHILE lastmove(ptrException) DO
+			-- store the current values for the error number and text
+			IF ptrException.Number IS NOT NULL THEN
+        		SET refOUT.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = ptrException.Text;
+  			END IF;
+  			-- now move to the last child which should be the next exceptionlist
+			MOVE ptrException LASTCHILD;
+		END WHILE; 
+		END IF;
+		
+		
+		IF (LogPayLoad) THEN
+			DECLARE OPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'CruiseCreateClient Error Resp', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_swResObj_Fail
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		
+			
+			DECLARE rEnv REFERENCE TO Environment.Variables;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			DECLARE refOut REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			  
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier;
+			SET refOut.(XMLNSC.Attribute)Version = rEnv.XMLNSC.(XMLNSC.Attribute)Version;
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '9917';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'Seaware is not available.  Please try later.  swResObj failed.';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+	
+		
+		IF (LogPayLoad) THEN
+			DECLARE OPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'CruiseCreateClient and retrieve failed in retrieve client_response message', 'xml', rEnv);
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_Compute2
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			DECLARE rEnv REFERENCE TO Environment.Variables;
+			DECLARE refOut REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			SET refOut.MQMD = rEnv.MQMD;  
+			IF EXISTS(InputRoot.ExceptionList.RecoverableException[]) THEN
+			SET refOut.sc:warnings.sc:Warning.(XMLNSC.Attribute)Code = '9920';
+			SET refOut.sc:warnings.sc:Warning.(XMLNSC.Attribute)ShortText = InputRoot.ExceptionList.RecoverableException;
+				
+			END IF;
+			
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_swResObj_Timeout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			DECLARE refOut REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			
+			
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier;
+			SET refOut.(XMLNSC.Attribute)Version = rEnv.XMLNSC.(XMLNSC.Attribute)Version;
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '9919';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'swResObj timeout.';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+			
+			
+			IF (LogPayLoad) THEN
+				DECLARE OPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'CruiseCreateClient and retrieve failed in retrieve client_response message', 'xml', rEnv);
+			END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseCreateClient_checkUserLogin
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE FIELD rEnv.Temp;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') PARSE(InputRoot.BLOB.BLOB CCSID 1208 ENCODING 546);
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+		 SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;  
+				
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE bPayload BLOB ASBITSTREAM(rEnv.Temp CCSID 1208 ENCODING 546);
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- Calling the Logging framework to log the initial request with the payload.	
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+  		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+--		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+		 SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;  		
+		DECLARE v_Userlogin, v_checkUserLoginEmailFormat CHARACTER;
+		DECLARE isEmailFormat,isLoginValidatedOrIgnored BOOLEAN;
+		
+		SET v_Userlogin = rEnv.Temp.XMLNSC.*:NCL_CruiseCreateClientRQ.*:UserLogin.(XMLNSC.Attribute)UserLoginName;
+		SET v_checkUserLoginEmailFormat = rEnv.Temp.XMLNSC.*:NCL_CruiseCreateClientRQ.*:UserLogin.(XMLNSC.Attribute)UserLoginAsEmailFormat;
+		SET isEmailFormat = validateEmailFormat(v_Userlogin);
+		
+		IF COALESCE(UPPER(v_checkUserLoginEmailFormat), 'FALSE') = 'TRUE' THEN
+			IF (isEmailFormat) THEN
+				SET isLoginValidatedOrIgnored = TRUE;
+			ELSE
+				SET isLoginValidatedOrIgnored = FALSE;
+			END IF;
+		ELSE
+			SET isLoginValidatedOrIgnored = TRUE;
+		END IF;
+				
+		IF(isLoginValidatedOrIgnored) THEN
+			--GOOD case. Route to OUT.
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			SET OutputRoot = InputRoot;
+			
+			PROPAGATE To Terminal 'out';		
+		ELSE
+			--User log in is NOT email format. Return error to OUT1 terminal.
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			DECLARE refOut REFERENCE to OutputRoot.XMLNSC.sc:NCL_CruiseCreateClientRS;
+			
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.(XMLNSC.Attribute)TransactionIdentifier;
+			SET refOut.(XMLNSC.Attribute)Version = rEnv.XMLNSC.(XMLNSC.Attribute)Version;
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '9920';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'UserLogin not valid email';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)checkEmail = v_checkUserLoginEmailFormat;
+			SET refOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)isEmailFormat = isEmailFormat;				
+			PROPAGATE To Terminal 'out1';		
+		END IF;
+			
+		RETURN TRUE;
+	END;
+	
+	CREATE FUNCTION validateEmailFormat(IN v_Userlogin CHARACTER) RETURNS BOOLEAN
+	BEGIN
+		IF(CONTAINS(v_Userlogin, '@')) THEN
+			RETURN TRUE;
+		ELSE
+			RETURN FALSE;
+		END IF;
+	END;
+END MODULE;

@@ -1,0 +1,325 @@
+
+
+
+
+
+
+
+
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_RTRV_NAMELIST_RESP';
+DECLARE MaxResponses EXTERNAL INTEGER '25';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRtrvNameList
+* MODULE NAME : NCL_CruiseRtrvNameList
+* Description : This module Retrives the Cruise NameList
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRtrvNameList
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRtrvNameListRQ;
+		DECLARE rEnv,GuestInfo,RetrNameList REFERENCE TO Environment.Variables;
+		DECLARE cErrorCode, cErrorMsg CHARACTER ' ';
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, uuid);
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		DECLARE p_clientid INTEGER;
+		DECLARE p_ignoreWebAccess CHARACTER;
+		DECLARE p_lastresidreturned INTEGER;
+		DECLARE p_maxrecordsoutput INTEGER;
+		--DECLARE p_cursor ROW;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, 'X ''', '') FROM 2);
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseRtrvNameListRQ;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--add metadata
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+		'',
+		COALESCE(rIn.*:SelectedSailing.(XMLNSC.Attribute)VoyageID,''),
+		rEnv);
+		--addd payload
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'CruiseRetriveNameList request message', 'xml', rEnv);
+	END IF;
+	CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseRtrvNameListRS NAMESPACE ns;
+	DECLARE rOutRef REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRtrvNameListRS;
+	DECLARE travelcount DECIMAL;
+	DECLARE travelwith CHARACTER;
+	CALL com.ncl.ais.utils.CopyAttributes(rIn,rOutRef);
+	SET rOutRef.Success = '';
+	--Checking AgentDutyCode
+	IF rIn.*:POS.*:Source.(XMLNSC.Attribute)AgentDutyCode = 'CONSUMER' THEN
+		-- Load Consumer
+		SET p_clientid = rIn.*:POS.*:Source.(XMLNSC.Attribute)AgentSine;
+		
+
+		-- SET p_ignoreWebAccess =rIn.*:GuestInfo.*:LoyaltyInfo.(XMLNSC.Attribute)IgnoreWebAccess;
+
+		SET p_ignoreWebAccess =COALESCE(rIn.*:IgnoreWebAccess,'N');
+
+		IF (LENGTH(rIn.(XMLNSC.Attribute)MoreDataEchoToken) > 0 ) THEN
+			SET p_lastresidreturned = CAST(rIn.(XMLNSC.Attribute)MoreDataEchoToken AS INTEGER);
+		ELSE
+			SET p_lastresidreturned = 0;
+		END IF;
+		IF (LENGTH(rIn.(XMLNSC.Attribute)MaxResponses) > 0 ) THEN
+			SET p_maxrecordsoutput = CAST(rIn.(XMLNSC.Attribute)MaxResponses AS INTEGER);
+		ELSE
+			SET p_maxrecordsoutput = 25;
+		END IF;
+
+
+		IF NOT EXISTS(rIn.(XMLNSC.Attribute)MaxResponses[]) THEN
+			SET rEnv.MaxResponses = MaxResponses;
+		END IF;
+		--calling Procedure
+		call Consumer_NameList(p_clientid,p_lastresidreturned,p_maxrecordsoutput,p_ignoreWebAccess,rEnv.p_cursor[]);
+		--call Consumer_NameList(p_clientid,p_lastresidreturned,p_maxrecordsoutput,rEnv.p_cursor[]);
+	
+		CREATE FIELD rOutRef.GuestsInfo ;
+		FOR p_cursor AS rEnv.p_cursor[] DO
+			CREATE LASTCHILD OF rOutRef.GuestsInfo AS GuestInfo NAME 'GuestInfo';
+			SET GuestInfo.(XMLNSC.Attribute)Age = p_cursor.AGE;
+			SET GuestInfo.(XMLNSC.Attribute)Gender = p_cursor.SEX;
+			SET GuestInfo.(XMLNSC.Attribute)LoyaltyMembershipID = p_cursor.CLIENT_ID;
+			SET GuestInfo.SailingInfo.SelectedSailing.(XMLNSC.Attribute)End = SUBSTRING(p_cursor.SAIL_DATE_TO FROM 5 FOR 4) || '-' || SUBSTRING(p_cursor.SAIL_DATE_TO FROM 3 FOR 2) || '-' || SUBSTRING(p_cursor.SAIL_DATE_TO FROM 1 FOR 2); --custom xslt
+			SET GuestInfo.SailingInfo.SelectedSailing.(XMLNSC.Attribute)Start = SUBSTRING(p_cursor.SAIL_DATE_FROM FROM 5 FOR 4) || '-' || SUBSTRING(p_cursor.SAIL_DATE_FROM FROM 3 FOR 2) || '-' || SUBSTRING(p_cursor.SAIL_DATE_FROM FROM 1 FOR 2); --custom xslt
+			SET GuestInfo.SailingInfo.SelectedSailing.(XMLNSC.Attribute)VoyageID = p_cursor.PACKAGE_ID;
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)ShipCode = p_cursor.SHIP_CODE;
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)ShipName = p_cursor.CRUISE_LINE_CODE;
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)VendorCode = 'NCL';
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)VendorName = 'Norwegian Cruise Line';
+			SET GuestInfo.SailingInfo.SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode = p_cursor.PRICED_CATEGORY;
+			SET GuestInfo.SailingInfo.SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode = p_cursor.PRICED_CATEGORY;
+			SET GuestInfo.SailingInfo.SelectedCategory.SelectedCabin.(XMLNSC.Attribute)CabinNumber = p_cursor.CABIN_NBR;
+			SET GuestInfo.ReservationID.(XMLNSC.Attribute)ID = p_cursor.RES_ID;
+			SET GuestInfo.ReservationID.(XMLNSC.Attribute)Type = '14';
+			SET GuestInfo.ReservationID.(XMLNSC.Attribute)Status = p_cursor.RES_STATUS;
+			SET GuestInfo.ReservationID.CompanyName.(XMLNSC.Attribute)Code = p_cursor.SOURCE_CODE;
+			SET GuestInfo.EdocAvail = p_cursor.EDOC_AVAIL;
+			SET GuestInfo.ApisFlag = p_cursor.APIS_FLAG;
+			SET GuestInfo.NetDue = CAST(p_cursor.NET_DUE AS DECIMAL);
+			SET GuestInfo.SailID = p_cursor.SAIL_ID;
+			SET GuestInfo.PersonName.NamePrefix = p_cursor.TITLE;
+			SET GuestInfo.PersonName.GivenName = p_cursor.FIRST_NAME;
+			SET GuestInfo.PersonName.Surname = p_cursor.LAST_NAME;
+			SET GuestInfo.GroupInfo.(XMLNSC.Attribute)GroupCode = COALESCE(p_cursor.GROUP_ID,'');
+			SET GuestInfo.AgencyInfo.(XMLNSC.Attribute)AgencyType = p_cursor.AGENCY_TYPE;
+			SET GuestInfo.AgencyInfo.RequestorId.(XMLNSC.Attribute)ID = p_cursor.AGNECY_ID;
+			SET GuestInfo.AgencyInfo.OfficeCode.(XMLNSC.Attribute)ID = p_cursor.OFFICE_CODE;
+			set GuestInfo.TotalAmount=CAST(p_cursor.TOTAL_AMOUNT AS DECIMAL);
+			SET GuestInfo.CurrencyCode=p_cursor.CURRENCY_CODE;
+
+			set travelcount=CAST(p_cursor.TRAVEL_COUNT AS DECIMAL);
+			IF travelcount=0 THEN
+				set travelwith='N';
+			ELSE
+				set travelwith='Y';
+			END IF;
+			set GuestInfo.TravelWith=travelwith;
+		END FOR;
+		-- count of p_cursor
+		DECLARE count INTEGER;
+		SET count = CARDINALITY(rEnv.p_cursor[]);
+
+		IF (count > 1)THEN
+			SET rOutRef.(XMLNSC.Attribute)MoreDataEchoToken = rEnv.p_cursor[count].RES_ID;
+		ELSE
+			SET rOutRef.(XMLNSC.Attribute)MoreDataEchoToken ='';
+		END IF;
+		IF (count = COALESCE(rIn.(XMLNSC.Attribute)MaxResponses , rEnv.MaxResponses) ) THEN
+			SET rOutRef.(XMLNSC.Attribute)MoreIndicator = 'true';
+		ELSE
+			SET rOutRef.(XMLNSC.Attribute)MoreIndicator = 'false';
+		END IF;
+
+	ELSE
+		-- Load Retrive Name List
+		CREATE LASTCHILD OF rEnv AS RetrNameList NAME 'RetrNameList' ;
+		SET RetrNameList.AgencyID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET RetrNameList.GDS = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET RetrNameList.LastName = COALESCE(rIn.*:GuestInfo.*:Surname,'');
+		SET RetrNameList.ShipCode = rIn.*:SelectedSailing.(XMLNSC.Attribute)ShipCode;
+		SET RetrNameList.SailingDate = SUBSTRING(rIn.*:SelectedSailing.(XMLNSC.Attribute)Start FROM 9 FOR 2) ||SUBSTRING(rIn.*:SelectedSailing.(XMLNSC.Attribute)Start FROM 6 FOR 2) || SUBSTRING(rIn.*:SelectedSailing.(XMLNSC.Attribute)Start FROM 1 FOR 4);
+		SET RetrNameList.SailingEndDate = SUBSTRING(rIn.*:SelectedSailing.(XMLNSC.Attribute)End FROM 9 FOR 2)||SUBSTRING(rIn.*:SelectedSailing.(XMLNSC.Attribute)End FROM 6 FOR 2)||SUBSTRING(rIn.*:SelectedSailing.(XMLNSC.Attribute)End FROM 1 FOR 4);
+		SET RetrNameList.GroupId = rIn.*:GuestInfo.*:GroupInfo.(XMLNSC.Attribute)GroupCode;
+		
+		IF (LENGTH(rIn.(XMLNSC.Attribute)MoreDataEchoToken)> 0) THEN
+			SET RetrNameList.LastResIDReturned = CAST(rIn.(XMLNSC.Attribute)MoreDataEchoToken AS INTEGER);
+		ELSE
+			SET RetrNameList.LastResIDReturned = 0;
+		END IF;
+
+		IF (LENGTH(rIn.(XMLNSC.Attribute)MaxResponses) > 0) THEN
+			SET RetrNameList.MaxRecordsOutPut = CAST(rIn.(XMLNSC.Attribute)MaxResponses AS INTEGER);
+		ELSE
+			SET RetrNameList.MaxRecordsOutPut = 9999;
+		END IF;
+		-- call Procedure
+		CALL RetrieveNameList(RetrNameList.AgencyID,RetrNameList.GDS,RetrNameList.AgentID,RetrNameList.ClientID,
+		RetrNameList.LastName,RetrNameList.FirstName,RetrNameList.ShipCode,
+		RetrNameList.SailingDate,RetrNameList.SailingEndDate,RetrNameList.SailingDuration,RetrNameList.GroupId,
+		RetrNameList.BookingSearchStartDate,RetrNameList.BookingSearchEndDate,RetrNameList.BookingStatus,
+		RetrNameList.LastResIDReturned,RetrNameList.MaxRecordsOutPut,rEnv.p_cursor[]);
+
+		FOR p_cursor AS rEnv.p_cursor[] DO
+			CREATE LASTCHILD OF rOutRef.GuestsInfo AS GuestInfo NAME 'GuestInfo';
+			SET GuestInfo.(XMLNSC.Attribute)Age = p_cursor.AGE;
+			SET GuestInfo.(XMLNSC.Attribute)Gender = p_cursor.SEX;
+			SET GuestInfo.(XMLNSC.Attribute)LoyaltyMembershipID = p_cursor.CLIENT_ID;
+			SET GuestInfo.SailingInfo.SelectedSailing.(XMLNSC.Attribute)End = SUBSTRING(p_cursor.SAIL_DATE_TO FROM 5 FOR 4) || '-' || SUBSTRING(p_cursor.SAIL_DATE_TO FROM 3 FOR 2) || '-' || SUBSTRING(p_cursor.SAIL_DATE_TO FROM 1 FOR 2); --custom xslt
+			SET GuestInfo.SailingInfo.SelectedSailing.(XMLNSC.Attribute)Start = SUBSTRING(p_cursor.SAIL_DATE_FROM FROM 5 FOR 4) || '-' || SUBSTRING(p_cursor.SAIL_DATE_FROM FROM 3 FOR 2) || '-' || SUBSTRING(p_cursor.SAIL_DATE_FROM FROM 1 FOR 2); --custom xslt
+			SET GuestInfo.SailingInfo.SelectedSailing.(XMLNSC.Attribute)VoyageID = p_cursor.PACKAGE_ID;
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)ShipCode = p_cursor.SHIP_CODE;
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)ShipName = p_cursor.CRUISE_LINE_CODE;
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)VendorCode = 'NCL';
+			SET GuestInfo.SailingInfo.SelectedSailing.CruiseLine.(XMLNSC.Attribute)VendorName = 'Norwegian Cruise Line';
+			SET GuestInfo.SailingInfo.SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode = p_cursor.PRICED_CATEGORY;
+			SET GuestInfo.SailingInfo.SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode = p_cursor.PRICED_CATEGORY;
+			SET GuestInfo.SailingInfo.SelectedCategory.SelectedCabin.(XMLNSC.Attribute)CabinNumber = p_cursor.CABIN_NBR;
+			SET GuestInfo.ReservationID.(XMLNSC.Attribute)ID = p_cursor.RES_ID;
+			SET GuestInfo.ReservationID.(XMLNSC.Attribute)Status = p_cursor.RES_STATUS;
+			SET GuestInfo.ReservationID.CompanyName.(XMLNSC.Attribute)Code = p_cursor.SOURCE_CODE;
+			SET GuestInfo.PersonName.GivenName = p_cursor.FIRST_NAME;
+			SET GuestInfo.PersonName.Surname = p_cursor.LAST_NAME;
+			SET GuestInfo.PersonName.NameTitle = p_cursor.TITLE;
+			SET GuestInfo.GroupInfo.(XMLNSC.Attribute)GroupCode = p_cursor.GROUP_ID;
+			SET GuestInfo.AgencyInfo.(XMLNSC.Attribute)AgencyType = p_cursor.AGENCY_TYPE;
+			SET GuestInfo.AgencyInfo.RequestorId.(XMLNSC.Attribute)ID = p_cursor.AGNECY_ID;
+			SET GuestInfo.AgencyInfo.OfficeCode.(XMLNSC.Attribute)ID = p_cursor.OFFICE_CODE;
+
+		END FOR;
+	END IF;
+	-- checking sql error
+	DECLARE Temp INTEGER;
+	SET Temp = CAST(GuestInfo.(XMLNSC.Attribute)LoyaltyMembershipID AS INTEGER);
+	IF SQLCODE = 0 THEN
+		IF EXISTS(rEnv.p_cursor[]) AND (Temp > 0)THEN
+			SET rEnv.ErrorCode = '0';
+
+		ELSE
+			SET rEnv.ErrorCode = '9910';
+		END IF;
+	ELSE
+		SET rEnv.ErrorCode = '9910';
+	END IF;
+	-- checking for ID
+	-- DECLARE Temp INTEGER;
+	-- SET Temp = CAST(rOutRef.GuestsInfo.GuestInfo.(XMLNSC.Attribute)LoyaltyMembershipID AS INTEGER);
+	-- IF (Temp > 0) THEN
+	-- SET rEnv.ErrorCode = '0';
+	-- ELSE
+	-- SET rEnv.ErrorCode = '9910';
+	-- END IF;
+	--checking for errors
+	IF (rEnv.ErrorCode >0) THEN
+		SET rOutRef.GuestsInfo = NULL;
+		SET rOutRef.Warnings.Warning.(XMLNSC.Attribute)Code = '9910';
+		SET rOutRef.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'No matching name in cruise line database';
+		SET rOutRef.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	-- add response msg to log event
+	DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+	IF (LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'RetrieveNameList response message', 'xml', rEnv);
+	END IF;
+	SET OutputRoot.XMLNSC = NULL;
+	SET OutputRoot.BLOB.BLOB = bPayload;
+	-- PROPAGATE TO TERMINAL 'out';
+	RETURN TRUE;
+END;
+--Creating Procedure
+CREATE PROCEDURE RetrieveNameList(IN AgencyID CHARACTER, IN GDS CHARACTER, IN AgentID INTEGER, IN ClientID INTEGER, IN LastName CHARACTER, IN FirstName CHARACTER,
+IN ShipCode CHARACTER, IN SailingDate CHARACTER, IN SailingEndDate CHARACTER, IN SailingDuration INTEGER,
+IN GroupId INTEGER, IN BookingSearchStartDate CHARACTER, IN BookingSearchEndDate CHARACTER, IN BookingStatus CHARACTER,
+IN LastResIDReturned INTEGER, IN MaxRecordsOutPut INTEGER )
+LANGUAGE DATABASE
+DYNAMIC RESULT SETS 1
+EXTERNAL NAME "NCLSEA.NCL_WESB_RETRIEVE_NAME_LIST_V4" ;
+--Creating Procedure
+--CREATE PROCEDURE Consumer_NameList(IN p_clientid INTEGER,IN p_lastresidreturned INTEGER,IN p_maxrecordsoutput INTEGER,IN p_ignoreWebAccess CHARACTER)
+--LANGUAGE DATABASE
+--DYNAMIC RESULT SETS 1
+--EXTERNAL NAME "NCL_WESB_GET_CONSUM_NAM_LST_V3" ;
+CREATE PROCEDURE Consumer_NameList(IN p_clientid INTEGER,IN p_lastresidreturned INTEGER,IN p_maxrecordsoutput INTEGER,IN p_ignoreWebAccess CHARACTER)
+LANGUAGE DATABASE
+DYNAMIC RESULT SETS 1
+EXTERNAL NAME "NCLSEA.NCL_WESB_GET_CONSUM_NAM_LST_V4" ;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRtrvNameList
+* MODULE NAME : NCL_CruiseRtrvNameList_Exception
+* Description : This module handles Exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRtrvNameList_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Retrive NameList request message', 'xml', rEnv);
+		END IF;
+	END IF;
+	SET OutputRoot = InputRoot;
+
+	RETURN TRUE;
+END;
+END MODULE;

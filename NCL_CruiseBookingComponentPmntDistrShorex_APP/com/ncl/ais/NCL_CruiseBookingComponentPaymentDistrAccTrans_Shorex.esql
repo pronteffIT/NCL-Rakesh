@@ -1,0 +1,127 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayload EXTERNAL BOOLEAN FALSE;
+
+CREATE COMPUTE MODULE NCL_CruiseBookingComponentPaymentDistrAccTrans_DistributeShorex
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rDisAccTran, rShrxDist REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseBookingComponentPaymentRQ;
+
+		DECLARE bPayload BLOB;
+
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InpReq';
+
+		SET rEnv.InpReq = InputRoot.XMLNSC.*:NCL_CruiseBookingComponentPaymentRQ;
+		SET rEnv.Status = rIn.*:Status;
+		SET rEnv.TransID = rIn.*:TransID;
+
+		IF rEnv.Status = 'CC DECLINED' THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Declined message received', rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSEIF rEnv.Status = 'CC QUEUE' THEN
+			-- query tx_status from database
+			SET rEnv.TxStatus = THE(SELECT ITEM tx.trans_status FROM Database.acc_trans_Detail AS tx WHERE tx.trans_id = rEnv.TransID);
+			SET rEnv.Status = rEnv.TxStatus;
+			
+			IF REPLACE(UPPER(rEnv.TxStatus), ' ', '') = 'CCQUEUE' THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Throwing back the request for retry - credit card transaction status is CC QUEUE', rEnv);
+				
+				PROPAGATE TO TERMINAL 'out1';
+				THROW USER EXCEPTION MESSAGE 2951 VALUES('Throwing back the request for retry - credit card transaction status is CC QUEUE');
+			END IF;
+		ELSEIF rEnv.Status = 'OK' THEN
+			-- set the endpoint
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+
+			CREATE FIELD OutputRoot.XMLNSC.DistrAccTrans_IN AS rDisAccTran;
+			
+			SET rDisAccTran.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET rDisAccTran.MsgHeader.Language = 'ENG';
+			CREATE FIELD rDisAccTran.MsgHeader.CallerInfo.UserInfo.Internal;
+
+			SET rDisAccTran.TransID = rEnv.TransID;
+			DECLARE ExtID CHARACTER  '';
+			DECLARE CompType CHARACTER  '';
+			FOR rCompDet AS rIn.*:ComponentDetails.*:ComponentDetail[] DO  
+				           
+				IF COALESCE(rCompDet.*:ExternalComponent.*:ExtID,'')<> '' AND  COALESCE(rCompDet.*:ExternalComponent.*:CompType,'')<> ''  THEN 
+					 
+					CREATE LASTCHILD OF rDisAccTran.ComponentDistr AS rShrxDist NAME 'ComponentDistrRec';  
+					SET rShrxDist.PackageID = rCompDet.*:PackageID;
+					SET rShrxDist.ClientID = rCompDet.*:ClientID;
+					SET rShrxDist.Amount = CAST(FIELDVALUE(rCompDet.*:Amount) AS DECIMAL(10,2)) / 100;
+					SET rShrxDist.ExternalComponent.CompType = rCompDet.*:ExternalComponent.*:CompType;
+					SET rShrxDist.ExternalComponent.ExtID = rCompDet.*:ExternalComponent.*:ExtID; 
+  				        
+				ELSE
+					CREATE LASTCHILD OF rDisAccTran.ShorexDistr AS rShrxDist NAME 'ShorexDistrRec';
+					SET rShrxDist.PackageID = rCompDet.*:PackageID;
+					SET rShrxDist.ClientID = rCompDet.*:ClientID;
+					SET rShrxDist.Amount = CAST(FIELDVALUE(rCompDet.*:Amount) AS DECIMAL(10,2)) / 100;	
+				END IF;
+				
+				/*CREATE LASTCHILD OF rDisAccTran.ShorexDistr AS rShrxDist NAME 'ShorexDistrRec';
+				SET rShrxDist.PackageID = rCompDet.*:PackageID;
+				SET rShrxDist.ClientID = rCompDet.*:ClientID;
+				SET rShrxDist.Amount = CAST(FIELDVALUE(rCompDet.*:Amount) AS DECIMAL(10,2)) / 100;
+				/*
+				/* ================================= ==============================*/
+				SET rShrxDist.ExternalComponent.CompType = rCompDet.*:ExternalComponent.*:CompType;
+				SET rShrxDist.ExternalComponent.ExtID = rCompDet.*:ExternalComponent.*:ExtID;   
+				*/ 
+				*/  
+			END FOR;
+
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseBookingComponentPayment_LogDistributeShorex
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Distribute Shorex call response returned ...', rEnv);
+
+		IF (LogPayload) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Distribute Shorex call response ...', 'xml', rEnv);
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseBookingComponentPaymentR_DistrAccTrans_Handle_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			
+			IF LogPayload THEN
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Booking Component Payment Exception ...', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

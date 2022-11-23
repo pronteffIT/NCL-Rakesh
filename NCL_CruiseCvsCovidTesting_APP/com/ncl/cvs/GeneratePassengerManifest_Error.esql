@@ -1,0 +1,61 @@
+BROKER SCHEMA com.ncl.cvs
+DECLARE EMAIL_FROM EXTERNAL CHARACTER '';
+DECLARE EMAIL_TO_ERROR EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE GeneratePassengerManifest_Error
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;	
+		DECLARE rNewRelic,rEmail REFERENCE TO OutputRoot;
+		DECLARE cErrorText CHARACTER COALESCE(GET_EXCEPTION_MSG(rExcp,rEnv), 
+				'Internal IIB Error, please check the logs');
+		SET rEnv.STATUS=cErrorText;
+		--SEND NR EVENT
+		IF LOG_TO_NEWRELIC 
+		THEN
+			CALL BUILD_NR_ERROR('CVS_SAIL_REFERENCE', NULL , NULL,cErrorText ,'ERROR', rNewRelic );
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		CALL BUILD_EMAIL('CVS Manifest Generation  :Internal Error',	cErrorText, rEmail);	
+		RETURN TRUE;
+	END;	
+END MODULE;
+
+CREATE FUNCTION GET_EXCEPTION_MSG(rExcp REFERENCE, rEnv REFERENCE ) RETURNS CHARACTER
+BEGIN
+	IF EXISTS(rExcp.RecoverableException[]) THEN
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+	END IF;
+	RETURN rEnv.ErrorSummary.ErrorText;
+END;
+
+CREATE PROCEDURE BUILD_EMAIL(IN emailSubject CHARACTER , IN message CHARACTER, INOUT rOutput REFERENCE  )
+BEGIN
+		DECLARE rEmailReq REFERENCE TO rOutput.XMLNSC.EmailRequest;
+		SET rOutput = NULL;
+		CREATE FIELD rOutput.XMLNSC.EmailRequest AS rEmailReq;
+		SET rEmailReq.EmailAddress.FromAddress = EMAIL_FROM;
+		SET rEmailReq.EmailAddress.ToAddress = EMAIL_TO_ERROR;
+		SET rEmailReq.EmailSubject = emailSubject;
+		SET rEmailReq.EmailContentType = 'text/html;charset=utf-8';
+		SET rEmailReq.EmailContent = message;	
+END;
+
+CREATE PROCEDURE BUILD_NR_ERROR(IN eventType CHARACTER, IN fileName CHARACTER ,
+		IN sailID CHARACTER,IN messageTxt CHARACTER ,IN status CHARACTER, INOUT rOutput REFERENCE )
+	BEGIN
+		DECLARE rOut REFERENCE TO rOutput.XMLNSC.nr:NewRelicInsightEvent;
+		SET rOutput = NULL;
+		CREATE FIELD rOutput.XMLNSC.nr:NewRelicInsightEvent AS rOut;
+		SET rOut.(XML.NamespaceDecl)xmlns=nr;
+		SET rOut.nr:Events[1].nr:EventType = eventType; 
+		SET rOut.nr:Events[1].nr:Fields[1].nr:FieldName ='SAIL_ID';
+		SET rOut.nr:Events[1].nr:Fields[1].nr:FieldValue = sailID;
+		SET rOut.nr:Events[1].nr:Fields[2].nr:FieldName ='FILE_NAME';
+		SET rOut.nr:Events[1].nr:Fields[2].nr:FieldValue = fileName;
+		SET rOut.nr:Events[1].nr:Fields[3].nr:FieldName ='STATUS';
+		SET rOut.nr:Events[1].nr:Fields[3].nr:FieldValue = COALESCE(status,'OK');
+		SET rOut.nr:Events[1].nr:Fields[4].nr:FieldName ='MESSAGE';
+		SET rOut.nr:Events[1].nr:Fields[4].nr:FieldValue = messageTxt;		
+	END;		

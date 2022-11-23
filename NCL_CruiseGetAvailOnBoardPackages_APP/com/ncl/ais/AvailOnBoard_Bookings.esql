@@ -1,0 +1,158 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+CREATE COMPUTE MODULE AvailOnBoard_Bookings_PrepareLoadBkng
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking LoadBooking', rEnv);
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+		
+		CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--		SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--		SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		SET rOut.MsgHeader.Language = 'ENG';
+		SET rOut.ResID = rEnv.ReservationID;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE AvailOnBoard_Bookings_UpdateBooking_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rUpdtBkgRes REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api response', 'xml', rEnv);
+		END IF;
+		
+	/*	IF EXISTS(rUpdtBkgRes.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Update booking for guest transport returned errors ...', rEnv);
+			
+			-- Genereate Warning
+			SET OutputRoot.XMLNSC.Body.Errors = rUpdtBkgRes.Errors;
+			SET OutputRoot.XMLNSC.Body.Code= rEnv.BkingChnlCompCd;
+			SET OutputRoot.XMLNSC.Body.FlowName = CAST(rEnv.ServiceName AS  CHARACTER);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			
+			SET rEnv.isVrsnxSuccess = FALSE;
+
+			
+			RETURN TRUE;		*/	
+	--	ELSE
+		
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'UpdateBkngResp' ;
+			SET rEnv.UpdateBkngResp = InputRoot.XMLNSC.*:UpdateBooking_OUT;
+		
+			SET rEnv.TempResID = rUpdtBkgRes.ResShell.ResHeader.ResID;
+			RETURN FALSE;
+	--	END IF;	
+	--	RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE AvailOnBoard_Bookings_UpdateBookingRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOut,rResHdr,rTempRef REFERENCE TO Environment.Variables;
+		DECLARE rLoadBkgRes REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+
+		DECLARE bPayload BLOB;
+				
+		-- log payload
+		IF LogPayLoad THEN 
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Load booking api response', 'xml', rEnv);
+		END IF;
+		
+			
+		IF EXISTS(rLoadBkgRes.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Load booking for guest transport returned errors ...', rEnv);
+			
+			-- Genereate Warning
+			SET OutputRoot.XMLNSC.Body.Errors = rLoadBkgRes.Errors;
+			SET OutputRoot.XMLNSC.Body.Code= rEnv.BkingChnlCompCd;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetAvailOnBoardPackagesRS';
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			
+			SET rEnv.isVrsnxSuccess = FALSE;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking UpdateBooking', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+						
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);  
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			SET rOut.MsgHeader.Language = 'ENG';
+			SET rOut.Options.CloneMode = 'N';
+			
+        	CREATE FIELD rOut.ResShell.ResHeader AS rResHdr;
+        	SET rResHdr.AgencyID =  rLoadBkgRes.ResShell.ResHeader.AgencyID;
+        	SET rResHdr.Currency =  rLoadBkgRes.ResShell.ResHeader.Currency;
+        	SET rResHdr.SourceCode =  rLoadBkgRes.ResShell.ResHeader.SourceCode;
+        	SET rResHdr.OfficeCode =  rLoadBkgRes.ResShell.ResHeader.OfficeCode;
+		
+	--		SET rEnv.ResPackage[] = SELECT A FROM rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE';
+			SET rOut.ResShell.ResGuests = rLoadBkgRes.ResShell.ResGuests;
+			
+			DECLARE PackageTypes CHARACTER '';
+			FOR rLBpckge AS rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] DO
+				
+				CREATE LASTCHILD OF rEnv.PackageTypes NAME 'PackageType' VALUE FIELDVALUE(rLBpckge.PackageType);
+				
+			END FOR;	
+			
+			SET rEnv.DBresult.PackageTypes[] = SELECT  A From Database.package_type AS A where A.package_type IN(rEnv.PackageTypes.PackageType[]);
+			
+			SET rEnv.DiningPackgTypes[] = SELECT ITEM A.package_type From rEnv.DBresult.PackageTypes[] AS A WHERE A.product_type IN ('ENTERTAINMENT','DINING');
+			 
+			SET rOut.ResShell.ResPackages.ResPackage[] = SELECT A FROM rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageType IN(rEnv.DiningPackgTypes.package_type[]);  
+			
+			
+			SET rEnv.VoyagePackage[] = SELECT A FROM rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE';
+			CREATE LASTCHILD OF rOut.ResShell.ResPackages AS rTempRef NAME 'ResPackage' ;
+			SET rTempRef =  rEnv.VoyagePackage;
+		
+		--	SET rOut.ResShell.ResPackages.ResPackage[] = SELECT A FROM rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE';
+			SET rOut.ResShell.ResPromotions = rLoadBkgRes.ResShell.ResPromotions;
+		--	SET rOut.ResShell.ResShipRequests = rLoadBkgRes.ResShell.ResShipRequests;
+		
+			-- log payload
+			IF LogPayLoad THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Update booking api Request', 'xml', rEnv);
+			END IF;
+		
+			RETURN TRUE;
+		END IF;
+		RETURN FALSE;	
+		
+	END;
+END MODULE;	
+	
+
+	
+

@@ -1,0 +1,35 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_DBSearchResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		--IF NOT EXISTS(rEnv.*:DBResp[]) THEN
+		IF COALESCE(Environment.Variables.DBSearch, '') = 'DBSearch' THEN
+			CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'DBResp';
+			SET rEnv.DBResp = InputRoot.XMLNSC.*:DbSearch_OUT;
+		ELSEIF COALESCE(Environment.Variables.DBSearch, '') = 'ParamValue' THEN 
+			--CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'GroupCodeResp';
+			--SET rEnv.GroupCodeResp = InputRoot.XMLNSC.*:DbSearch_OUT;
+			
+			SET R_PARAMS.{ParamCode}.ParamValue = InputRoot.XMLNSC.*:DbSearch_OUT.Settings.Parameter.ParameterValue;
+			SET R_PARAMS.{ParamCode}.Time = CURRENT_TIMESTAMP;
+		END IF;		
+		 
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvail_CustomDbSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'CstmDBResp';
+		SET rEnv.CstmDBResp = InputRoot.XMLNSC.*:CustomDbSearch_OUT;
+
+		RETURN TRUE;
+	END;
+END MODULE;

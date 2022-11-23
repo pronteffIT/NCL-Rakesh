@@ -1,0 +1,1151 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE SpclReqCodeType EXTERNAL CHARACTER 'SpecialRequests';
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveBooking_SetPackages
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rResSum,rPay REFERENCE TO Environment.Variables;
+		DECLARE rIn,rOutSail,rOutResGuest,TempRef REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrievePackagesRS;
+		DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ;
+		DECLARE rLdBkngRes,rOutOnBrdActInfo REFERENCE TO rEnv.Temp.LoadBkingResp;	
+		DECLARE rHeader,RefShorex,rSecndAgency REFERENCE TO rLdBkngRes.ResShell.ResHeader;
+		DECLARE rOut,rCabinBath,rCabinBed,rAgency,rCabinInfo,rAgent,rSpclSer,rSplSerItem,rSpclReqInfo,DesRef REFERENCE TO OutputRoot;     
+      
+			 
+		CREATE LASTCHILD OF rEnv AS rOutResp DOMAIN('XMLNSC') IDENTITY ns:NCL_CruiseRetrieveBookingRS; 
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);	
+		CREATE FIELD rOutResp.Success; 
+		
+		 
+		CREATE FIELD rOutResp.ResSummary AS rResSum; 
+		SET rResSum.ID = rHeader.ResID; 
+		
+		DECLARE ResParamQry,PARAM_VALUE CHARACTER;
+		DECLARE ParmRow ROW;
+		SET ResParamQry = 'SELECT PARAM_VALUE  FROM RES_PARAM WHERE PARAM_CODE = ''FROZEN'' AND RES_ID = ?';
+		SET ParmRow.R[] = PASSTHRU (ResParamQry,rHeader.ResID);
+		SET PARAM_VALUE = ParmRow.R[1].PARAM_VALUE; 
+		IF (PARAM_VALUE = 'Y') THEN	
+			SET rResSum.IsFrozen = 'True';
+			
+		ELSE
+			SET rResSum.IsFrozen = 'False';			
+		END IF;
+		
+	--	IF rHeader.ResStatus <> 'RQ' THEN
+		
+		--	SET rResSum.Status = rHeader.ResStatus;
+			
+	--	ELSE
+	--		DECLARE StatusQry CHARACTER;
+--			DECLARE stsRow ROW;
+--			SET StatusQry = ' SELECT TO_CHAR(SEA.RES_EVENT.EVENT_TIMESTAMP, ''DDMMYYYYHHMM'')  FROM SEA.RES_EVENT,SEA.RES_HEADER  WHERE 
+--								SEA.RES_EVENT.OLD_STATUS=''RQ'' AND SEA.RES_EVENT.RES_ID=SEA.RES_HEADER.RES_ID AND SEA.RES_HEADER.RES_ID= ?';
+--								
+--			SET stsRow = PASSTHRU(StatusQry,rHeader.ResID);		
+--			SET rResSum.Status = COALESCE(stsRow.EVENT_TIMESTAMP,'RQ');
+	--	END IF;
+			
+		SET rResSum.Status = com.ncl.ais.utils.XrefExternalCodes('NCLWEBC', 'STS', COALESCE(rHeader.ResStatus,'RQ'), rEnv, rOut);
+			
+		SET rResSum.InitDate = ConvertToOFFset_Temp(rHeader.InitialDate); --CAST(rHeader.InitialDate  AS TIMESTAMP FORMAT 'IU');
+		SET rResSum.BookingSource = rHeader.SourceCode;
+		SET rResSum.OfficeCode = rHeader.OfficeCode;
+		SET rResSum.CollectionID = rHeader.CollectionID;
+		
+		
+		DECLARE AgencyInfoQry CHARACTER;
+		
+		SET AgencyInfoQry = 'select ap.agency_id as agencyId,ap.agency_name as agencyName, ap.office_code as officeCode, ap.agency_type as agencyType, 
+							ap.default_currency currencyCode,
+							( select phone_number from agency_phone a where a.agency_id=ap.agency_id and  a.is_phone_primary=''Y'' and a.is_phone_fax=''N'' and rownum =1 ) as agencyPhone,
+							sec.agency_id as secondaryAgencyId ,sec.agency_name	as secondaryAgencyName,
+							( select phone_number from agency_phone a where a.agency_id=sec.agency_id and a.is_phone_primary=''Y'' and a.is_phone_fax=''N'' and rownum =1 ) as secondaryAgencyPhone 
+							from res_header rh,agency ap,agency sec where 
+								rh.res_id= ? and rh.agency_id= ap.agency_id	and rh.sec_agency_id = sec.agency_id(+)';
+							
+		SET rEnv.AgencyInfo[] = PASSTHRU(AgencyInfoQry,rHeader.ResID);
+		
+		IF EXISTS(rEnv.AgencyInfo[]) THEN
+			
+			CREATE FIELD rResSum.AgencyInfo.PrimaryAgencyInfo AS rAgency;
+			
+			SET rAgency.ID = rEnv.AgencyInfo.AGENCYID;
+			SET rAgency.Type = rEnv.AgencyInfo.AGENCYTYPE;
+			SET rAgency.Name = rEnv.AgencyInfo.AGENCYNAME;
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(rEnv.AgencyInfo.AGENCYPHONE) THEN
+				SET rAgency.Phone.PhoneUsageType.Type = '5';
+				SET rAgency.Phone.PhoneUsageType.PhoneNumber = rEnv.AgencyInfo.AGENCYPHONE;
+			END IF;	
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(rEnv.AgencyInfo.SECONDARYAGENCYPHONE) THEN
+				
+				CREATE FIELD rResSum.AgencyInfo.SecondaryAgencyInfo AS rSecndAgency;
+				SET rSecndAgency.Name = rEnv.AgencyInfo.SECONDARYAGENCYNAME;
+				SET rSecndAgency.ID = rEnv.AgencyInfo.SECONDARYAGENCYID;
+				
+				SET rSecndAgency.Phone.PhoneUsageType.Type = '5';
+				SET rSecndAgency.Phone.PhoneUsageType.PhoneNumber = rEnv.AgencyInfo.SECONDARYAGENCYPHONE;
+				
+			END IF;	
+		END IF;	
+		-- End of AgencyInfo section
+		
+		DECLARE primaryAgentInfoQry CHARACTER;
+		DECLARE primaryAgentID CHARACTER;		
+		SET primaryAgentID = rIn.*:Header.*:AgentID;
+		
+		SET primaryAgentInfoQry = 'select ap.agent_id as agentId,ap.first_name as firstName,ap.middle_name as middleName,ap.last_name as lastName,  
+							( select phone_number from agent_phone a where a.agent_id=ap.agent_id and  a.is_phone_primary=''Y'' and a.is_phone_fax=''N'' and rownum =1 ) as agentPhone					
+							from agent ap where ap.agent_id=?'; 
+							
+  		SET rEnv.PrimaryAgentInfo[] = PASSTHRU(primaryAgentInfoQry,primaryAgentID); 
+		
+		IF EXISTS(rEnv.PrimaryAgentInfo[]) THEN
+			
+			CREATE FIELD rResSum.AgentInfo.PrimaryAgentInfo AS rAgent;  
+			
+			SET rAgent.ID   = rEnv.PrimaryAgentInfo.AGENTID;              
+			SET rAgent.FirstName = rEnv.PrimaryAgentInfo.FIRSTNAME; 
+			SET rAgent.MiddleName = rEnv.PrimaryAgentInfo.MIDDLENAME; 
+			SET rAgent.LastName = rEnv.PrimaryAgentInfo.LASTNAME; 
+			 
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(rEnv.PrimaryAgentInfo.AGENTPHONE) THEN
+				SET rAgent.Phone.PhoneUsageType.Type = '5';
+				SET rAgent.Phone.PhoneUsageType.PhoneNumber = rEnv.PrimaryAgentInfo.AGENTPHONE;  
+			END IF;	
+			
+	    End IF;
+	    
+	    -- Added Secondry AgentInfo as per jira-SEAOPS-3202 
+	    
+	    DECLARE secAgentInfoQry CHARACTER;
+		DECLARE secAgentID CHARACTER;		
+		SET secAgentID = rIn.*:Header.*:SecAgentID;   
+		
+		SET secAgentInfoQry = 'select ap.agent_id as agentId,ap.first_name as firstName,ap.middle_name as middleName,ap.last_name as lastName,  
+							( select phone_number from agent_phone a where a.agent_id=ap.agent_id and  a.is_phone_primary=''Y'' and a.is_phone_fax=''N'' and rownum =1 ) as agentPhone					
+							from agent ap where ap.agent_id=?'; 
+							
+  		SET rEnv.SecAgentInfo[] = PASSTHRU(secAgentInfoQry,secAgentID); 
+		
+		IF EXISTS(rEnv.SecAgentInfo[]) THEN
+			
+			CREATE FIELD rResSum.AgentInfo.SecondryAgentInfo AS rAgent;  
+			
+			SET rAgent.ID   = rEnv.SecAgentInfo.AGENTID;              
+			SET rAgent.FirstName = rEnv.SecAgentInfo.FIRSTNAME;  
+			SET rAgent.MiddleName = rEnv.SecAgentInfo.MIDDLENAME; 
+			SET rAgent.LastName = rEnv.SecAgentInfo.LASTNAME; 
+			 
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(rEnv.SecAgentInfo.AGENTPHONE) THEN
+				SET rAgent.Phone.PhoneUsageType.Type = '5';
+				SET rAgent.Phone.PhoneUsageType.PhoneNumber = rEnv.SecAgentInfo.AGENTPHONE;  
+			END IF;	
+			
+	    End IF;
+		
+
+
+			-- End of AgentInfo section-jira-SEAOPS-3202 
+			
+			
+		
+		DECLARE ProfileModifierQry CHARACTER;
+		SET ProfileModifierQry = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE, DETAILS.DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, 
+									details.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS INNER JOIN ( SELECT XREF.EXTERNAL_XREF_ID, 
+									XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF INNER JOIN SEA.EXTERNAL_NAMES NAMES ON 
+									XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where NAMES.EXTERNAL_NAME = ?) TEMP_JOIN  ON 
+									DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE= ?';
+	
+		-- This FOR loop Creates SailingInfo Section
+		FOR rInSail AS rIn.*:SailingInfo[] DO
+			
+			CREATE LASTCHILD OF rOutResp.ResSummary AS rOutSail IDENTITY SailingInfo;
+			SET rOutSail.VoyageID = FIELDVALUE(rInSail.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+		
+			SET rOutSail.SailID = THE( select ITEM hd.sail_id from Database.package_definition AS pd, Database.sail_header AS hd 
+												where pd.sail_id = hd.sail_id and pd.package_id = rOutSail.VoyageID);
+		
+			SET rOutSail.DestinationRegion =  rInSail.ns:SelectedSailing.ns:Region.ns:RegionCode;
+			SET rOutSail.VoyageStartDate = FIELDVALUE(rInSail.ns:SelectedSailing.(XMLNSC.Attribute)Start);
+			SET rOutSail.VoyageEndDate = FIELDVALUE(rInSail.ns:SelectedSailing.(XMLNSC.Attribute)End);
+			SET rOutSail.Duration = FIELDVALUE(rInSail.ns:SelectedSailing.(XMLNSC.Attribute)Duration);
+			SET rOutSail.SailStartDate = rLdBkngRes.*:ResShell.ResShipRequests.*:ResShipRequest.*:Sail.*:From.*:Date; 
+			SET rOutSail.SailEndDate = rLdBkngRes.*:ResShell.ResShipRequests.*:ResShipRequest.*:Sail.*:To.*:Date;
+			SET rOutSail.VacationStartDate = CAST(CAST(TRANSLATE(rLdBkngRes.*:ResShell.VacationInfo.*:VacationInfoItem.*:VacationRange.*:From,'T',' ') AS TIMESTAMP) AS DATE); 
+			SET rOutSail.VacationEndDate = CAST(CAST(TRANSLATE(rLdBkngRes.*:ResShell.VacationInfo.*:VacationInfoItem.*:VacationRange.*:To,'T',' ') AS TIMESTAMP) AS DATE);
+
+			SET rOutSail.ShipCode = FIELDVALUE(rInSail.ns:SelectedSailing.(XMLNSC.Attribute)ShipCode);
+			SET rOutSail.DeparturePort = FIELDVALUE(rInSail.ns:SelectedSailing.ns:DeparturePort.(XMLNSC.Attribute)LocationCode);
+			SET rOutSail.ArrivalPort = FIELDVALUE(rInSail.ns:SelectedSailing.ns:ArrivalPort.(XMLNSC.Attribute)LocationCode);
+			CREATE FIELD rOutSail.SailingCruiseProfile;
+			
+			DECLARE SailDate DATE;
+			SET SailDate = CAST(CAST(rOutSail.VoyageStartDate AS TIMESTAMP FORMAT 'IU') AS DATE FORMAT 'yyyy-MM-dd');
+			
+			DECLARE DiffDays,NumberOfDays INTEGER; 
+			SET DiffDays = (SailDate - CURRENT_DATE)DAY;
+			
+			DECLARE ExternalCode,ProfileModifierQry CHARACTER;
+			DECLARE SeaWareSettings,ProfileModifier ROW;
+			
+			
+			
+			SET ProfileModifier.ExternalTable.DETAILS[] = PASSTHRU( ProfileModifierQry,rEnv.BkingChnlCompCd,'ProfileModifier');
+			
+			IF EXISTS(ProfileModifier.ExternalTable.DETAILS[] ) THEN
+			
+				SET SeaWareSettings.PARAMS[] = PASSTHRU('select PARAM_CODE,PARAM_VALUE from seaware_Settings where param_code like ''%DAYSNO%'' and section_name =?',rEnv.BkingChnlCompCd);
+				
+				FOR rSeaParamCodes AS SeaWareSettings.PARAMS[] DO 
+					
+					DECLARE ExternalCode,SwCode CHARACTER;  --PARAM_CODE,
+					
+				--	SET ExternalCode = com.ncl.ais.utils.XrefExternalCodes(rEnv.BkingChnlCompCd, 'ProfileModifier', rSeaParamCodes.PARAM_CODE, rEnv, rOut);
+					
+					SET ExternalCode = THE(SELECT ITEM A.EXTERNAL_CODE FROM ProfileModifier.ExternalTable.DETAILS[] AS A 															
+																					WHERE A.SW_CODE = rSeaParamCodes.PARAM_CODE);
+					
+					SET NumberOfDays = CAST(rSeaParamCodes.PARAM_VALUE AS INTEGER);
+				
+					IF NOT com.ncl.ais.utils.IsEmpty(ExternalCode) THEN
+						
+						IF DiffDays > NumberOfDays THEN
+							
+							CREATE LASTCHILD OF rOutSail.SailingCruiseProfile.Modifiable AS TempRef IDENTITY Code;
+							SET TempRef = ExternalCode ;
+							
+							-- Modifiable(ExternalCode)
+							
+						ELSE
+							
+							CREATE LASTCHILD OF rOutSail.SailingCruiseProfile.NotModifiable AS TempRef IDENTITY Code;
+							-- NotModifiable(ExternalCode)	
+							SET TempRef = ExternalCode;
+							
+						END IF;
+						
+					END IF;		
+					
+				END FOR;
+				-- End Of ParamCodes
+			END IF;
+			-- rEnv.BkingChnlCompCd
+				
+			
+		END FOR;	
+		-- End of SailingInfo Section
+		
+		SET rResSum.CurrencyInfo.CurrencyCode = rHeader.Currency;
+		SET rResSum.CurrencyInfo.Decimals = '2';
+		
+		-- This Loop Iterate through Each Guest And creates ResSummary,AirInfo and TravelDocumentation Info
+		FOR rInResGuest AS rLdBkngRes.ResShell.ResGuests.ResGuest[] DO
+			
+			SET OutputRoot = NULL;
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD OutputRoot.XMLNSC.ManageClients_IN AS rOut;
+			
+		--	SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);			
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+			SET rOut.Options.ReturnState = 'Y';
+			SET rOut.Load.ClientIDs = rInResGuest.ClientID;
+				
+			-- Route To ManageClients Call to get the GuestInfo Based on the ClientID.
+			PROPAGATE TO LABEL 'ManageClients';
+
+			DECLARE rClient REFERENCE TO rEnv.ManageClientsResp.Clients.Client;
+			DECLARE rClientHdr REFERENCE TO rClient.ClientHeader;
+				
+			CREATE LASTCHILD OF rOutResp.ResSummary AS rOutResGuest IDENTITY ResGuestInfo;
+			
+			SET rOutResGuest.GuestRefNumber = rInResGuest.GuestSeqN;
+			SET rOutResGuest.NamePrefix = rClientHdr.Title;
+			SET rOutResGuest.GivenName = rClientHdr.FirstName;
+			SET rOutResGuest.MiddleName = rClientHdr.MiddleName;
+			SET rOutResGuest.Surname = rClientHdr.LastName;
+			
+			-- Household field is added as per jira-SEAOPS-3202 
+			SET rOutResGuest.HouseholdID = rClientHdr.HouseholdID;
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(rClientHdr.Birthday) THEN				
+				DECLARE TempDob CHARACTER;
+				SET TempDob = CAST(CAST(CAST(rClientHdr.Birthday AS TIMESTAMP FORMAT 'IU')AS DATE FORMAT 'yyyy-MM-dd') AS CHARACTER FORMAT 'yyyy-MM-dd');
+				
+				SET rOutResGuest.Age = com.ncl.ais.utils.getAge(TempDob);
+				SET rOutResGuest.BirthDate = TempDob;
+				
+			END IF;
+			
+			IF rClientHdr.Gender ='M' THEN				
+				SET rOutResGuest.Gender = 'Male';				
+			ELSE				
+				SET rOutResGuest.Gender = 'Female';				
+			END IF;
+			
+			SET rOutResGuest.LoyaltyMembershipID = rClientHdr.ClientID;
+			SET rOutResGuest.GuestID = rInResGuest.GuestID;
+			SET rOutResGuest.GuestType = rClientHdr.GuestType;
+			SET rOutResGuest.LatitudeLevel = rClientHdr.ClientType;
+			
+			IF NOT com.ncl.ais.utils.IsEmpty(rClient.Phones.Phone.PhoneNumber) THEN
+				SET rOutResGuest.TelephoneInfo.PhoneUsageType.Type  = '5';
+				SET rOutResGuest.TelephoneInfo.PhoneUsageType.IntlCode   = rClient.Phones.Phone.IntlCode;
+				SET rOutResGuest.TelephoneInfo.PhoneUsageType.PhoneNumber   = rClient.Phones.Phone.PhoneNumber;
+			END IF;	
+
+			
+			DECLARE AddressInfoQry CHARACTER;
+			SET AddressInfoQry =  'SELECT C.CLIENT_ID,C.HOUSEHOLD_ID,H.ADDRESS_TYPE,H.ADDRESS_LINE1,H.ADDRESS_LINE2,H.ADDRESS_LINE3,H.ADDRESS_CITY,H.STATE_CODE,H.ZIP,H.COUNTRY_CODE 
+								  FROM CLIENT C,HOUSEHOLD_ADDRESS H WHERE C.CLIENT_ID =? AND H.HOUSEHOLD_ID(+) = C.HOUSEHOLD_ID AND 
+								  H.ADDRESS_TYPE(+) IN (''HOME ADDRESS'',''PRIMARY'')';      
+								
+			SET rEnv.AddInfo.Result[]	= PASSTHRU(AddressInfoQry,rClientHdr.ClientID);	   
+			
+			DECLARE AddrsDtls REFERENCE TO rEnv.AddInfo.Result[<];
+			
+					
+			SET rOutResGuest.AddressInfo.AddressLine1 = AddrsDtls.ADDRESS_LINE1; 
+			IF AddrsDtls.ADDRESS_LINE2 IS NOT NULL  THEN 
+				SET rOutResGuest.AddressInfo.AddressLine2 = TRIM(AddrsDtls.ADDRESS_LINE2); 
+			ELSE
+				SET rOutResGuest.AddressInfo.AddressLine2 = '';     
+			END IF;
+			IF AddrsDtls.ADDRESS_LINE3 IS NOT NULL  THEN 
+				SET rOutResGuest.AddressInfo.AddressLine3 = AddrsDtls.ADDRESS_LINE3;   
+			ELSE
+				SET rOutResGuest.AddressInfo.AddressLine3 = '';     
+			END IF;
+			 
+			SET rOutResGuest.AddressInfo.CityName = AddrsDtls.ADDRESS_CITY; 
+			SET rOutResGuest.AddressInfo.PostalCode = AddrsDtls.ZIP;
+			SET rOutResGuest.AddressInfo.StateCode = AddrsDtls.STATE_CODE;
+			SET rOutResGuest.AddressInfo.CountryCode = AddrsDtls.COUNTRY_CODE;
+			
+			SET rOutResGuest.AddressInfo.CountryName = THE(select ITEM A.COUNTRY_NAME from Database.COUNTRY AS A where A.COUNTRY_CODE= AddrsDtls.COUNTRY_CODE);
+			SET rOutResGuest.Email = rClientHdr.EMail; 
+			SET rOutResGuest.CountryOfBirth = COALESCE(rClientHdr.CountryOfBirth, '');
+			SET rOutResGuest.Nationality = COALESCE(getNationality(rClientHdr), '');
+			SET rOutResGuest.Citizenship = COALESCE(rClientHdr.Citizenship, '');
+			
+			DECLARE rLoyaltyInfo REFERENCE TO rOutResGuest.LoyaltyPrograms.LoyaltyInfo;
+			
+			IF EXISTS(rClient.Programs.Program[]) THEN
+				FOR rProgram AS rClient.Programs.Program[] DO
+					CREATE LASTCHILD OF rOutResGuest.LoyaltyPrograms AS rLoyaltyInfo DOMAIN('XMLNSC') IDENTITY LoyaltyInfo;					
+					SET rLoyaltyInfo.ProgramID = rProgram.ProgramCode;
+				END FOR; 	
+			END IF; 			
+			
+			-- Creates TravelProtection For Each ResGuest
+			CREATE LASTCHILD OF rEnv.TravelProtectionInfo AS TempRef DOMAIN('XMLNSC') IDENTITY Guest;
+			SET TempRef.GuestRefNumber = rInResGuest.GuestSeqN;
+			SET TempRef.SelectedInsurance = com.ncl.ais.utils.XrefExternalCodes('NCLWEBC', 'Insurance', rInResGuest.Insurance, rEnv, rOut);
+			
+			-- Create AirInfo Section for Each ResGuest
+		
+			IF EXISTS(rLdBkngRes.ResShell.ResTransportations.ResTransportation[]) THEN
+				
+				
+				DECLARE ResTrnas,rAirGuest REFERENCE TO rLdBkngRes.ResShell.ResTransportations.ResTransportation;
+				DECLARE refSegment,rItnryDtls REFERENCE TO ResTrnas.Segments.Segment;
+		
+		
+			
+			--	DECLARE Semgments ROW;
+				SET rEnv.Semgments[] = SELECT A FROM ResTrnas.Segments.Segment[] AS A WHERE A.Direction = 'OUT';
+				
+				FOR rResTrans AS rLdBkngRes.*:ResShell.*:ResTransportations.*:ResTransportation[] DO
+					IF rResTrans.IsActive = 'Y' AND CONTAINS(COALESCE(rResTrans.GuestRefs,rInResGuest.GuestSeqN),rInResGuest.GuestSeqN) THEN
+						CREATE LASTCHILD OF rEnv.AirInfo AS rAirGuest DOMAIN('XMLNSC') IDENTITY Guest;
+				
+						SET rAirGuest.GuestRefNumber = rInResGuest.GuestSeqN;
+						SET rAirGuest.EffectiveDate = AirSegEffectiveDate(refSegment);
+						SET rAirGuest.FlightType = rResTrans.Type;	
+						SET rAirGuest.Type = rResTrans.Type; 
+						SET rAirGuest.Mode = rResTrans.Mode;
+						FOR rsegment AS rResTrans.ActualItinerary.Leg[] DO					
+							IF rsegment.Direction = 'OUT' THEN
+								SET rAirGuest.Out.Gateway = rResTrans.GatewayOut;  
+								SET rAirGuest.Out.GatewayCityName = THE(SELECT ITEM C.CITY_NAME from Database.AIRPORT AS A, Database.AIRPORT_CITY_LINK AS B,
+																	Database.CITY AS C WHERE A.AIRPORT_CODE = B.AIRPORT_CODE AND B.CITY_CODE = C.CITY_CODE AND 
+																	A.AIRPORT_CODE= rResTrans.GatewayOut);
+								CREATE LASTCHILD OF rAirGuest.Out AS rItnryDtls  IDENTITY ItineraryDetails;
+								CALL CreateItineraryDetails(rsegment, rItnryDtls);
+							
+							ELSEIF rsegment.Direction = 'RET' THEN
+								
+								SET rAirGuest.Return.Gateway = rResTrans.GatewayRet;  
+		
+								SET rAirGuest.Return.GatewayCityName = THE(SELECT ITEM C.CITY_NAME from Database.AIRPORT AS A, Database.AIRPORT_CITY_LINK AS B,
+																	Database.CITY AS C WHERE A.AIRPORT_CODE = B.AIRPORT_CODE AND B.CITY_CODE = C.CITY_CODE AND 
+																	A.AIRPORT_CODE= ResTrnas.GatewayRet);
+								
+								
+								CREATE LASTCHILD OF rAirGuest.Return AS rItnryDtls  IDENTITY ItineraryDetails;
+								
+								CALL CreateItineraryDetails(rsegment, rItnryDtls);
+								
+							END IF;	
+					    END FOR;						
+					END IF;
+				END FOR;						
+			END IF;
+			
+			IF EXISTS(rLdBkngRes.ResShell.ResAirIndependents.ResAirIndependent[]) THEN			
+				DECLARE rAirGuest REFERENCE TO rLdBkngRes.ResShell.ResAirIndependents.ResAirIndependent;
+				DECLARE refFlight, rItnryDtls REFERENCE TO rAirGuest.Flights.Flight;				
+				
+				FOR rAirIndepdent AS rLdBkngRes.*:ResShell.*:ResAirIndependents.*:ResAirIndependent[] DO
+						IF CONTAINS(COALESCE(rAirIndepdent.GuestRefs,rInResGuest.GuestSeqN),rInResGuest.GuestSeqN) THEN
+							CREATE LASTCHILD OF rEnv.AirInfo AS rAirGuest DOMAIN('XMLNSC') IDENTITY Guest;
+					
+							SET rAirGuest.GuestRefNumber = rInResGuest.GuestSeqN;
+							SET rAirGuest.EffectiveDate = AirIndSegEffectiveDate(refFlight);
+							SET rAirGuest.FlightType = 'AIR';	
+							SET rAirGuest.Type = 'INDEPENDENT'; 
+							
+							FOR Flight AS rAirIndepdent.Flights.Flight[] DO	
+								IF rAirIndepdent.SegmentKind = 'OUTBOUND' THEN
+									SET rAirGuest.Out.Gateway = Flight.ArrivalAirport;  
+									SET rAirGuest.Out.GatewayCityName = THE(SELECT ITEM C.CITY_NAME from Database.AIRPORT AS A, Database.AIRPORT_CITY_LINK AS B,
+																		Database.CITY AS C WHERE A.AIRPORT_CODE = B.AIRPORT_CODE AND B.CITY_CODE = C.CITY_CODE AND 
+																		A.AIRPORT_CODE = Flight.ArrivalAirport);
+									CREATE LASTCHILD OF rAirGuest.Out AS rItnryDtls  IDENTITY ItineraryDetails;
+									CALL CreateItineraryDetailsAirInd(Flight, rItnryDtls);							
+								ELSEIF rAirIndepdent.SegmentKind = 'RETURN' THEN								
+									SET rAirGuest.Return.Gateway = Flight.ArrivalAirport; 
+									SET rAirGuest.Return.GatewayCityName = THE(SELECT ITEM C.CITY_NAME from Database.AIRPORT AS A, Database.AIRPORT_CITY_LINK AS B,
+																		Database.CITY AS C WHERE A.AIRPORT_CODE = B.AIRPORT_CODE AND B.CITY_CODE = C.CITY_CODE AND 
+																		A.AIRPORT_CODE= Flight.ArrivalAirport);
+									
+									CREATE LASTCHILD OF rAirGuest.Return AS rItnryDtls  IDENTITY ItineraryDetails;									
+									CALL CreateItineraryDetailsAirInd(Flight, rItnryDtls);
+								END IF;
+						    END FOR;						
+						END IF;
+				END FOR;									
+			END IF;
+ 		-- End of AirInfo Section
+			
+			
+			-- Creates TravelDocumentInfo For Each ResGuest
+			CREATE LASTCHILD OF rEnv.TravelDocumentInfo AS TempRef DOMAIN('XMLNSC') IDENTITY Guest;
+			
+			SET TempRef.GuestRefNumber = rInResGuest.GuestSeqN;
+			SET TempRef.PassportNumber = rClientHdr.Passport.Number;
+            SET TempRef.PassportIssueDate = rClientHdr.Passport.IssuedOn;
+            SET TempRef.PassportExpiryDate = rClientHdr.Passport.ExpirationDate;
+            SET TempRef.Nationality = rClientHdr.Nationality;
+            SET TempRef.Citizenship =  rClientHdr.Citizenship;
+            SET TempRef.CountryOfBirth =  rClientHdr.CountryOfBirth;
+    
+    		-- END of TravelDocumentInfo
+    		
+		END FOR;	
+		-- End of ResGuestInfo Section 
+		
+		
+	--	DECLARE CatInfoType ROW;
+		
+		SET rEnv.CatInfoType[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResPackages.*:ResPackage[] AS A WHERE A.PackageClass = 'VOYAGE';
+		
+		SET rResSum.CategoryInfo.PricedCategory = rEnv.CatInfoType.PriceCategory;
+		
+		DECLARE BerthCategory CHARACTER;
+		IF rEnv.CatInfoType.BerthCategory IS NOT NULL THEN
+			
+			SET BerthCategory = rEnv.CatInfoType.BerthCategory;
+			SET rResSum.CategoryInfo.BerthedCategory = rEnv.CatInfoType.BerthCategory;
+			
+		ELSE
+			SET BerthCategory = rEnv.CatInfoType.PriceCategory;
+			SET rResSum.CategoryInfo.BerthedCategory = rEnv.CatInfoType.PriceCategory;
+			
+		END IF;		
+		
+		DECLARE CabinNumber CHARACTER;
+		SET CabinNumber = rLdBkngRes.*:ResShell.ResShipRequests.*:ResShipRequest.*:Inventory.*:CabinChain.*:CabinAssignment.*:CabinNumber;
+		
+		CREATE FIELD  rResSum.CabinInfo AS rCabinInfo;
+		SET rCabinInfo.CabinNumber = CabinNumber;
+		
+		IF CabinNumber = 'GTY' OR CabinNumber =  'WTL' THEN
+		
+--			CREATE FIELD  rResSum.CabinInfo AS rCabinInfo;
+--			SET rCabinInfo.CabinNumber = CabinNumber;
+			
+			DECLARE MaxOccupancyQry,ShipCode,PriceCategory CHARACTER;
+			
+			SET MaxOccupancyQry = 'select MAX(CABIN_CAPACITY) as CABIN_CAPACITY from SHIP_CABIN_CTG_LINK where ship_code=? AND 
+									CABIN_CATEGORY IN (?) and EFF_SAIL_TO> sysdate';
+			
+			SET ShipCode = rLdBkngRes.*:ResShell.ResShipRequests.*:ResShipRequest.*:Sail.*:Ship;
+			SET PriceCategory = rLdBkngRes.*:ResShell.*:ResPackages.*:ResPackage.PriceCategory;
+			
+			DECLARE MaxOccupancy ROW;
+			
+			SET MaxOccupancy = PASSTHRU(MaxOccupancyQry,ShipCode,PriceCategory);
+									
+			SET rCabinInfo.MaxOccupancy =  COALESCE( MaxOccupancy.CABIN_CAPACITY , '2');
+		
+		ELSEIF com.ncl.ais.utils.isNumeric(CabinNumber) AND COALESCE(CabinNumber, '') <> ''  THEN
+			
+			IF CabinNumber > 0 THEN
+				SET OutputRoot = NULL;
+				
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+				
+			--	SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+				
+				SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;				
+				SET rOut.Cabins.ShipCode = FIELDVALUE(rIn.ns:SailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)ShipCode);
+				SET rOut.Cabins.CabinNumber = CabinNumber;
+				SET rOut.Cabins.SailDate = FIELDVALUE(rIn.ns:SailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)Start);
+				
+				-- Route To DB search Call to get the GuestInfo Based on the Package/ProductType
+				PROPAGATE TO LABEL 'InvokeDBSearch';
+			
+			
+				DECLARE rDBCabin REFERENCE TO rEnv.DBSearchResponse.Cabin;
+					
+				SET rResSum.CategoryInfo.BerthedCategory = COALESCE(rDBCabin.CabinCategory,BerthCategory);
+					
+				SET rResSum.CategoryInfo.DeckNumber = rDBCabin.DeckNumber;
+				
+				IF rDBCabin.DeckName IS NOT NULL THEN
+					
+					SET rResSum.CategoryInfo.DeckName = rDBCabin.DeckName ;
+				ELSE
+					----select SHIP_CODE as shipCode,to_char(deck_number) as deckNumber,DECK_NAME as deckName from SHIP_DECK where SHIP_CODE=?
+					SET rResSum.CategoryInfo.DeckName = THE(Select ITEM D.DECK_NAME FROM Database.SHIP_DECK AS D WHERE D.SHIP_CODE= rDBCabin.ShipCode 
+															AND D.DECK_Number = rDBCabin.DeckNumber);
+				END IF;		
+				
+			--	CREATE FIELD  rResSum.CabinInfo AS rCabinInfo;
+				SET rCabinInfo.CabinNumber = rDBCabin.CabinNumber;
+				SET rCabinInfo.MaxOccupancy = rDBCabin.CabinCapacity;
+				
+				DECLARE LookupCabinDetails_Qry CHARACTER;
+				SET LookupCabinDetails_Qry = 'SELECT JA.CABIN_NUMBER,JB.EXTERNAL_TABLE,JA.CABIN_ATTR_COUNTER, JA.CABIN_ATTR_CODE, JB.EXTERNAL_CODE FROM 
+												(SELECT SHIP_CODE, CABIN_NUMBER, CABIN_ATTR_COUNTER, CABIN_ATTR_CODE FROM CABIN_ATTRIBUTE_LINK CAL INNER JOIN 
+												CABIN_ATTRIBUTE CA  ON CAL.CABIN_ATTR_ID = CA.CABIN_ATTR_ID ) JA  INNER JOIN 
+												(SELECT EXTERNAL_TABLE,DETAILS.SW_CODE, DETAILS.EXTERNAL_CODE, DETAILS.DESCRIPTION  FROM 
+												SEA.EXTERNAL_XREF_DETAIL DETAILS, SEA.EXTERNAL_XREF XREF WHERE DETAILS.EXTERNAL_XREF_ID = XREF.EXTERNAL_XREF_ID AND 
+												EXTERNAL_TABLE IN( ''CabinBed'',''CabinLocation'') AND EXTERNAL_NAMES_ID = (SELECT NAMES.EXTERNAL_NAMES_ID FROM 
+												SEA.EXTERNAL_NAMES NAMES WHERE EXTERNAL_NAME = ''NCLWEBC'') ) JB ON JA.CABIN_ATTR_CODE = JB.SW_CODE 
+												WHERE JA.SHIP_CODE = ? AND JA.CABIN_NUMBER = ?';
+										
+										
+				SET rEnv.cabinLookup.Details[] = PASSTHRU(LookupCabinDetails_Qry,rDBCabin.ShipCode,rDBCabin.CabinNumber);
+				
+				SET rEnv.CabinBed[] = SELECT A FROM rEnv.cabinLookup.Details[] AS A WHERE A.EXTERNAL_TABLE = 'CabinBed';
+				
+				CREATE FIELD rCabinInfo.CabinConfigurations;
+				
+				FOR source AS rEnv.CabinBed[] DO
+				
+						IF STARTSWITH(source.CABIN_ATTR_CODE,'BATH') THEN
+							
+							CREATE LASTCHILD OF rCabinInfo.CabinConfigurations AS rCabinBath IDENTITY CabinBathConfiguration;
+							SET rCabinBath.GuestRefNumber = '1';
+							SET rCabinBath.Code =  source.EXTERNAL_CODE;
+							SET rCabinBath.Quantity = source.CABIN_ATTR_COUNTER;
+	
+						END IF;
+	
+						IF STARTSWITH(source.CABIN_ATTR_CODE,'BED') THEN
+							
+							CREATE LASTCHILD OF rCabinInfo.CabinConfigurations AS rCabinBed IDENTITY CabinBedConfiguration;
+							SET rCabinBed.GuestRefNumber = '1';
+							SET rCabinBed.Code =  source.EXTERNAL_CODE;
+							SET rCabinBed.Quantity = source.CABIN_ATTR_COUNTER;
+													
+						END IF;
+				END FOR;
+			END IF;	
+		END IF;	
+		-- END FOr CabinINfo Section.
+		
+		
+		--	long rounded = Math.round(number*Math.pow(10,impliedDecimalPoint));		- roundtoInt Custom fun
+		SET rResSum.ResInvoice.InvoiceTotal = COALESCE(CAST(CAST(rHeader.InvoiceTotals.InvoiceTotal AS DECIMAL)*100 AS INTEGER),0);
+		SET rResSum.ResInvoice.InvoicePaid = COALESCE(CAST(CAST(rHeader.InvoiceTotals.InvoicePaid AS DECIMAL)*100 AS INTEGER),0);
+		SET rResSum.ResInvoice.GrossDue = COALESCE(CAST(CAST(rHeader.InvoiceTotals.GrossDue AS DECIMAL)*100 AS INTEGER),0);
+		SET rResSum.ResInvoice.NetDue = COALESCE(CAST(CAST(rHeader.InvoiceTotals.NetDue AS DECIMAL)*100 AS INTEGER),0);
+		
+		-- Create ResTransactions Section
+		    
+        DECLARE ResTransactions_Qry CHARACTER;
+		CREATE FIELD rResSum.ResTransactions;
+		
+   		SET ResTransactions_Qry = 'SELECT A.CC_ACC_NUMBER, A.CC_NAME_ON_CARD FROM cc_client A,ACC_TRANS_DETAIL P
+		   							WHERE A.CC_ACC_ID = P.CC_CLIENT_ID AND P.TRANS_ID =?';  
+	    
+		FOR rInTxn AS rLdBkngRes.ResShell.AccTransactions.Transaction[] DO
+ 		CREATE LASTCHILD OF rResSum.ResTransactions AS TempRef IDENTITY Transaction;
+
+			SET rEnv.TransResult.Result[] = PASSTHRU(ResTransactions_Qry ,rInTxn.TransID); 
+			SET TempRef.ID = rInTxn.TransID;
+			SET TempRef.FormOfTrans = rInTxn.FormOfTrans; 
+			SET TempRef.Type = rInTxn.Type;
+			SET TempRef.Status = rInTxn.Status;
+			SET TempRef.SrcEntityType = getSrcEntityType(rInTxn.SrcEntity);
+			SET TempRef.SrcEntityID = getSrcEntityID(rInTxn.SrcEntity);
+			SET TempRef.ExternalIdent = rInTxn.ExternalIdent;
+			SET TempRef.Currency = rInTxn.Currency;
+			SET TempRef.Amount = COALESCE(CAST(CAST(rInTxn.Amount AS DECIMAL)*100 AS INTEGER),0);
+			IF EXISTS(rEnv.TransResult.Result[]) THEN 
+				SET TempRef.CardNumber = '************'|| SUBSTRING(rEnv.TransResult.Result.CC_ACC_NUMBER FROM 13  FOR 16);    
+			    SET TempRef.CardHolderName = rEnv.TransResult.Result.CC_NAME_ON_CARD;     
+			
+			END IF;
+			
+			DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+			SET TempRef.Timestamp = CAST(CAST(rInTxn.Timestamp AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+			
+			CREATE FIELD TempRef.ShorexPayments;
+			FOR rShorex AS rInTxn.ShorexDistr.ShorexDistrRec[] DO
+				
+				IF EXISTS(rShorex.Amount[]) THEN
+					
+					CREATE LASTCHILD OF TempRef.ShorexPayments AS RefShorex IDENTITY ShorexPaymentRec;
+					SET RefShorex.PackageID = rShorex.PackageID;
+					SET RefShorex.LoyaltyMembershipID = rShorex.ClientID;
+					SET RefShorex.Amount = COALESCE(CAST(CAST(rShorex.Amount AS DECIMAL)*100 AS INTEGER),0);
+					
+				END IF;
+				
+			END FOR;
+				
+		END FOR;	
+		-- End of ResTransactions Section
+		
+		-- Create Declined ResTransactions Section-JIRA-SEAOPS-3229 
+		    
+        DECLARE DeclinedResTransactions_Qry CHARACTER;
+		DECLARE reservationID CHARACTER '';
+		SET reservationID = RefInReq.*:ReservationID.*:ID;      
+			SET DeclinedResTransactions_Qry = 'select B.CC_ACC_NUMBER, B.CC_NAME_ON_CARD,A.TRANS_ID,A.TRANS_STATUS,
+				A.FORM_OF_TRANS, A.TRANS_TYPE,A.SOURCE_ENTITY_TYPE,A.SOURCE_ENTITY_ID,A.DEST_ENTITY_TYPE,
+				A.DEST_ENTITY_ID,A.EXTERNAL_IDENT,A.CURRENCY_CODE,A.TRANS_AMOUNT,A.TRANS_TIME_STAMP,A.USER_ID
+				from Acc_trans_detail A,cc_client B where ((A.dest_entity_id=? And A.dest_entity_type=''RES'')
+				or (A.source_entity_id=? And A.source_entity_type=''RES'')) And A.cc_client_id = B.CC_ACC_ID AND A.TRANS_STATUS = ''CC DECLINED''  
+				union
+				select B.CC_ACC_NUMBER, B.CC_NAME_ON_CARD,A.TRANS_ID,A.TRANS_STATUS,
+				A.FORM_OF_TRANS, A.TRANS_TYPE,A.SOURCE_ENTITY_TYPE,A.SOURCE_ENTITY_ID,A.DEST_ENTITY_TYPE,
+				A.DEST_ENTITY_ID, A.EXTERNAL_IDENT,A.CURRENCY_CODE,A.TRANS_AMOUNT,A.TRANS_TIME_STAMP,A.USER_ID
+				from Acc_trans_Detail A,cc_client B 
+
+				where
+
+				A.DEST_ENTITY_TYPE=''AMENITY''
+
+				And A.FORM_OF_TRANS=''CC''
+
+				And A.cc_client_id = B.CC_ACC_ID
+
+				And A.DEST_ENTITY_ID IN ( SELECT AM_ORDER_ID from Am_order_header where RES_ID=?)';   
+            
+		 	
+				SET rEnv.DecTrans.Result[] = PASSTHRU(DeclinedResTransactions_Qry ,reservationID, reservationID,reservationID);  
+		   FOR DecTransData AS rEnv.DecTrans.Result[] DO
+ 				CREATE LASTCHILD OF rResSum.ResTransactions AS DesRef IDENTITY Transaction;      
+			
+				SET DesRef.ID = DecTransData.TRANS_ID;   
+				SET DesRef.FormOfTrans = DecTransData.FORM_OF_TRANS;  
+				SET DesRef.Type = DecTransData.TRANS_TYPE;    
+				SET DesRef.Status = DecTransData.TRANS_STATUS;    
+				SET DesRef.SourceEntityType = DecTransData.SOURCE_ENTITY_TYPE;
+				SET DesRef.SourceEntityID = DecTransData.SOURCE_ENTITY_ID;
+				SET DesRef.DestEntityType = DecTransData.DEST_ENTITY_TYPE;
+				SET DesRef.DestEntityID = DecTransData.DEST_ENTITY_ID;
+				SET DesRef.ExternalIdent = DecTransData.EXTERNAL_IDENT;  
+				SET DesRef.Currency = DecTransData.CURRENCY_CODE;  
+				SET DesRef.Amount = COALESCE(CAST(CAST(DecTransData.TRANS_AMOUNT AS DECIMAL)*100 AS INTEGER),0);
+				SET DesRef.CardNumber = '************'|| SUBSTRING(DecTransData.CC_ACC_NUMBER FROM 13  FOR 16);    
+			    SET DesRef.CardHolderName = DecTransData.CC_NAME_ON_CARD;      
+				DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+				SET DesRef.Timestamp = CAST(CAST(DecTransData.TRANS_TIME_STAMP AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT FormatZ);
+				SET DesRef.UserID = DecTransData.USER_ID;  
+				 
+		END FOR;	
+		 
+		-- End of DeclinedResTransactions Section-JIRA-SEAOPS-3229  
+		
+		
+		
+		SET rResSum.CurrentPaymentType.CurrentDueTypeDesc = rHeader.InvoiceTotals.CurrentDue.DueType;
+		SET rResSum.CurrentPaymentType.CurrentDueDate = rHeader.InvoiceTotals.CurrentDue.DueDate;
+		
+		DECLARE Amt,GrossDue DECIMAL;
+		SET GrossDue = CAST(rHeader.InvoiceTotals.GrossDue AS DECIMAL);
+		SET Amt = CAST(rHeader.InvoiceTotals.CurrentDue.AmountDue AS DECIMAL);
+		IF Amt > GrossDue THEN
+			SET Amt = GrossDue;
+		END IF;
+		IF Amt < 0 THEN
+			SET Amt =0;
+		END IF;				
+		SET rResSum.CurrentPaymentType.CurrentDueAmount = COALESCE(CAST((Amt)*100 AS INTEGER),0);
+		
+			-- payment schedule mapping
+		CREATE LASTCHILD OF rResSum DOMAIN('XMLNSC') NAME 'ResPaymentsSchedule';	
+		FOR rResPaySch AS rLdBkngRes.ResShell.ResPaymentSchedule.ResPaySchItem[] DO			
+				CREATE LASTCHILD OF rResSum.ResPaymentsSchedule AS rPay  DOMAIN('XMLNSC') NAME 'ResPaymentType';				
+				SET rPay.Amount = ROUND(CAST(rResPaySch.Amount AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP);
+				SET rPay.PaymentDueDate = rResPaySch.DueDate || 'Z';
+				SET rPay.PaymentTypeDesc = rResPaySch.DueType;				
+			--	SET iPayNum = iPayNum + 1;
+		END FOR;
+		
+		IF Amt > 0 THEN
+			SET rResSum.ResPaymentsSchedule.FullAmountPaymentIndicator = 'false';
+		ELSE
+			SET rResSum.ResPaymentsSchedule.FullAmountPaymentIndicator = 'true';
+		END IF;
+		
+		-- Applied Farecodes Strats Here
+		CREATE FIELD rOutResp.AppliedFareCodes;
+		FOR rResPremo AS rLdBkngRes.*:ResShell.*:ResPromotions.*:ResPromotion[] DO
+			
+		--	DECLARE DuplicatePkg ROW;
+			SET rEnv.DuplicatePkg[] = SELECT A FROM rOutResp.AppliedFareCodes.Packages.Package[] AS A 
+									WHERE FIELDVALUE(A.(XMLNSC.Attribute)ID) = rResPremo.ComponentReference.PackageID;
+									
+			-- Check for the Duplicate packages
+			IF NOT EXISTS(rEnv.DuplicatePkg[]) THEN
+				
+				SET rEnv.TempFareCodes.Promos[] = SELECT  A FROM rLdBkngRes.*:ResShell.*:ResPromotions.*:ResPromotion[] AS A 
+									WHERE A.ComponentReference.PackageID = rResPremo.ComponentReference.PackageID;
+			
+				CREATE LASTCHILD OF rOutResp.AppliedFareCodes.Packages AS TempRef IDENTITY Package;
+				SET TempRef.(XMLNSC.Attribute)ID = rResPremo.ComponentReference.PackageID;
+					
+				FOR rPromos AS rEnv.TempFareCodes.Promos[] DO
+					
+					DECLARE cGuestRefs CHARACTER TRIM(rPromos.GuestRefs);
+			
+					--This Proc Splits the GuestReference from GuestRefs
+					CALL com.ncl.ais.utils.SplitGuestRef(cGuestRefs,rEnv);
+					
+					FOR rSplit AS rEnv.Split.VALUE[] DO
+						
+						IF (com.ncl.ais.utils.IsEmpty(rPromos.Mode) OR rPromos.Mode <> 'EXCLUDED') AND 
+								(com.ncl.ais.utils.IsEmpty(rPromos.IsActive) OR rPromos.IsActive <> 'N') THEN
+						
+								SET rEnv.GuestPromos[] = SELECT A FROM TempRef.Guest[] AS A WHERE A.GuestRefNumber = FIELDVALUE(rSplit);
+								
+								IF EXISTS(rEnv.GuestPromos[] ) THEN
+									
+									FOR rPromoGuest AS TempRef.Guest[] DO
+										
+										IF rPromoGuest.GuestRefNumber = FIELDVALUE(rSplit) THEN
+											CREATE LASTCHILD OF rPromoGuest NAME 'FareCode' VALUE rPromos.PromoCode;
+										END IF;
+										
+									END FOR;
+									
+								ELSE
+									
+									CREATE LASTCHILD OF TempRef AS rOutResGuest IDENTITY Guest;
+									SET rOutResGuest.GuestRefNumber = FIELDVALUE(rSplit);
+									CREATE LASTCHILD OF rOutResGuest NAME 'FareCode' VALUE rPromos.PromoCode;
+									
+								END IF;		
+						END IF;	
+						
+						DETACH rEnv.GuestPromos;
+						
+					END FOR;
+				END FOR;
+			END IF;
+			
+		END FOR;
+		
+		DECLARE ProfileInfo ROW;
+		SET ProfileInfo.ExtCodes.CODE[] = PASSTHRU( ProfileModifierQry,rEnv.BkingChnlCompCd,'ProfileInfo');
+			
+		IF EXISTS(ProfileInfo.ExtCodes.CODE[] ) THEN	
+			
+			CREATE FIELD rOutResp.StandardProfileInfo;
+			FOR rCode AS ProfileInfo.ExtCodes.CODE[] DO
+				
+				IF NOT com.ncl.ais.utils.IsEmpty(rCode.EXTERNAL_CODE) THEN
+									
+					DECLARE ExtCode CHARACTER ;
+					SET ExtCode = rCode.EXTERNAL_CODE;
+					
+					CREATE LASTCHILD OF rOutResp.StandardProfileInfo.Modifiable AS TempRef IDENTITY Code;
+					
+					SET TempRef = ExtCode;
+					
+--					CREATE LASTCHILD OF rOutResp.StandardProfileInfo.NotModifiable AS TempRef IDENTITY Code;
+--					
+--					SET TempRef = SwCode;
+--					
+				END IF;	
+				
+			END FOR;
+			
+		 END IF;
+		
+	--	SET rOutResp.StandardProfileInfo = rEnv.StandardProfileInfo;
+		
+		-- attach TravelProtectionInfo
+		SET rOutResp.TravelProtectionInfo = rEnv.TravelProtectionInfo;
+		
+	--	DECLARE ShorexInfo ROW;
+		-- ShorexInfo Scope Starts
+		SET rEnv.ShorexInfo.Package[] = SELECT A FROM rIn.ns:Packages.ns:Package[] AS A WHERE A.ns:Type = 'SHORE EXCURSION';
+		FOR rinShorex AS rEnv.ShorexInfo.Package[] DO
+			
+			CREATE FIELD rOutResp.ShorexInfo;
+			FOR rGuest AS rinShorex.ns:Price.ns:Guest[] DO 
+				
+				CREATE LASTCHILD OF rOutResp.ShorexInfo AS TempRef IDENTITY ShorexPackage;
+				SET TempRef.GuestRefNumber = rGuest.*:GuestRefNumber;
+				SET TempRef.ID = rinShorex.*:ID;
+				SET TempRef.Type = rinShorex.ns:Code;
+				SET TempRef.Name = rinShorex.ns:Name;
+				SET TempRef.Description = rinShorex.ns:Name;
+				SET TempRef.DateTimeFrom = CAST(rinShorex.ns:DateRange.ns:PackageStartDate AS TIMESTAMP FORMAT 'IU');
+				SET TempRef.DateTimeTo = CAST(rinShorex.ns:DateRange.ns:PackageEndDate AS TIMESTAMP FORMAT 'IU');
+				SET TempRef.Duration = getDuration(rinShorex.ns:DateRange.ns:PackageStartDate,rinShorex.ns:DateRange.ns:PackageEndDate);
+				
+			END FOR;
+			
+		END FOR;	
+		-- End of ShorexInfo Section
+		
+		---	DECLARE OnbrdActivInfo_ENT,OnbrdActivInfo_StdDINING,OnbrdActivInfo_SPA ROW;
+		
+		-- OnboardActivitiesInfo Scope Starts
+		
+		CREATE FIELD rOutResp.OnboardActivitiesInfo AS rOutOnBrdActInfo;
+			
+		-- Create Dininng Section Benethe OnBoardActivityInfo.
+		
+		SET rEnv.OnbrdActivInfo.StdDINING[] = SELECT A FROM rIn.ns:Packages.ns:Package[] AS A WHERE A.ns:Type = 'DINING';
+		
+		IF EXISTS(rEnv.OnbrdActivInfo.StdDINING[]) THEN
+			
+			DECLARE DiningQry CHARACTER;
+			SET DiningQry = 'select p.package_Id as packageId, pt.package_Type as packageType, p.start_Date as startDate, p.end_Date as endDate, 
+							 c.component_code as Restaurant, it.component_subcode1 as TableSize, p.guest_Id as guestId, pt.COMMENTS as Description from res_package p, 
+							res_component c , package_Type pt, package_itinerary it  where  p.res_id= ? and c.res_package_id = p.res_package_id  
+							and pt.package_type = p.package_type  and pt.product_Type = ''DINING'' and it.itin_record_id = c.itin_record_id';
+							
+			SET rEnv.DINING_PACKAGE.Packages[] = PASSTHRU(DiningQry,rHeader.ResID);
+		
+			FOR rinStdDining AS rEnv.OnbrdActivInfo.StdDINING[] DO
+				
+			--	DECLARE DiningPKG ROW;
+				SET rEnv.DiningPKG[] = SELECT A FROM rEnv.DINING_PACKAGE.Packages[] AS A WHERE A.*:PACKAGEID = rinStdDining.*:ID;
+				
+				
+				FOR rGuest AS rinStdDining.*:Price.*:Guest[] DO 
+					
+					CREATE LASTCHILD OF rOutOnBrdActInfo.Dining.StandardDinings AS TempRef IDENTITY DiningPackage;
+					SET TempRef.GuestRefNumber = rGuest.ns:GuestRefNumber;
+					SET TempRef.ID = rinStdDining.*:ID; 
+					SET TempRef.Type = rinStdDining.ns:Code;
+					SET TempRef.Name = rinStdDining.ns:Name;
+					SET TempRef.Description = rinStdDining.ns:Name;
+					
+					IF rEnv.DiningPKG.PACKAGETYPE = rinStdDining.ns:Code THEN
+						
+						SET TempRef.Restaurant = rEnv.DiningPKG.RESTAURANT;
+						SET TempRef.TableSize = rEnv.DiningPKG.TABLESIZE ;
+						
+					END IF;	
+					
+					SET TempRef.DateTimeFrom = rinStdDining.ns:DateRange.ns:PackageStartDate;
+					SET TempRef.DateTimeTo = rinStdDining.ns:DateRange.ns:PackageEndDate;
+					SET TempRef.Duration = getDuration(rinStdDining.ns:DateRange.ns:PackageStartDate,rinStdDining.ns:DateRange.ns:PackageEndDate);
+	
+				END FOR;
+				
+			END FOR;
+		END	IF;	
+		--End For Dininng Section Benethe OnBoardActivityInfo
+		
+		
+		-- Create SPA section Benethe OnBoardActivityInfo
+		SET rEnv.OnbrdActivInfo.SPA[] = SELECT A FROM rIn.ns:Packages.ns:Package[] AS A WHERE A.ns:Type = 'SPA';
+		
+		FOR rinSpa AS rEnv.OnbrdActivInfo.SPA[] DO
+			
+			FOR rGuest AS rinSpa.ns:Price.ns:Guest[] DO 
+				
+				CREATE LASTCHILD OF rOutOnBrdActInfo.Spa AS TempRef IDENTITY SpaPackage;
+				SET TempRef.GuestRefNumber = rGuest.ns:GuestRefNumber;
+				SET TempRef.ID = rinSpa.*:ID;
+				SET TempRef.Type = rinSpa.ns:Code;
+				SET TempRef.Name = rinSpa.ns:Name;
+				SET TempRef.Description = rinSpa.ns:Name;
+				SET TempRef.DateTimeFrom = rinSpa.ns:DateRange.ns:PackageStartDate;
+				SET TempRef.DateTimeTo = rinSpa.ns:DateRange.ns:PackageEndDate;
+				SET TempRef.Duration = getDuration(rinSpa.ns:DateRange.ns:PackageStartDate,rinSpa.ns:DateRange.ns:PackageEndDate);
+				
+			END FOR;
+			
+		END FOR;
+		--End For Spa Section Benethe OnBoardActivityInfo
+		
+		SET rEnv.OnbrdActivInfo.ENT[] = SELECT A FROM rIn.ns:Packages.ns:Package[] AS A WHERE A.ns:Type = 'ENTERTAINMENT';
+		
+		FOR rinEnt AS rEnv.OnbrdActivInfo.ENT[] DO
+			
+			FOR rGuest AS rinEnt.ns:Price.ns:Guest[] DO 
+				
+				CREATE LASTCHILD OF rOutOnBrdActInfo.Entertainment AS TempRef IDENTITY EntertainmentPackage;
+				SET TempRef.GuestRefNumber = rGuest.ns:GuestRefNumber;
+				SET TempRef.ID = rinEnt.*:ID;
+				SET TempRef.Type = rinEnt.ns:Code;
+				SET TempRef.Name = rinEnt.ns:Name;
+				SET TempRef.Description = rinEnt.ns:Name;
+				SET TempRef.DateTimeFrom = rinEnt.ns:DateRange.ns:PackageStartDate;
+				SET TempRef.DateTimeTo = rinEnt.ns:DateRange.ns:PackageEndDate;
+				SET TempRef.Duration = getDuration(rinEnt.ns:DateRange.ns:PackageStartDate,rinEnt.ns:DateRange.ns:PackageEndDate);
+				
+			END FOR;
+			
+		END FOR;	
+		-- End for Entertainament Section.
+		
+	-- End of OnboardActivitiesInfo Section
+		
+		FOR rTwInfo AS rLdBkngRes.ResShell.TwInfo.Booking[] DO
+			
+			CREATE LASTCHILD OF rOutResp.TravelWithInfo AS TempRef IDENTITY Booking;
+			SET TempRef.TwID = rTwInfo.TwID ;
+			SET TempRef.TwType = rTwInfo.TwType ;
+			SET TempRef.ResID = rTwInfo.ResID ;
+			SET TempRef.TimeRange = rTwInfo.TimeRange.From; 
+		
+		END FOR;	
+		
+	--	DECLARE MotorCoachInfo ROW;
+		-- ShorexInfo Scope Starts
+		SET rEnv.MotorCoachInfo[] = SELECT A FROM rIn.ns:ResTransfers.ns:Transfers[] AS A WHERE A.ns:Transfer.ns:Code = 'BUS';
+		
+		CREATE FIELD  rOutResp.MotorCoachInfo;
+		FOR rInMcInf AS rEnv.MotorCoachInfo[] DO
+			DECLARE guestRef REFERENCE TO rInMcInf.*:GuestRef;
+			DECLARE transRef REFERENCE TO rInMcInf.*:Transfer;
+			WHILE LASTMOVE(guestRef) DO			
+				CREATE LASTCHILD OF rOutResp.MotorCoachInfo AS TempRef IDENTITY Transfer;
+				SET TempRef.GuestRefNumber = FIELDVALUE(guestRef);--rInMcInf.*:GuestRef;
+				SET TempRef.Type  =  transRef.ns:Code;
+				SET TempRef.Location.From.Type  =  transRef.*:Location.*:From.*:Type; 
+				SET TempRef.Location.From.Code  =  transRef.*:Location.*:From.*:Code;
+				SET TempRef.Location.From.Desc  =  transRef.*:Location.*:From.*:Desc;
+				SET TempRef.Location.From.DateTime =transRef.*:Location.*:From.*:DateTime ;--CAST(rInMcInf.*:Transfer.*:Location.*:From.*:DateTime AS TIMESTAMP FORMAT 'IU');
+				SET TempRef.Location.To.Type  =  transRef.ns:Location.ns:To.*:Type;
+				SET TempRef.Location.To.Code  =  transRef.ns:Location.ns:To.*:Code;
+				SET TempRef.Location.To.Desc  =  transRef.ns:Location.ns:To.*:Desc;
+				SET TempRef.Location.To.DateTime  = transRef.ns:Location.ns:To.*:DateTime; --CAST(rInMcInf.ns:Transfer.ns:Location.ns:To.*:DateTime AS TIMESTAMP FORMAT 'IU');
+				MOVE guestRef NEXTSIBLING REPEAT NAME;
+				MOVE transRef NEXTSIBLING REPEAT NAME;
+			END WHILE;
+		END FOR;	
+		
+		-- Create LandINfo Section
+		CREATE FIELD  rOutResp.LandInfo;
+		FOR rInLandInf AS rLdBkngRes.ResShell.ResRoomRequests.ResRoomRequest[] DO
+			
+		--	DECLARE CurrentPackage ROW;
+			
+			SET rEnv.CurrentPackage[] = SELECT A FROM rLdBkngRes.ResShell.ResPackages.ResPackage[] AS A 
+										WHERE A.PackageID = rInLandInf.Requests.HotelRequest.PackageID;
+			
+			DECLARE cGuestRefs CHARACTER TRIM(rEnv.CurrentPackage.GuestRefs);
+			
+			--This Proc Splits the GuestReference from GuestRefs
+			CALL com.ncl.ais.utils.SplitGuestRef(cGuestRefs,rEnv);
+			
+			FOR rSplit AS rEnv.Split.VALUE[] DO
+				
+			 	CREATE LASTCHILD OF rOutResp AS TempRef IDENTITY LandPackage;
+				SET TempRef.GuestRefNumber = FIELDVALUE(rSplit);  
+				SET TempRef.ID =  rInLandInf.Requests.HotelRequest.PackageID;
+				SET TempRef.Type = rEnv.CurrentPackage.PackageType;
+				SET TempRef.Name = rInLandInf.HotelCode;
+				IF rEnv.CurrentPackage.PackageClass = 'VOYAGE' THEN 
+				
+					SET TempRef.Description = THE( select ITEM A.HOTEL_NAME from Database.HOTEL AS A where A.HOTEL_CODE=rInLandInf.HotelCode); 
+				ELSE
+						
+					SET TempRef.Description = rEnv.CurrentPackage.Notes;
+				END IF;
+				
+				SET TempRef.DateTimeFrom = rInLandInf.Requests.HotelRequest.Stay.From;
+				SET TempRef.DateTimeTo = rInLandInf.Requests.HotelRequest.Stay.To;
+				
+			END FOR;
+		END FOR;
+		
+		-- Attach AirInfo 
+		SET rOutResp.AirInfo = rEnv.AirInfo;
+
+		--SpecialServiceRequestInfo Scope Start Here-JIRA-SEOAPS-3563 
+		
+ 
+		   CREATE FIELD rOutResp.SpecialServiceRequestInfo; 
+	       FOR rSpReq AS rLdBkngRes.ResShell.SpecialRequests.SpRequest[] DO  
+   
+			FOR rSplSerItem AS rSpReq.Items.Item[] DO   
+					CREATE LASTCHILD OF rOutResp.SpecialServiceRequestInfo AS rSpclSer IDENTITY SpecialService;
+					  SET rSpclSer.OrderID = rSpReq.OrderID;  
+					  SET rSpclSer.OrderDate = rSpReq.OrderDate;  
+					  SET rSpclSer.OrderStatus = rSpReq.OrderStatus;     
+					  SET rSpclSer.ID = rSplSerItem.ItemID;  
+					  SET rSpclSer.Type = rSplSerItem.SpReqType;  
+ 
+					  IF rSplSerItem.GuestSeqN > 0 THEN 
+						SET rSpclSer.GuestRefNumber = rSplSerItem.GuestSeqN;
+					ELSE
+						SET rSpclSer.GuestRefNumber = '1';	 
+					END IF;
+					 DECLARE cExtcLookupCode CHARACTER;  
+					DECLARE inCode CHARACTER XrefSubExternalCodeUsingSWCode(rEnv.BkingChnlCompCd,'SpecialRequests',rSplSerItem.SpReqCode,rEnv,rOut); 
+					  IF inCode IS NOT NULL THEN
+				  	    SET rSpclSer.Code = inCode;   
+					  END IF;
+					  SET rSpclSer.Description = rSplSerItem.SpReqName; 
+					  SET rSpclSer.RequestCode = rSplSerItem.SpReqCode;
+					  SET rSpclSer.GuestFullName = rSplSerItem.GuestFullName; 
+					  SET rSpclSer.Qty = rSplSerItem.Quantity;
+					  SET rSpclSer.DeliveryCode = rSplSerItem.Delivery.PlaceCode; 
+					  SET rSpclSer.DeliveryTime = rSplSerItem.Delivery.DateTime; 
+					  SET rSpclSer.Comments = rSplSerItem.Comments;   
+					       
+			END FOR;
+			
+	       END FOR;   
+				
+		
+			
+		--Add for ResAirActuals and ResAirPoints 
+		SET rOutResp.AirPoints = rLdBkngRes.*:ResShell.*:ResAirPoints;
+		SET rOutResp.AirActuals = rLdBkngRes.*:ResShell.*:ResAirActuals;
+		
+		-- Create AddOns and OptimalComponent Section
+		SET rEnv.AddOns[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResComponents.*:ResComponent[] AS A	WHERE A.Type ='AMENITY';
+		
+		FOR rInAddOns AS rEnv.AddOns[] DO
+			
+			DECLARE gCnt CHAR TRIM(rInAddOns.GuestRefs)||' ';
+			
+			WHILE COALESCE(gCnt,'')<>'' DO
+				CREATE LASTCHILD OF rOutResp.AddOns AS TempRef IDENTITY AddOn;
+				
+				SET TempRef.GuestRefNumber = NULLIF(LTRIM(SUBSTRING(gCnt BEFORE ' ')),'');
+				SET TempRef.Code = rInAddOns.Code;
+				SET TempRef.Description = rInAddOns.Description;	
+								
+				SET gCnt=NULLIF(LTRIM(SUBSTRING(gCnt AFTER  ' ')),'');
+			END WHILE;
+			
+		END FOR;	
+		
+		DECLARE OptComponents ROW;
+		SET rEnv.OptComponents[] = SELECT A FROM rLdBkngRes.*:ResShell.*:ResComponents.*:ResComponent[] AS A WHERE A.Type ='HOTEL';
+		
+		DECLARE rInOptComp REFERENCE TO rEnv.OptComponents;
+			
+		CREATE LASTCHILD OF rOutResp.OptionalComponents AS TempRef IDENTITY Component;
+		SET TempRef.GuestRefNumber = rInOptComp.GuestRefs;
+		SET TempRef.Type = rInOptComp.Type;
+		SET TempRef.Code = rInOptComp.Code;
+		SET TempRef.SubCode = rInOptComp.SubCode1;
+		SET TempRef.SubCode1 = rInOptComp.SubCode2;
+		SET TempRef.Description = rInOptComp.Description;
+		SET TempRef.LocationFrom = rInOptComp.Location.From.Code;
+		SET TempRef.LocationTo = rInOptComp.Location.To.Code;
+	
+	--	END FOR;	
+		
+		DECLARE ApisCount,EdoAvailCnt INTEGER;
+		
+		SET ApisCount =  THE(SELECT count(1) FROM Database.SEA.APIS_INFO AS A WHERE A.RES_ID = rOutResp.ResSummary.ID AND A.IS_COMPLETED ='N');
+		
+		IF ApisCount > 0 THEN
+			
+			SET rOutResp.ApisCompletedInd = 'true';
+			
+		ELSE
+			
+			SET rOutResp.ApisCompletedInd = 'false'; 
+			
+		END IF;
+		
+		SET EdoAvailCnt = THE(SELECT  count(1) FROM Database.gtb_request AS A  where A.res_id = rOutResp.ResSummary.ID 
+																					AND A.request_status IN ('READY','PRINTED','REPRINT'));
+		IF EdoAvailCnt > 0 THEN
+			
+			SET rOutResp.EdocAvailInd = 'true';
+			
+		ELSE
+			
+			SET rOutResp.EdocAvailInd = 'false';
+			
+		END IF;
+		
+		--rEnv.TravelDocumentInfo
+		SET rOutResp.TravelDocumentInfo = rEnv.TravelDocumentInfo;
+		
+		
+		-- Mapping to Output Root
+		SET OutputRoot = NULL;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveBookingRS;
+			
+		-- This Proc creates/copy the attributes for Root Element
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		SET rOut = rEnv.ns:NCL_CruiseRetrieveBookingRS;		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF (LogPayLoad) THEN
+				-- Add response msg to log event
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'RetrieveBooking Response', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveBooking_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;

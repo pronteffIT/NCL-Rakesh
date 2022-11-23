@@ -1,0 +1,190 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CachePortInfoMap EXTERNAL CHARACTER 'PORT_INFO.LUT';
+DECLARE AgencyMap EXTERNAL CHARACTER ''; 
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_LoadRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut, rOutResp REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrievePackagesRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												'','',rEnv);
+		
+		IF (LogPayLoad) THEN										
+			-- Adding PayLoad Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Retrive Packages Request', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[]) THEN
+			SET rEnv.Temp.Protocol = 'CALLABLE';
+		ELSE
+			SET rEnv.Temp.Protocol = 'MQ';
+		END IF;	
+		--Checking the Endpoint
+		IF NOT com.ncl.ais.utils.IsEmpty(InputLocalEnvironment.CallableFlow.EndPoint) THEN 
+			SET rEnv.Temp.Endpoint = COALESCE(InputLocalEnvironment.CallableFlow.EndPoint,'');
+		ELSE 
+			SET rEnv.Temp.Endpoint = 'N';
+		END IF;
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRetrievePackagesRQ = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.NCL_CruiseRetrievePackagesRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+		SET rEnv.ReservationID = FIELDVALUE(rIn.*:ReservationID.(XMLNSC.Attribute)ID);
+		SET rEnv.BkingChnlCompCd = FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+
+		IF EXISTS(rIn.*:SessionId.*:SessionToken[]) THEN
+			SET rEnv.SessionGUID = rIn.*:SessionId.*:SessionToken;
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rIn.*:SessionId.*:SessionToken,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rIn.*:SessionId.*:SessionToken;
+			--SET rOut.ResShellOptions.IncludeElements = 'ResHeader,ResGuests,ResPackages,ResTransportations,ResInvoice,ResComponents,ResShipRequests';
+			SET rOut.ResID = FIELDVALUE(rIn.*:ReservationID.(XMLNSC.Attribute)ID);
+			-- Load Booking
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			
+			DECLARE cRequestorId CHARACTER COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, '0');
+			DECLARE cPCC CHARACTER COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '');
+			DECLARE cSystemName CHARACTER COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'SABRE');
+			
+			CALL com.ncl.ais.utils.LookupAgencyInfo(cRequestorId , cPCC, cSystemName, AgencyMap, XC10ConnectionConfig, rEnv);
+			
+			IF EXISTS(rEnv.Temp.AgencyInfoError[]) THEN
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;				
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrievePackagesRS;
+				SET rOutResp.ns:Warnings.ns:Warning = rEnv.Temp.AgencyInfoError.*:agencyNotFound;
+				
+				RETURN TRUE;	
+			END IF;
+			
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.CallerInfo.UserInfo.Internal = '';
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+			SET rOut.ResID = FIELDVALUE(rIn.*:ReservationID.(XMLNSC.Attribute)ID);
+			-- Load Booking
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_VerifyAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		DECLARE rVAIn,rOut REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'CallableRes' ;
+		SET rEnv.CallableRes = InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		
+		IF EXISTS(rVAIn.*:sessionGUID[] ) THEN
+			-- Success
+			SET rEnv.SessionGUID = rVAIn.*:sessionGUID;
+			SET rEnv.agencyID = rVAIn.*:agencyID;
+			SET rEnv.agencyCurrency = rVAIn.*:agencyCurrency;
+			IF  (rEnv.Temp.Endpoint = 'N')THEN
+				SET rEnv.Temp.Endpoint =  COALESCE(rVAIn.endpoint, '');
+			END IF;	
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rOut;
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+			SET rOut.MsgHeader.CallerInfo.ValidateMode = 'Y';
+			--SET rOut.ResShellOptions.IncludeElements = 'ResHeader,ResGuests,ResPackages,ResTransportations,ResInvoice,ResComponents,ResShipRequests';
+			SET rOut.ResID =  rEnv.ReservationID ;
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling LoadBooking service ...', rEnv);
+			-- Load Booking
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CASE
+
+			WHEN EXISTS(rVAIn.*:loginError[]) THEN
+				-- If error exist from the callable invoke then send to Generic warning
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrievePackagesRS;
+				SET rOutResp.ns:Warnings.ns:Warning = rVAIn.*:loginError;
+
+			WHEN EXISTS(rVAIn.*:runtimeError[] ) THEN
+
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrievePackagesRS;
+				SET rOutResp.ns:Errors.ns:Error = rVAIn.*:runtimeError;
+
+			WHEN EXISTS(rVAIn.*:agencyNotFound[] ) THEN
+
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrievePackagesRS;
+				SET rOutResp.ns:Warnings.ns:Warning = rVAIn.*:agencyNotFound;		
+					
+			ELSE -- WHEN Scope
+				IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+					DECLARE rExcp REFERENCE TO InputExceptionList;
+					CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+				END IF;
+				DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, '');
+
+				SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '9999';
+				SET rOutResp.ns:Errors.ns:Errorr.(XMLNSC.Attribute)ShortText = RIGHT(cErrorText, 64);
+				SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+				SET rOutResp.ns:Errors.ns:Error = cErrorText;
+
+			END CASE; --WHEN Scope Ends Here
+			RETURN TRUE;
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		--SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		--SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		--SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = Environment.Variables.SessionGUID;
+		
+		--RETURN TRUE;
+		RETURN FALSE;
+	END;
+END MODULE;

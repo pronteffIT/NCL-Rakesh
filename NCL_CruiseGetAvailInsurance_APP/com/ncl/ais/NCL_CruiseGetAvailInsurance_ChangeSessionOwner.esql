@@ -1,0 +1,66 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailInsurance_ChangeSessionOwner
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rInLA REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		
+		
+        SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET rEnv.AgencyId = InputRoot.XMLNSC.VerifyAgencyResponse.agencyID;
+		SET rEnv.AgencyOfficeCode = InputRoot.XMLNSC.VerifyAgencyResponse.officeCode;
+		SET rEnv.AgencyCurrency = InputRoot.XMLNSC.VerifyAgencyResponse.agencyCurrency;
+		SET rEnv.sessionGUID = InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID;
+		SET rEnv.Endpoint = COALESCE(rInLA.*:endpoint,'');
+		
+		--Checking Error
+		IF EXISTS(rInLA.loginError.(XMLNSC.Attribute)Code[])OR EXISTS(rInLA.runtimeError.(XMLNSC.Attribute)Code[] ) THEN
+			IF EXISTS(rInLA.loginError[]) THEN
+				SET OutputRoot.XMLNSC.Body.Errors.Error = rInLA.loginError ;
+			ELSE
+				SET OutputRoot.XMLNSC.Body.Errors.Error = rInLA.runtimeError;
+			END IF;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.Temp.Channel;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetAvailInsuranceRS';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			IF (rEnv.AgencyId <>'') THEN
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				DECLARE rImpersonateIn REFERENCE TO OutputRoot.XMLNSC.Impersonate_IN;
+				CREATE FIELD OutputRoot.XMLNSC.Impersonate_IN AS rImpersonateIn;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.*:sessionGUID,rImpersonateIn);
+				DECLARE ccQuery CHARACTER;
+				--SET ccQuery = 'select AGENT_ID from NCL_CRUISE_FIRST_CPN_CFG where office_cd=? and currency_cd=? and rownum =1';
+				--SET rEnv.Temp.AgentCfg[]=PASSTHRU(ccQuery,rEnv.AgencyOfficeCode,rEnv.AgencyCurrency);
+				SET ccQuery = 'select a.AGENT_ID as AGENT_ID from agent a, agency_contact ac where a.agent_id = ac.agent_id and ac.agency_id = ? and ac.DATE_FROM < sysdate and ac.DATE_TO > sysdate and rownum =1';
+				SET rEnv.Temp.AgentCfg[]=PASSTHRU(ccQuery,rEnv.AgencyId);
+				IF NOT EXISTS(rEnv.Temp.AgentCfg[])
+				THEN
+					CALL BUILD_VALIDATION_ERROR('Invalid office code or currency for get avail insurance',rEnv);
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+				END IF;
+				SET rImpersonateIn.TravelAgent.AgentID = rEnv.Temp.AgentCfg.AGENT_ID;		
+				
+				IF  COALESCE(rImpersonateIn.TravelAgent.AgentID,0)= 0 THEN
+					CALL BUILD_VALIDATION_ERROR('Agent not configured office and currency '||rEnv.Temp.Currency|| ' : '|| rEnv.AgencyOfficeCode,rEnv);
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+				END IF;
+			END IF;
+		END IF;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE BUILD_VALIDATION_ERROR(IN errorMessage CHARACTER,IN rEnv REFERENCE)
+	BEGIN
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorMessage = errorMessage;
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorCode='25074';
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorSeverity='E';
+		SET OutputRoot.XMLNSC.Body.Code = rEnv.Temp.Channel;
+		SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetAvailInsuranceRQ';
+	END;
+END MODULE;

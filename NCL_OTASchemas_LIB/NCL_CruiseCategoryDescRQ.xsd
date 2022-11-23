@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="2.1">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/OTA_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseCategoryDescRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Category Description Request message requests Category description for all the categories available for a given sailing. Optional request information can include:
+- Ship Code
+- Sailing Depature Dates and Duration
+- Fare Code
+- Category Code
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="SailingInfo" type="SailingCategoryInfoType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Contains information related to the selected sailing. Typically the selected sailing is one of the sailings returned in the previous sailing availability response. In this context,it is used to request a the list of Categories,its location in the ship and its full name (description).If a category code is passed in the request,it returns only the description of the Category that is passed in the request</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="SelectedFare" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Specifies the fare code and the group code if any. Fare codes are specific to cruise lines.The fare code is optional and if omitted the system will use the default fare code(BESTFARE)</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:attributeGroup ref="FareGroup"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="AvailabilityMode" type="xs:string" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Specifies what Categories are to be returned. Possible values are "OK","GTY","WTL" and "ALL"
+						OK - return only categories where cabins are available, 
+						GTY- return categories where cabins or guarantees are available, 
+						WTL - same as GTY plus categories which have open waitlist, 
+						ALL - returns all categories. (defaulted to ALL if omitted)
+						</xs:documentation>
+					</xs:annotation>
+				</xs:element>				
+				<xs:element ref="TPA_Extensions" minOccurs="0"/>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

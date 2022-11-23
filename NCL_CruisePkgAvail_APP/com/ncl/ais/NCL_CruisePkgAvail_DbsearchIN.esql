@@ -1,0 +1,81 @@
+
+BROKER SCHEMA com.ncl.ais
+DECLARE AGECODE SHARED ROW;
+DECLARE STSCODE SHARED ROW;
+DECLARE SHIP SHARED ROW;
+
+CREATE COMPUTE MODULE NCL_CruisePkgAvail_DbsearchIN
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE rUpdtBkg, rResGuest, rResPkg, rResPromo, rTemp REFERENCE TO OutputRoot;
+		SET rEnv.Temp.Message.VerifyAgencyResponse = rIn.VerifyAgencyResponse;
+		SET Environment.Variables.Temp.Message.VerifyAgencyResponse=InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE cnt, totGuest INTEGER 0;
+		DECLARE age, code, guestRef CHARACTER '';
+		DECLARE index INTEGER 1;
+		-- if verify agency is being invoked
+		IF LASTMOVE(rIn) THEN
+			IF EXISTS(rIn.agencyNotFound[]) OR EXISTS(rIn.loginError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePkgAvailRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+				IF EXISTS(rIn.agencyNotFound[]) THEN
+					SET rOut.ns:Warnings.ns:Warning = rIn.agencyNotFound;
+				ELSE
+					SET rOut.ns:Warnings.ns:Warning = rIn.loginError;
+				END IF;
+
+				RETURN TRUE;
+			ELSEIF EXISTS(rIn.runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePkgAvailRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+				SET rOut.ns:Errors.ns:Error = rIn.runtimeError;
+
+				RETURN TRUE;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Session established ...', rEnv);
+
+				SET rEnv.Temp.SessionId = rIn.sessionGUID;
+				SET rEnv.endPoint = rIn.endpoint;
+
+			END IF;
+		END IF;
+		-- create update booking request
+		DECLARE rInReq REFERENCE TO rEnv.Temp.Message.NCL_CruisePkgAvailRQ;
+
+		DECLARE rOutResp REFERENCE to Environment.Variables;
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY DbSearch_IN;
+	
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rOutResp);
+		SET rOutResp.MsgHeader.CallerInfo.UserInfo.Internal='';
+
+
+		DECLARE pkid CHARACTER rInReq.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID;
+		SET rOutResp.Packages.PackageID=pkid;
+		--label 
+
+		PROPAGATE TO LABEL 'InvokeDBSearch';
+		SET OutputRoot.XMLNSC=NULL;
+
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+	END;
+
+
+END MODULE;

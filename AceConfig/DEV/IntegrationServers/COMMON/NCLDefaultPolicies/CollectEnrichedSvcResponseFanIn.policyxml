@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policies>
+  <policy policyType="UserDefined" policyName="CollectEnrichedSvcResponseFanIn" policyTemplate="UserDefined">
+    <ODMCompleteRuleURL>https://zrestest:4904/DecisionService/rest/RV_ThorRuleApp/1.0/RV_ThorCompoundRuleset</ODMCompleteRuleURL>
+	<ODM_KeyAlias>dev-iibclaims.humana.com</ODM_KeyAlias>
+  </policy>
+</policies>

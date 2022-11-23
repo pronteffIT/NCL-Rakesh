@@ -1,0 +1,469 @@
+
+
+BROKER SCHEMA com.ncl.ais
+
+
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_PAY_FOR_AMENITIES_RESP';
+
+DECLARE ns1 NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE vagncy NAMESPACE 'http://NCL_ValidateBookingLib';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE ExtCodeShared SHARED ROW;
+
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruisePayForAmenities
+* MODULE NAME : Login
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruisePayForAmenities_LogIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruisePayForAmenitiesRQ;
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '',
+												'',
+												'',
+											 	rEnv);
+--		add Payload							 	
+	    
+	    IF (LogPayLoad) THEN
+	    	CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'LogReq';
+	    	SET rEnv.LogReq = InputRoot.XMLNSC;
+	    	DECLARE rInPymntOptions REFERENCE TO rEnv.LogReq.*:NCL_CruisePayForAmenitiesRQ.*:AmenityOrderPaymentDetails.*:PaymentInfo.*:PaymentOptions;
+		
+			FOR pymntOptions AS rInPymntOptions.*:PaymentOption[] DO
+				IF FIELDVALUE(pymntOptions.*:PaymentCard.(XMLNSC.Attribute)CardNumber) IS NOT NULL THEN
+					SET pymntOptions.*:PaymentCard.(XMLNSC.Attribute)CardNumber = 'xxxxxxxxxxxxxxxx';
+				END IF;
+			END FOR;
+	    	DECLARE bPayload BLOB ASBITSTREAM(rEnv.LogReq CCSID 1208 ENCODING 546);	
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'PayforAmenities request message', 'xml', rEnv);
+	    END IF;
+	    
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		
+		--Preparelogin Parameter--
+		SET rOut.vagncy:VerifyAgencyRequest.source.vagncy:BookingChannel.vagncy:CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rOut.vagncy:VerifyAgencyRequest.source.vagncy:RequestorID.ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rOut.vagncy:VerifyAgencyRequest.source.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruisePayForAminities
+* MODULE NAME : FilterAndRoute
+* Description : This module is used to filter the response and route the message to appropriate path.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruisePayForAmenities_Filter
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+				
+			DECLARE rEnv REFERENCE TO Environment.Variables;
+			CREATE FIELD Environment.Variables AS rEnv;
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			
+			-- copy the entire initial request
+			SET rEnv.XMLNSC = InputRoot.XMLNSC;
+			
+			SET rEnv.MQMD = InputRoot.MQMD;
+			IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+				SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+			END IF;
+			SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+			SET rEnv.MQMD.Format = MQFMT_STRING;
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			
+			-- Logging framework
+			DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+	
+			
+			DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruisePayForAmenitiesRQ;
+			-- add metadata to log event
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+			CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+													COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+													 '',
+													'',
+													'',
+												 	rEnv);
+	--		add Payload							 	
+		    
+		    IF (LogPayLoad) THEN
+		    	CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'LogReq';
+		    	SET rEnv.LogReq = InputRoot.XMLNSC;
+		    	DECLARE rInPymntOptions REFERENCE TO rEnv.LogReq.*:NCL_CruisePayForAmenitiesRQ.*:AmenityOrderPaymentDetails.*:PaymentInfo.*:PaymentOptions;
+			
+				FOR pymntOptions AS rInPymntOptions.*:PaymentOption[] DO
+					IF FIELDVALUE(pymntOptions.*:PaymentCard.(XMLNSC.Attribute)CardNumber) IS NOT NULL THEN
+						SET pymntOptions.*:PaymentCard.(XMLNSC.Attribute)CardNumber = 'xxxxxxxxxxxxxxxx';
+					END IF;
+				END FOR;
+		    	DECLARE bPayload BLOB ASBITSTREAM(rEnv.LogReq CCSID 1208 ENCODING 546);	
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'PayforAmenities request message', 'xml', rEnv);
+		    END IF;
+		    
+			
+			DECLARE ref REFERENCE TO rEnv.XMLNSC.*:NCL_CruisePayForAmenitiesRQ;
+			---Refrence for manageAccTrans
+			MOVE rIn TO ref.*:AmenityOrderPaymentDetails.*:PaymentInfo.*:PaymentOptions;
+			DECLARE rAccTrans, oHeadRef REFERENCE TO OutputRoot;
+	
+			DECLARE querry,systemname,codeType,code CHARACTER '';
+				
+			SET systemname = COALESCE(ref.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC');
+		
+			--ManageACCTrans
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke ManageAccTrans...', rEnv);
+			
+			-- to handle special chars
+			SET OutputRoot.Properties.CodedCharSetId = 1208;
+			
+			CREATE FIELD OutputRoot.XMLNSC.ManageAccTrans_IN.MsgHeader AS oHeadRef;
+			SET oHeadRef.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			CREATE FIELD oHeadRef.CallerInfo.UserInfo.Internal;
+			SET oHeadRef.CallerInfo.ExtSystemInfo.SourceCode =  systemname;
+		    
+			CREATE FIELD OutputRoot.XMLNSC.ManageAccTrans_IN.Create.Payments AS rAccTrans;
+			SET rAccTrans.Amount = CAST(rIn.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount AS DECIMAL);
+			SET rAccTrans.Currency = rIn.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)CurrencyCode ;
+			SET rAccTrans.Payment.SrcEntity.ClientID = CAST(ref.*:AmenityOrderPaymentDetails.*:SrcEntity.(XMLNSC.Attribute)ID AS INTEGER);
+			SET rAccTrans.Payment.DestEntity.AmenityID = CAST(ref.*:AmenityOrderPaymentDetails.*:DestEntity.(XMLNSC.Attribute)ID AS INTEGER);
+
+			SET rAccTrans.Payment.Amount= CAST(rIn.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount AS DECIMAL);
+			SET rAccTrans.Payment.Currency = rIn.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)CurrencyCode;
+
+			DECLARE Index INTEGER 0;
+			IF rIn.*:PaymentOption.*:PaymentCard.(XMLNSC.Attribute)CardNumber IS NOT NULL 
+				OR EXISTS(rIn.*:PaymentOption.*:PaymentCard.*:TokenInfo.*:Token[]) THEN
+				SET rAccTrans.Payment.FormOfTrans='CC';
+				SET rAccTrans.Payment.TransFormInfo.CCData.CCNumber = CAST(rIn.*:PaymentOption.*:PaymentCard.(XMLNSC.Attribute)CardNumber AS INTEGER);
+				--building parameters for db Querry
+				SET code = rIn.*:PaymentOption.*:PaymentCard.(XMLNSC.Attribute)CardCode;
+				 
+				SET codeType = 'CreditCard';
+				
+				----select querry for CC Type
+				SET rAccTrans.Payment.TransFormInfo.CCData.CCType = getSWCode(systemname,code);
+				IF 	COALESCE(rAccTrans.Payment.TransFormInfo.CCData.CCType,'')='' THEN
+						--SET THE default channel as NCLWEBC if external mapping is not present for other channels
+					SET rAccTrans.Payment.TransFormInfo.CCData.CCType = getSWCode('NCLWEBC',code);
+				END IF;				
+				--Cvv code
+				SET rAccTrans.Payment.TransFormInfo.CCData.ControlNumber = FIELDVALUE(rIn.*:PaymentOption.*:PaymentCard.(XMLNSC.Attribute)SeriesCode);
+				IF EXISTS(rIn.*:PaymentOption.*:PaymentCard.*:TokenInfo.*:Token[]) THEN
+					SET rAccTrans.Payment.TransFormInfo.CCData.CCTokenInfo.CCTokenType = FIELDVALUE(rIn.*:PaymentOption.*:PaymentCard.*:TokenInfo.*:TokenType);
+					SET rAccTrans.Payment.TransFormInfo.CCData.CCTokenInfo.CCToken = FIELDVALUE(rIn.*:PaymentOption.*:PaymentCard.*:TokenInfo.*:Token);
+					SET rAccTrans.Payment.TransFormInfo.CCData.CCTokenInfo.CCNumberMasked = FIELDVALUE(rIn.*:PaymentOption.*:PaymentCard.*:TokenInfo.*:CardNumberMasked);
+				END IF;	
+				
+				SET rAccTrans.Payment.TransFormInfo.CCData.ExpDate =
+				CAST(CAST('01'||rIn.*:PaymentOption.*:PaymentCard.(XMLNSC.Attribute)ExpireDate AS DATE FORMAT 'ddMMyy') AS CHARACTER FORMAT 'yyyy-MM');
+				SET rAccTrans.Payment.TransFormInfo.CCData.NameOnCard =rIn.*:PaymentOption.*:PaymentCard.*:CardHolderName;
+				
+				CALL UpdateBillingAddress(	rIn.*:PaymentOption,rAccTrans.Payment);
+				CALL ForterAddionalData(ref,Index,rAccTrans.Payment);				
+			    CALL CreateThreeDSData(ref,Index,rAccTrans.Payment);
+			    
+			ELSE
+				SET rAccTrans.Payment.FormOfTrans='CHK';
+				SET rAccTrans.Payment.TransFormInfo.CheckNumber =rIn.*:PaymentOption.(XMLNSC.Attribute)ReferenceNumber;
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+	END;
+
+CREATE PROCEDURE getSWCode(IN systemName CHARACTER,IN cardCode CHARACTER) RETURNS CHARACTER 
+BEGIN 
+	DECLARE ccQuery,ExternalCd CHARACTER; 
+	SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+	IF com.ncl.ais.utils.IsEmpty(ExternalCd) THEN 
+		SET ccQuery = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+									DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+									INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+									INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+									TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=''CreditCard'' AND DETAILS.EXTERNAL_CODE = ?'; 
+	
+		SET ExtCodeShared.Rows[] = PASSTHRU(ccQuery,systemName,cardCode); 
+		SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+	END IF; 
+RETURN ExternalCd; 
+END;
+	
+CREATE PROCEDURE UpdateBillingAddress (IN pymntOptions REFERENCE,INOUT rOutPayment REFERENCE )
+BEGIN
+		DECLARE rAddr REFERENCE TO  pymntOptions.*:PaymentCard.*:Address;
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line1 = rAddr.*:AddressLine[1];
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line2 = rAddr.*:AddressLine[2];
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line3 = rAddr.*:AddressLine[3];
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line4 = rAddr.*:AddressLine[4]; 
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.City = rAddr.*:CityName;
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.State = FIELDVALUE(rAddr.*:StateProv.(XMLNSC.Attribute)StateCode);
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.Country = FIELDVALUE(rAddr.*:CountryName.(XMLNSC.Attribute)Code);
+		SET rOutPayment.TransFormInfo.CCData.BillingAddress.ZIP = rAddr.*:PostalCode;
+END;
+
+CREATE PROCEDURE CreateThreeDSData (IN rIn REFERENCE,IN Index INTEGER,INOUT rOutPayment REFERENCE )
+BEGIN
+	    IF COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSversion';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSversion,'');
+		
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSdirectoryServerTransID';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSdirectoryServerTransID,'');
+		
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSauthVerificationValue';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSauthVerificationValue,'');
+	
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECIFlag';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,'');
+			
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECXid';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECXid,''); 			
+	    END IF; 
+END;	
+CREATE PROCEDURE ForterAddionalData (IN rIn REFERENCE,INOUT Index INTEGER,INOUT rOutPayment REFERENCE )
+	BEGIN
+		IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'FraudTrackingOrderId';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'');
+		END IF;
+		IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'DeviceID';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'');
+		END IF;	
+END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruisePayForAminities
+* MODULE NAME : FilterAndRoute
+* Description : This module is used to BuidResponse.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruisePayForAmenities_BuildResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE inref REFERENCE TO rEnv.XMLNSC.*:NCL_CruisePayForAmenitiesRQ;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruisePayForAmenitiesRQ.*:AmenityOrderPaymentDetails;
+		DECLARE ref2 REFERENCE TO InputRoot.XMLNSC.ManageAccTrans_OUT.Transactions.Transaction;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS;
+		DECLARE rOutref REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS.ns:AmenityOrderPaymentInfo;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET rEnv.Endpoint  = COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+		
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+
+		IF EXISTS(InputExceptionList.RecoverableException[])THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while manageAccTrans api', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(inref,rOut);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = '';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		ELSEIF LENGTH(InputRoot.XMLNSC.ManageAccTrans_OUT.Errors.Error.ErrorMessage)> 0 THEN
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.ManageAccTrans_OUT.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruisePayForAmenitiesRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePayForAmenitiesRS';
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS AS rOut;
+	        CALL com.ncl.ais.utils.CopyAttributes(inref,rOut);
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS.Success NAMESPACE ns NAME 'Success';
+			SET rOut.ns:AmenityOrderPaymentInfo.(XMLNSC.Attribute)ID = ref2.TransID;
+			SET rOut.ns:AmenityOrderPaymentInfo.(XMLNSC.Attribute)PaymentDate = CAST(CAST(ref2.Timestamp AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z');
+			SET rOut.ns:AmenityOrderPaymentInfo.ns:SrcEntity= rIn.*:SrcEntity;
+			SET rOut.ns:AmenityOrderPaymentInfo.ns:DestEntity.(XMLNSC.Attribute)DestType = rIn.*:DestEntity.(XMLNSC.Attribute)DestType;
+			SET rOut.ns:AmenityOrderPaymentInfo.ns:DestEntity.(XMLNSC.Attribute)ID = rIn.*:DestEntity.(XMLNSC.Attribute)ID;
+			--for each ManageAccTrans Transaction
+			FOR source AS InputRoot.XMLNSC.ManageAccTrans_OUT.Transactions.Transaction[] DO
+				CREATE LASTCHILD OF OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS.ns:AmenityOrderPaymentInfo AS rOutref NAMESPACE ns NAME 'AmenityPaymentInfo';
+				SET rOutref.FormOfPayment =source.FormOfTrans;
+				SET rOutref.Currency.(XMLNSC.Attribute)Amount = source.Amount;
+				SET rOutref.Currency.(XMLNSC.Attribute)CurrencyCode = source.Currency;
+				SET rOutref.Status =source.Status;
+				SET rOutref.Comments = source.Comments;
+				SET rOutref.TransType =source.Type;
+				SET rOutref.CCTransID =source.CCTransID;
+				SET rOutref.TransactionReferenceNumber = source.TransID;
+			END FOR;
+          ------add payload
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Pay For Amenities Response message', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+		END IF ;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruisePayForAminities
+* MODULE NAME : FilterAndRoute
+* Description : This module is used for Runtime Error
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruisePayForAmenities_Runtime_Error
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variable;
+		DECLARE rIn REFERENCE TO rEnv.context.transient.NCL_CruisePayForAmenitiesRQ.AmenityOrderPaymentDetails;
+		--DECLARE ref2 REFERENCE TO rEnv.body.ManageACCTrans_OUT.Transaction;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.body.NCL_CruisePayForAmenitiesRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePayForAmenitiesRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET rOut.Errors.Error.(XMLNSC.Attribute)Value =rIn.failInfo.faliureString;
+		SET rOut.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.Errors.Error.(XMLNSC.Attribute)ShortText='System error from back end. Please try again later';
+		SET rOut.Errors.Error.(XMLNSC.Attribute)Type = '3';
+		RETURN FALSE;
+	END;
+	
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruisePayForAminities
+* MODULE NAME : FilterAndRoute
+* Description : This module for logout
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruisePayForAmenities_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+			IF NOT EXISTS(Environment.Variables[]) THEN
+				CREATE FIELD Environment.Variables as rEnv;
+			END IF;
+			
+		IF FIELDVALUE(rEnv.SessionId) IS NOT NULL THEN
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionId;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruisePayForAmenities_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Endpoint;
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+

@@ -1,0 +1,105 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE UpdateTW_PrepareUpdateTWReq_Add
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+BEGIN
+	DECLARE rEnv REFERENCE TO Environment.Variables;
+	DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.*:NCL_CruiseCreateUpdateTravelWithRQ;
+	DECLARE rOut, rUpdateTWReq, refTwDetail,refTwHdr, refTwDtls, refTwDtl REFERENCE TO OutputRoot;
+	DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadTW_OUT;
+	DECLARE bFatalError BOOLEAN FALSE;
+	DECLARE rTWDetail REFERENCE TO rOrgMsg.*:TravelWithInfo.*:TWDetail;
+	DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+					 			
+	WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+					IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'			
+					THEN
+						SET bFatalError = TRUE;
+					END IF;	
+					MOVE rError NEXTSIBLING;
+	END WHILE;	
+	IF bFatalError = TRUE THEN
+				CALL CopyEntireMessage();		
+				PROPAGATE TO LABEL 'GENERIC_WARN';
+				RETURN FALSE;			
+	ELSEIF EXISTS(rIn.runtimeError[]) THEN	
+				CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpdateTravelWithRS AS rOut;		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+				SET rOut.*:Errors.*:Error = rIn.runtimeError;				
+				PROPAGATE TO LABEL 'GENERIC_WARN';
+				RETURN FALSE;			
+--	ELSEIF NOT EXISTS(rIn.*:TwShell.*:TwHeader[]) THEN
+--	 			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCreateUpdateTravelWithRS AS rOut;		
+--				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+--				SET rOut.*:Errors.*:Error = 'Booking information for TravelWith is Missing';				
+--				PROPAGATE TO LABEL 'GENERIC_WARN';
+--				RETURN FALSE;	
+	END IF;	
+			
+			-- set the endpoint of the VX server
+	SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+	CREATE FIELD OutputRoot.XMLNSC.UpdateTW_IN AS rUpdateTWReq;							
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rUpdateTWReq);			
+	
+	IF rIn.*:TwShell.*:TwHeader.*:TwID IS NOT NULL THEN
+			
+				SET rUpdateTWReq.TwShell.TwHeader = rIn.*:TwShell.*:TwHeader;
+				
+	ELSE
+				
+				SET rUpdateTWReq.TwShell.TwHeader.Type = rTWDetail.*:Type;
+				SET rUpdateTWReq.TwShell.TwHeader.Comments = rTWDetail.*:Comments;
+				
+	END IF;
+				
+	CREATE LASTCHILD OF rUpdateTWReq.TwShell as refTwDtls IDENTITY TwDetails;		
+
+	IF UPPER(rEnv.TwAction) = 'ADD' THEN
+						
+			IF rEnv.Temp.TWID <> '' THEN
+				SET refTwDtls = rIn.*:TwShell.*:TwDetails;
+			ELSE 
+				SET rEnv.Temp.PrimaryResInfo[] = SELECT C.*:ResID, C.*:IsMatched, C.*:Comments FROM rTWDetail.*:Bookings.*:TWResInfo[]
+											 AS C WHERE  C.(XMLNSC.Attribute)IsPrimary = 'true'; 
+			
+				CREATE LASTCHILD OF refTwDtls AS refTwDetail IDENTITY TwDetail;			
+				SET refTwDetail.ResID = rEnv.Temp.PrimaryResInfo.*:ResID;
+				SET refTwDetail.IsMatched = rEnv.Temp.PrimaryResInfo.*:IsMatched;
+				SET refTwDetail.Comments = rEnv.Temp.PrimaryResInfo.*:Comments;
+			END IF;
+			FOR rTWResInfo as rTWDetail.*:Bookings.*:TWResInfo[] DO	
+				IF rTWResInfo.(XMLNSC.Attribute)IsPrimary IS NULL OR FIELDVALUE(rTWResInfo.(XMLNSC.Attribute)IsPrimary) = 'false' THEN
+					CREATE LASTCHILD OF refTwDtls AS refTwDetail IDENTITY TwDetail;			
+					SET refTwDetail.ResID = rTWResInfo.*:ResID;
+					SET refTwDetail.IsMatched = rTWResInfo.*:IsMatched;
+					SET refTwDetail.Comments = rTWResInfo.*:Comments;
+				END IF;
+			END FOR;
+						
+	ELSEIF UPPER(rEnv.TwAction) = 'REMOVE' THEN	
+						
+			FOR rBooking AS rIn.*:TwShell.*:TwDetails.*:TwDetail[] DO			
+
+				SET rEnv.Temp.RemoveResInfo[] = SELECT C.*:ResID FROM rTWDetail.*:Bookings.*:TWResInfo[]
+											 AS C WHERE C.*:ResID = rBooking.*:ResID AND ( C.(XMLNSC.Attribute)IsPrimary IS NULL OR C.(XMLNSC.Attribute)IsPrimary = 'false'); 
+				
+				IF NOT EXISTS(rEnv.Temp.RemoveResInfo[] ) THEN
+					
+					CREATE LASTCHILD OF refTwDtls as refTwDtl IDENTITY TwDetail;	
+					SET refTwDtl.ResID = rBooking.*:ResID;	
+					SET refTwDtl.IsMatched = rBooking.*:IsMatched;
+					SET refTwDtl.Comments = rBooking.*:Comments;
+
+				END IF;
+				
+				SET rEnv.Temp.RemoveResInfo = NULL;
+			END FOR;						
+	END IF;
+	
+	RETURN TRUE;						
+END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

@@ -1,0 +1,200 @@
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_FARE_AVAIL_DESC_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvailDesc_StoreRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseFareAvailDescRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+	--	CALL com.ncl.iib.log.CreateMetaData('BookingChannel', COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''), 'Channel', rEnv);
+	--	CALL com.ncl.iib.log.CreateMetaData('EntityId', COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''), 'Requestor Id', rEnv);
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationId, ''),
+												'',
+												COALESCE(rIn.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID,''),
+											 	rEnv);
+		
+		IF (LogPayLoad) THEN
+			
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel,'Cruise Group Accounting Workup Request', 'xml', rEnv);
+			
+		END IF;	
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseFareAvailDescRQ = rIn;
+		-- GetFareCd here
+		DECLARE rFareCdOpt REFERENCE TO rIn.*:FareCodeOptions.*:FareCodeOption;
+		SET rEnv.FareCode = TRIM(FIELDVALUE(rFareCdOpt.(XMLNSC.Attribute)FareCode));
+		DECLARE SkipSearch BOOLEAN CAST(FIELDVALUE(rFareCdOpt.(XMLNSC.Attribute)skipAvailabilitysearch) AS BOOLEAN);
+
+		IF SkipSearch THEN
+			
+			IF LENGTH(rEnv.FareCode) = 0 THEN
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD ;
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailDescRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+				CREATE FIELD rOut.Success;
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '10019';
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Invalid FareCode';
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+				RETURN TRUE;
+			END IF;
+			
+			SET rEnv.isRQCollection = FALSE;
+			SET rEnv.isGrpFareCd = FALSE;
+			
+			-- Check for Group FareCode
+--			IF CAST(rEnv.FareCode AS INTEGER DEFAULT -1) <> -1 THEN
+--				SET rEnv.isGrpFareCd = TRUE;
+--			END IF;
+			
+			IF com.ncl.ais.utils.isNumeric(rEnv.FareCode) THEN
+				SET rEnv.isGrpFareCd = TRUE;
+			END IF;
+			
+			IF STARTSWITH(rEnv.FareCode, 'A') THEN
+				DECLARE TempFareCd CHARACTER SUBSTRING(rEnv.FareCode FROM 2 FOR LENGTH(rEnv.FareCode));
+				-- Check For FareCode is in RQCollection
+				IF com.ncl.ais.utils.isNumeric(TempFareCd) THEN
+					SET rEnv.FareCode = TempFareCd;
+					SET rEnv.isRQCollection = TRUE;
+				END IF;
+			END IF;
+			
+			-- Creating Message to Invoke CruiseRegistration Service
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRegistrationRQ AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+			SET rOut.ns:POS = rIn.*:POS;
+			-- Adding the Logging Event
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking CruiseRegistration Service', rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			--  skipAvailabilitysearch is FALSE
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailRQ AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+			SET rOut.ns:POS = rIn.*:POS;
+			SET rOut.ns:Guest = rIn.*:Guest;
+			SET rOut.ns:GuestCounts = rIn.*:GuestCounts;
+			SET rOut.ns:SailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID = rIn.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID;
+			SET rOut.ns:SailingInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorName = rIn.*:SailingInfo.*:SelectedSailing.*:CruiseLine.(XMLNSC.Attribute)VendorName;
+			-- Adding the Logging Event
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking FareAvail Service', rEnv);
+			--Propagate to FareAvail Service
+			PROPAGATE TO TERMINAL 'out2';
+		END IF;
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+	
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvailDesc_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		CALL CopyMessageHeaders();
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			
+			IF (LogPayLoad) THEN
+				--creating IIB Log Event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise FareAvail Desc Request', 'xml', rEnv);
+			END IF;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseFareAvailDescRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.InReq.*:NCL_CruiseFareAvailDescRQ[])
+			THEN
+			DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseFareAvailDescRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '14';
+
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+END MODULE;

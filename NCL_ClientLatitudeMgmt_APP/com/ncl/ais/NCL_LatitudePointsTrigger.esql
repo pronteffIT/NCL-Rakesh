@@ -1,0 +1,128 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_LAT_POINTS_TRG_RESP';
+--DECLARE LogPayLoad EXTERNAL BOOLEAN ;
+
+CREATE COMPUTE MODULE NCL_LatitudePointsTrigger_LatLog
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyEntireMessage();
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_LATITUDES_CLIENT_POINTS_TRG_REQ;
+		
+		DECLARE cRecordId, cErrorCode, cErrorMsg CHARACTER '';
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+				
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.SOURCE, ''), '', COALESCE(rIn.RES_ID, ''), COALESCE(rIn.CLEINT_ID, rIn.CLIENT_ID), '', rEnv);
+		
+		-- log payload
+		IF (LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Latitude trigger request message', 'xml', rEnv);
+		END IF;
+		
+		-- Log latitude request message
+		SET rEnv.Latlog.RecordId = uuid;
+		SET rEnv.Latlog.SourceCode = rIn.SOURCE;
+		SET rEnv.Latlog.RequestTs = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss');
+		SET rEnv.Latlog.RequestTypeCode = 'TRGREQ';
+		SET rEnv.Latlog.RequestMsg = CAST(ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546) AS CHARACTER CCSID 1208 ENCODING 546);
+
+		-- add log event
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Stored proc to insert trigger msg ...', rEnv);
+
+		-- execute stored procedure
+		CALL LatitudeInsertTrigger(COALESCE(rIn.CLEINT_ID, rIn.CLIENT_ID), COALESCE(rIn.SECONDARY_CLIENT_ID, ''), COALESCE(rIn.RES_ID, ''), COALESCE(rIn.ACTION, ''),
+								   COALESCE(rIn.SOURCE, ''), cErrorCode, cErrorMsg);
+		
+		-- latitude response message
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+		IF SQLCODE = 0 THEN		
+			SET OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_POINTS_TRG_RESP.SUCCESS = '';
+			SET OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_POINTS_TRG_RESP.ERROR_CODE = cErrorCode;
+		ELSE
+			SET OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_POINTS_TRG_RESP.SUCCESS = '';
+			SET OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_POINTS_TRG_RESP.ERROR_CODE = '12228';
+			SET OutputRoot.XMLNSC.NCL_LATITUDES_CLIENT_POINTS_TRG_RESP.ERROR_MSG = SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]');
+		END IF;
+
+		-- Log latitude response message
+		SET rEnv.Latlog.ResponseTs = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss');
+		SET rEnv.Latlog.ResponseMsg = CAST(ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546) AS CHARACTER CCSID 1208 ENCODING 546);
+
+		-- log payload
+		IF (LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Latitude trigger response message', 'xml', rEnv);
+		END IF;
+		
+		PROPAGATE;
+		
+		-- send latitude log message		
+		SET OutputRoot.XMLNSC.Latlog = rEnv.Latlog;
+		
+		PROPAGATE TO LABEL 'LATLOG';
+		
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE LatitudeInsertTrigger(IN ClientId CHARACTER, IN SecClientId CHARACTER, IN ResId CHARACTER, IN Action CHARACTER, IN Source CHARACTER, OUT ErrorCode CHARACTER, OUT ErrorMsg CHARACTER)
+	LANGUAGE DATABASE 
+	EXTERNAL NAME "NCLSEA.NCL_LAT_INSERT_TRG";
+	
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_LatitudePointsTrigger_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Latitude trigger request message', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

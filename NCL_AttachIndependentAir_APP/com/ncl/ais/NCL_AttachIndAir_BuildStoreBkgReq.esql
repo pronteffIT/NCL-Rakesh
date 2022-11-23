@@ -1,0 +1,37 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+CREATE COMPUTE MODULE NCL_AttachIndAir_BuildStoreBkgReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		DECLARE rEnvIn REFERENCE TO rEnv.InputMsg.XMLNSC.*:NCL_CruiseAttachIndependentAirRQ;
+		
+		DECLARE rUpdBkgOut REFERENCE TO InputRoot.XMLNSC.*:UpdateBooking_OUT;
+		IF ((EXISTS (rUpdBkgOut.Errors.Error[])) 
+			AND (EXISTS(SELECT E.* FROM rUpdBkgOut.Errors.Error[] AS E 
+						WHERE (E.ErrorSeverity IN ('E','F','OPERATION','EXCEPTION','FATAL') OR
+								COALESCE(E.BookingValidation.CanBeStored, '') ='N' ))))		
+		THEN						
+			CALL CopyEntireMessage();
+						
+			PROPAGATE TO LABEL 'UPDBKG_ERROR';
+			RETURN FALSE;
+		END IF;
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	    CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY StoreBooking_IN;
+	   	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionID,rOutResp);
+--	    SET rOutResp.MsgHeader.Version = VersonixAPIVersion;
+--	    SET rOutResp.MsgHeader.SessionGUID = rEnv.SessionID;
+	    SET rOutResp.ResID = rEnvIn.*:ReservationId;
+	    SET rOutResp.Options.Unlock = 'Y';
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

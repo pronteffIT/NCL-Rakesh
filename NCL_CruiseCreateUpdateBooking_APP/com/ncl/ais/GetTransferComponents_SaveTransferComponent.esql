@@ -1,0 +1,17 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+CREATE COMPUTE MODULE GetTransferComponents_SaveTransferComponent
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rCompRecordID REFERENCE TO Environment.Variables;
+		DECLARE rPackageDetails REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE INDEX INTEGER 1;
+		SET rEnv.Temp.CompRecordID[] = SELECT C.CompRecordID,C.Type from rPackageDetails.Packages.Package.Components.Component[] AS C 
+			WHERE C.BaseType='TRANSFER' AND ( C.Type = 'AIRPORT TO PORT' OR C.Type = 'PORT TO AIRPORT' ) AND C.BookMode='CanExclude';
+		SET rEnv.Temp.SailCompRecordID[] = SELECT C.CompRecordID from rPackageDetails.Packages.Package.Components.Component[] AS C 
+			WHERE C.BaseType='SAIL' AND C.BookMode='Mandatory';			
+		RETURN TRUE;
+	END;	
+END MODULE;

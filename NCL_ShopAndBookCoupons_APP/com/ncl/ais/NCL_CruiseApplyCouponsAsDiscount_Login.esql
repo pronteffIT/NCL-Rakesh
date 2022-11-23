@@ -1,0 +1,538 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE vag1 NAMESPACE 'http://NCL_ValidateBookingLib';
+DECLARE ns4 NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE SessionMap EXTERNAL CHARACTER '';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     Login
+ * Description       :     This module is used for copying the initial request and create a login request.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE PROCEDURE GetDataFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_Login
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE cSessionId, cResId,cIsStateless CHARACTER '';
+		
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ))= 0 THEN
+		 SET rEnv.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+
+		-- Logging framework 
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		IF (LogPayload) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Apply coupons as discount request...', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		
+	 	CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ;   
+		-- Uncomment the below block once GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												COALESCE(rIn.*:Coupons.*:Coupon.*:Guest.(XMLNSC.Attribute)LoyaltyMembershipID, ''),
+												'',
+											 	rEnv);
+
+		SET cResId = COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, '');
+		SET cIsStateless = COALESCE(rIn.*:StateLessMode, 'Y');
+		SET cSessionId = GetDataFromCache(cResId, SessionMap, '');
+		
+		IF cIsStateless  = 'Y' THEN
+			SET rEnv.Temp.State = 'STATELESS';
+			
+			-- add audit trail
+	 		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Validate Booking Source...', rEnv);
+
+			/*DECLARE verifyAgencyReq REFERENCE TO rOut.vag1:VerifyAgencyRequest.source;
+			CREATE FIELD rOut.vag1:VerifyAgencyRequest.source AS verifyAgencyReq;
+			
+			SET verifyAgencyReq.vag1:BookingChannel.vag1:CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+	   		SET verifyAgencyReq.vag1:RequestorID.ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+	   		SET verifyAgencyReq.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;*/
+	   		
+	   		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+	   		
+	   		RETURN TRUE;
+		ELSE
+			SET rEnv.Temp.State = 'STATEFUL';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling GetSessionToken to get cached session ...', rEnv);
+
+			DECLARE rGetSess REFERENCE TO OutputRoot;				
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetSessionTokenRQ AS rGetSess;
+			
+			SET rGetSess.ns:POS = rIn.*:POS;
+			SET rGetSess.ns:GetOrCreateSession = 'Y';
+			SET rGetSess.ns:ReservationId = cResId;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+				
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     Exception
+ * Description       :     This module is used for logging the exceptions occured during the execution of the flow.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Apply coupons as discount input request message IIB exception...', 'xml', rEnv);
+			END IF;
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+	END;
+END MODULE;
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     Logout
+ * Description       :     This module is used to logout the user.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	
+		DECLARE rEnv REFERENCE TO Environment.Variables;		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.XMLNSC.SessionGUID;		
+		
+		IF EXISTS(OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID[]) THEN
+			--PROPAGATE TO TERMINAL 'out';
+			RETURN TRUE;
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS AS runTimeErr;
+		
+		SET runTimeErr.ns4:Errors.ns4:Error = cErrorText;
+		SET runTimeErr.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns4:Errors.ns4:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET runTimeErr.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Type = '3';
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     CheckAndRoute
+ * Description       :     This module is used for Checking the output from callable flow and deciding the path to carry on.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_CheckAndRoute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rIn,rResp,rEnvXmlNsc REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		IF EXISTS(InputRoot.XMLNSC.*:VerifyAgencyResponse[]) THEN
+			MOVE rIn TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+			
+			IF EXISTS(rIn.sessionGUID[]) THEN
+				SET rEnv.XMLNSC.SessionGUID = rIn.sessionGUID;
+				SET rEnv.XMLNSC.AgencyID = rIn.agencyID;
+				SET rEnv.XMLNSC.OfficeCode = COALESCE(rIn.officeCode, '');
+				SET rEnv.XMLNSC.EndPoint = rIn.endpoint;
+
+				SET OutputRoot = InputRoot;
+
+				RETURN TRUE;
+			ELSE
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				-- if verify agency is being invoked
+				IF EXISTS(rIn.runtimeError[]) OR EXISTS(rIn.loginError[]) THEN
+					-- If error exist from the callable invoke then send to MapVAErrorsToOTAResponse
+					DECLARE rMqmdHeader REFERENCE TO Environment.Variables.Headers;
+					CREATE FIELD Environment.Variables.Headers AS rMqmdHeader;
+					SET rMqmdHeader = rEnv.MQMD;
+					
+					CREATE LASTCHILD OF rEnv AS rEnvXmlNsc DOMAIN('XMLNSC') NAME 'XMLNSC';
+					CREATE LASTCHILD OF rEnvXmlNsc AS rResp IDENTITY ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+					CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rIn, rResp);
+					
+					SET OutputRoot.MQMD = rMqmdHeader;
+					CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+					SET OutputRoot.XMLNSC = rEnvXmlNsc;
+					
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					SET OutputRoot.XMLNSC = NULL;
+					SET OutputRoot.BLOB.BLOB = bPayload;
+					
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;							
+				ELSEIF EXISTS(rIn.agencyNotFound[]) THEN
+					SET OutputRoot = InputRoot;
+
+					PROPAGATE TO TERMINAL 'out2';
+					RETURN FALSE;					
+				END IF;			
+			END IF;			
+		ELSEIF EXISTS(InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS[]) THEN
+			MOVE rIn TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+			
+			IF EXISTS(rIn.*:Errors[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Get session token failed ...', rEnv);
+
+				SET OutputRoot.XMLNSC.Body.Errors = rIn.*:Errors;
+				SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+				SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseApplyCouponsAsDiscountRS';
+
+				PROPAGATE TO TERMINAL 'out3';
+				RETURN FALSE;
+			ELSE
+				SET rEnv.XMLNSC.SessionGUID = rIn.SessionInfo.SessionToken;
+				SET rEnv.XMLNSC.AgencyID = rIn.agencyID;
+				SET rEnv.XMLNSC.OfficeCode = COALESCE(rIn.officeCode, '');
+				SET rEnv.XMLNSC.EndPoint = rIn.SessionInfo.Endpoint;
+
+				SET OutputRoot = InputRoot;
+
+				RETURN TRUE;
+			END IF;
+		END IF;
+		
+		
+		/*CASE
+			
+		WHEN EXISTS(InputRoot.XMLNSC.*:VerifyAgencyResponse.*:loginError.(XMLNSC.Attribute)Code[]) THEN
+			-- If error exist from the callable invoke then send to MapVAErrorsToOTAResponse
+			DECLARE rMqmdHeader REFERENCE TO Environment.Variables.Headers;
+			CREATE FIELD Environment.Variables.Headers AS rMqmdHeader;
+			SET rMqmdHeader = rEnv.MQMD;
+			SET rIn = InputRoot.XMLNSC.*:VerifyAgencyResponse;
+			CREATE LASTCHILD OF rEnv AS rEnvXmlNsc DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE LASTCHILD OF rEnvXmlNsc AS rResp IDENTITY ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rIn, rResp);
+			SET OutputRoot.MQMD = rMqmdHeader;
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			SET OutputRoot.XMLNSC = rEnvXmlNsc;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Apply coupons as discount Login Error from callable invoke, calling generic warning subflow...', rEnv);
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+			
+		WHEN EXISTS(InputRoot.XMLNSC.*:VerifyAgencyResponse.*:runtimeError.(XMLNSC.Attribute)Code[]) THEN
+			-- If error exist from the callable invoke then send to MapVAErrorsToOTAResponse
+			DECLARE rMqmdHeader REFERENCE TO Environment.Variables.Headers;
+			CREATE FIELD Environment.Variables.Headers AS rMqmdHeader;
+			SET rMqmdHeader = rEnv.MQMD;
+			SET rIn = InputRoot.XMLNSC.*:VerifyAgencyResponse;
+			CREATE LASTCHILD OF rEnv AS rEnvXmlNsc DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE LASTCHILD OF rEnvXmlNsc AS rResp IDENTITY ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rIn, rResp);
+			SET OutputRoot.MQMD = rMqmdHeader;
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			SET OutputRoot.XMLNSC = rEnvXmlNsc;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Apply coupons as discount Runtime Error from callable invoke, calling generic warning subflow...', rEnv);
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+			
+		WHEN EXISTS(InputRoot.XMLNSC.VerifyAgencyResponse.agencyID[]) THEN
+			-- If agency ID is greater than 0 then Load agency by ID
+			SET OutputRoot = InputRoot;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Apply coupons as discount Propagating to the load booking request node...', rEnv);
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;	
+		ELSE
+			-- If above conditions doesnot match then go to Agency not found
+			SET OutputRoot = InputRoot;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Apply coupons as discount Propagating to agency not found...', rEnv);
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		END CASE;*/
+		
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     AgencyNotFound
+ * Description       :     This module is used for creating the response of the agency not found.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_AgencyNotFound
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ AS rIn;
+		
+		
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET rOut.ns4:Warnings.ns4:Warning.(XMLNSC.Attribute)Code = '12805';
+		SET rOut.ns4:Warnings.ns4:Warning.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file';
+		SET rOut.ns4:Warnings.ns4:Warning.(XMLNSC.Attribute)Type = '3';
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Apply coupons as discount Agency not found payload...', 'xml', rEnv);
+		END IF;
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		PROPAGATE TO TERMINAL 'out';
+	
+		IF FIELDVALUE(rEnv.XMLNSC.SessionGUID) IS NOT NULL THEN
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();	
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.XMLNSC.SessionGUID;		
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_GenericWarning
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Apply coupons as discount Generic Warning subflow payload...', 'xml', rEnv);
+		END IF;
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+
+		PROPAGATE TO TERMINAL 'out';
+		
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     BuildRes
+ * Description       :     This module is used for creating the successful response of the flow.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_BuildRes
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ AS rIn;
+		
+		IF EXISTS(InputRoot.XMLNSC.StoreBooking_OUT.Errors.Error[]) THEN
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.StoreBooking_OUT.Errors; 
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseApplyCouponsAsDiscountRS';
+			-- Set Warning path
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Apply coupons as discount, Calling generic warning subflow from build Response ...', rEnv);
+			PROPAGATE TO TERMINAL 'out1';
+			-- unlockbooking path
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		ELSE
+			
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS.ns4:Success;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			
+			IF (LogPayload) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Apply coupons as discount success response Payload...', 'xml', rEnv);
+			END IF;
+			--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+
+			PROPAGATE TO TERMINAL 'out';
+				
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		END IF;
+
+	END;
+
+END MODULE;
+

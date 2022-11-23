@@ -1,0 +1,661 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified"
+>
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:simpleType name="ARCNumber">
+		<xs:annotation>
+			<xs:documentation>ARC is the Airline Reporting Corporation.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="IATANumber">
+		<xs:annotation>
+			<xs:documentation>IATA is similar to ARC but is used for international air carriers.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="CLIANumber">
+		<xs:annotation>
+			<xs:documentation>CLIA is the Cruise Line International Association.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="IATANCard">
+		<xs:annotation>
+			<xs:documentation>IATAN is a company that issues the most recognized travel agent identification card. The card is recognized by most travel companies (hotel, car rental, tour operator, cruise lines) to identify agents who should receive travel agent discounts.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Number" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="15"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="HolderName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="CompanyName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="CompanyNumber" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="15"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ExpirationDate" type="xs:date" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:simpleType name="ABTANumber">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="AgencyName">
+		<xs:annotation>
+			<xs:documentation>Travel Agency name.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="50"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="AgencyType">
+		<xs:annotation>
+			<xs:documentation>Travel Agency type.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="Code"/>
+	</xs:simpleType>
+	<xs:simpleType name="AgencyCode">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="AgencyLinkType">
+		<xs:annotation>
+			<xs:documentation>Travel Agency Hierarchy type.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="LongCode"/>
+	</xs:simpleType>
+	<xs:simpleType name="TaxOwnerName">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="255"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ContactName">
+		<xs:annotation>
+			<xs:documentation>Used in 040808 version only</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="60"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="AgencyHeader">
+		<xs:annotation>
+			<xs:documentation>Contains common data for the Agency</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgencyID" type="RecordID" minOccurs="0"/>
+			<xs:element name="Name" type="AgencyName" minOccurs="0"/>
+			<xs:element name="Type" type="AgencyType" minOccurs="0"/>
+			<xs:element name="Code" type="AgencyCode" minOccurs="0"/>
+			<xs:element name="ABTA" type="ABTANumber" nillable="true" minOccurs="0"/>
+			<xs:element name="ARC" type="ARCNumber" nillable="true" minOccurs="0"/>
+			<xs:element name="IATA" type="IATANumber" nillable="true" minOccurs="0"/>
+			<xs:element name="CLIA" type="CLIANumber" nillable="true" minOccurs="0"/>
+			<xs:element name="IsActive" type="Boolean" default="Y" minOccurs="0"/>
+			<xs:element name="IsDomestic" type="Boolean" default="Y" minOccurs="0"/>
+			<xs:element name="IsInternal" type="Boolean" default="N" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Internal agencies are fake agency records used by cruise line for direct consumer bookings.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoicingNumber" type="AgencyInvoicingNumber" nillable="true" minOccurs="0"/>
+			<xs:element name="IsConsortium" type="Boolean" default="N" minOccurs="0"/>
+			<xs:element name="ConsortiumType" type="Code" minOccurs="0"/>
+			<xs:element name="IsGSA" type="Boolean" default="N" minOccurs="0"/>
+			<xs:element name="DefaultCurrency" type="CurrencyCode" minOccurs="0"/>
+			<xs:element name="DefaultLanguage" type="LanguageCode" minOccurs="0"/>
+			<xs:element name="MarketingMsg" type="ShortComment" nillable="true" minOccurs="0"/>
+			<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0"/>
+			<xs:element name="DefaultDocDelivery" type="DeliveryType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default delivery type for documents.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TaxOwnerName" type="TaxOwnerName" minOccurs="0"/>
+			<xs:element name="FloatingDeposit" type="Boolean" minOccurs="0"/>
+			<xs:element name="ContactName" type="ContactName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used in 040808 version only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" nillable="true" minOccurs="0"/>
+			<xs:element name="DynamicFields" type="DynamicFields" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="Agency">
+		<xs:annotation>
+			<xs:documentation>Travel Agency profile.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgencyHeader" type="AgencyHeader"/>
+			<xs:element name="Addresses" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Address" type="Address" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Phones" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Phone" type="Phone" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ParentLinks" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Links to immediate parents for given agency. This element is intended to be used mostly for maintenance operations. Use DbSearch for more elaborate querying.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Link" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="LinkType" type="AgencyLinkType">
+										<xs:annotation>
+											<xs:documentation>Each link type defines an independent hierarchy of agencies. Examples: CONSORTIUM, OWNER, etc.</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="ParentAgencyID" type="RecordID"/>
+									<xs:element name="DateRange" type="DateRange"/>
+									<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Classifications" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Classification" type="Classification" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Terms" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="TermsItem" type="AgencyTermsItem" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Districts" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="District" type="District" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TierCommissions" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="TierCommission" type="TierCommission" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Commissions" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Commission" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="CommissCode" type="CommissionCode"/>
+									<xs:element name="DateRange" type="DateRange" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>In order to preserve continuity of commissions From of the next record should be equal to To of the previous one. In order to find effective commission applications should use expression like this: From &lt;= EffDate &lt; To</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="UseForChildren" type="Boolean" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Y: the commission will be inherited by "child" agencies</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="UseFromAbove" type="Boolean" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>N: the commission won't be used if it's inherited from the "parent" agency</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Description" type="ShortComment" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Promos" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Promo" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="PromoCode" type="Code"/>
+									<xs:element name="EffectiveRange" type="DateRange" minOccurs="0"/>
+									<xs:element name="Ship" type="ShipCode" minOccurs="0"/>
+									<xs:element name="SailRange" type="DateRange" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ContractRates" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ContractRate" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="EffectiveRange" type="DateRange" minOccurs="0"/>
+									<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ExternalLinks" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ExternalLink" type="AgencyExternalLink" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Performances" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Performance" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Year" minOccurs="0">
+										<xs:simpleType>
+											<xs:restriction base="xs:gYear"/>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Month" minOccurs="0">
+										<xs:simpleType>
+											<xs:restriction base="xs:positiveInteger">
+												<xs:maxInclusive value="12"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Currency" type="CurrencyCode" minOccurs="0"/>
+									<xs:element name="TotalAmount" type="Money" minOccurs="0"/>
+									<xs:element name="NetAmount" type="Money" minOccurs="0"/>
+									<xs:element name="CommissionAmount" type="Money" minOccurs="0"/>
+									<xs:element name="PerformanceAmount" type="Money" minOccurs="0"/>
+									<xs:element name="BookingCount" type="xs:positiveInteger" minOccurs="0"/>
+									<xs:element name="IsValid" type="Boolean" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AgentHeader">
+		<xs:annotation>
+			<xs:documentation>Contains common data for the Travel Agent</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgentID" type="RecordID" minOccurs="0"/>
+			<xs:element name="Agency" type="AgentAgencyLink" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines Agency which the agent belongs to at present time. "To" node is ignored in input messages</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LastName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="FirstName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="MiddleName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Salutation" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Title" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="EMail" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Email address</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="80"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="DefaultDocDelivery" type="DeliveryType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default delivery type for  documents.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Birthday" type="xs:date" minOccurs="0"/>
+			<xs:element name="Gender" type="Gender" minOccurs="0"/>
+			<xs:element name="IATAN" type="IATANCard" minOccurs="0"/>
+			<xs:element name="WEB" minOccurs="0">
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="AllowAccess" type="Boolean" default="Y" minOccurs="0"/>
+						<xs:element name="LoginUsername" type="Username" minOccurs="0"/>
+						<xs:element name="Password" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Input field only, except when attribute ResetMode="RESPONSE" (new password will be returned in the response message)</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="Password">
+										<xs:attribute name="ResetMode">
+											<xs:simpleType>
+												<xs:restriction base="ListOfPwdResetModes">
+													<xs:maxLength value="2"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="LastLogin" type="xs:dateTime" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Output only</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="CanAccessAgencyData" type="Boolean" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+			<xs:element name="DynamicFields" type="DynamicFields" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AgentAgencyLink">
+		<xs:annotation>
+			<xs:documentation>Defines link between Agency and Travel Agent</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgencyID" type="RecordID"/>
+			<xs:element name="DateRange" type="DateRange"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="TravelAgent">
+		<xs:annotation>
+			<xs:documentation>Travel Agent profile.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgentHeader" type="AgentHeader"/>
+			<xs:element name="Phones" minOccurs="0">
+				<xs:complexType>
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:sequence>
+						<xs:element name="Phone" type="Phone" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Addresses" minOccurs="0">
+				<xs:complexType>
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:sequence>
+						<xs:element name="Address" type="Address" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Agencies" minOccurs="0">
+				<xs:complexType>
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:sequence>
+						<xs:element name="Agency" type="AgentAgencyLink" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="PriceAgreement">
+		<xs:annotation>
+			<xs:documentation>Price Agreement</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgreementID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Mandatory for old records</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveRange" type="DateRange" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Mandatory for new records</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SailRange" type="DateRange" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Mandatory for new records</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Body" type="xs:anyType" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AgencyExternalLink">
+		<xs:annotation>
+			<xs:documentation>AGENCY_EXTERNAL information</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="ExtName" type="ExternalSystemCode"/>
+			<xs:element name="PseudoCityCode" type="Code" minOccurs="0"/>
+			<xs:element name="IsActive" type="Boolean" minOccurs="0"/>
+			<xs:element name="HasAccessed" type="Boolean" minOccurs="0"/>
+			<xs:element name="FirstAccessedTime" type="xs:dateTime" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="AgencyTermsItem">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="TermsCode" type="Code"/>
+			<xs:element name="ValidFrom" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>This is an &apos;As-Of&apos; date for the Terms Code. In order to preserve continuity of terms codes ValidFrom of the next record should be equal to ValidTo of the previous one. Currently system uses 12/31/2099 as max value for ValidTo. In order to find effective Terms Code applications should use expression like this: ValidFrom &lt;= EffectiveDate &lt; ValidTo</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:date">
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ValidTo" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:date">
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="VATTaxpayerNumber">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="RecordID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Agency VAT Taxpayer Number LinkID. Mandatory for old records</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="VATTaxCode" type="LongCode"/>
+			<xs:element name="TaxpayerNumber" type="LongCode"/>
+			<xs:element name="DateRange" type="DateRange"/>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+</xs:schema>

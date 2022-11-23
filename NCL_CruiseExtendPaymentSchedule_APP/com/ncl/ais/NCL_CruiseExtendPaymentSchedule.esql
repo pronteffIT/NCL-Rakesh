@@ -1,0 +1,485 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_EXTND_PYMT_SCHEDULE_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+DECLARE InsCodeType EXTERNAL CHARACTER 'Insurance';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+-- 		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		CALL CopyMessageHeaders();
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;		
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+ 
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseExtendPaymentScheduleRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.Temp.Message.*:NCL_CruiseExtendPaymentScheduleRQ[]) THEN
+			DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+ 
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';		
+		
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_BuildReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseExtendPaymentScheduleRQ;
+ 		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv; 
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		IF EXISTS(rIn.*:ReservationID[]) THEN
+			-- save frequently used elements in environment tree
+			SET rEnv.Temp.ReservationId = rIn.*:ReservationID.(XMLNSC.Attribute)ID;
+		END IF;
+		
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+					
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ = rIn;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- removing default namespace declaration
+  		SET rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+	
+		RETURN TRUE;		
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE VerifyAgency_StoreRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rInmsg REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseExtendPaymentScheduleRQ;
+		IF InputLocalEnvironment.Service.State = 'STATEFUL' THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling GetSessionToken to get cached session ...', rEnv);
+
+			DECLARE rOut REFERENCE TO OutputRoot;				
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ AS rOut;
+			
+			SET rOut.*:POS = rIn.*:POS;
+			SET rOut.*:GetOrCreateSession = 'Y';
+			SET rOut.*:ReservationId = rEnv.ResID;
+
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling VerifyAgency to get session ...', rEnv);
+
+			-- create verify agency request
+			SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+			
+			RETURN TRUE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+
+	
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_PrepareLoadBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+ 		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS;
+ 		DECLARE rLoadBkngReq REFERENCE TO InputRoot.XMLNSC.LoadBooking_IN;
+ 		
+			IF EXISTS(rIn.agencyNotFound[]) OR EXISTS(rIn.loginError[]) THEN 				
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS AS rOut;				
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);				
+				IF EXISTS(rIn.agencyNotFound[]) THEN
+					SET rOut.ns:Warnings.ns:Warning = rIn.agencyNotFound;
+				ELSE
+					SET rOut.ns:Warnings.ns:Warning = rIn.loginError;
+				END IF;
+				
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSEIF EXISTS(rIn.runtimeError[]) THEN
+ 	
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS AS rOut;		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+				SET rOut.ns:Errors.ns:Error = rIn.runtimeError;				
+ 
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSE
+ 				
+ 				IF rOrgMsg.*:ReservationID IS NULL OR rOrgMsg.*:ReservationID.(XMLNSC.Attribute)ID = '' THEN
+ 					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS AS rOut;		
+					CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+					SET rOut.ns:Errors.ns:Error = 'ReservationId is Missing';				
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+ 				END IF;
+ 				IF NOT EXISTS(rIn.sessionGUID[]) THEN
+ 					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS AS rOut;		
+					CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+					SET rOut.ns:Errors.ns:Error = 'SessionId is Missing';				
+ 					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+ 				END IF;
+ 				-- IF resid id present 
+ 				SET rEnv.Temp.SessionGUID = rIn.sessionGUID;
+				SET rEnv.Temp.agencyId = rIn.agencyID;
+				SET rEnv.Temp.Endpoint = rIn.endpoint;
+				IF rEnv.Temp.ReservationId IS NOT NULL OR rEnv.Temp.ReservationId <> '' THEN					
+						
+					CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rLoadBkngReq;
+					SET rLoadBkngReq.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+					SET rLoadBkngReq.MsgHeader.SessionGUID = rEnv.Temp.SessionGUID;
+		  			CREATE FIELD rLoadBkngReq.MsgHeader.CallerInfo.UserInfo.Internal;
+					CREATE FIELD rLoadBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode;
+					SET rLoadBkngReq.Options.Lock = 'Y';
+					SET rLoadBkngReq.MsgHeader.CallerInfo.UserInfo.Internal = '';
+					SET rLoadBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+					SET rLoadBkngReq.ResID = rEnv.Temp.ReservationId;			
+				
+ 				END IF;	
+			END IF;				
+  		RETURN TRUE;
+	END;	
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Endpoint;
+		
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS;
+		DECLARE cErrorText CHARACTER '';
+		IF EXISTS(rIn.*:Errors[]) THEN
+			SET cErrorText = rIn.*:Errors.*:Error;
+		ELSE
+ 			SET cErrorText = 'System error from back end. Please try again later';
+		END IF; 		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');			
+ 		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+ 		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_UpdateBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rLoadBkgRes REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rOut, rOutResp, rResp, rMsgHdr, rCalcFlds, rResShell, rResHdr, rExtension REFERENCE TO OutputRoot;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rLoadBkgRes.Errors.Error[1];
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR LENGTH(TRIM(rError.ErrorMessage)) > 0
+			THEN
+				SET bFatalError = TRUE;
+			END IF;
+			
+			MOVE rError NEXTSIBLING;
+		END WHILE;		
+		
+		IF bFatalError = TRUE
+		THEN
+			CALL CopyEntireMessage();
+			
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		
+		CREATE LASTCHILD OF rEnv.Temp.Message AS rOutResp DOMAIN('XMLNSC') IDENTITY UpdateBooking_IN; 
+				
+		IF rEnv.Temp.ReservationId IS NOT NULL OR rEnv.Temp.ReservationId <> '' THEN
+		 
+			SET rEnv.Temp.Message.LoadBkingResp = InputRoot.XMLNSC.LoadBooking_OUT;
+
+				CREATE LASTCHILD OF rOutResp AS rMsgHdr IDENTITY MsgHeader;
+				SET rMsgHdr.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				SET rMsgHdr.SessionGUID = rEnv.Temp.SessionGUID;
+				SET rMsgHdr.MessageID = rEnv.Temp.Headers.MQMD.MsgId;
+				IF rOrgMsg.PrimaryLangID = 'en-us' THEN
+					SET rMsgHdr.Language = 'ENG';
+				END IF;
+				CREATE LASTCHILD OF rOutResp.Options AS rCalcFlds IDENTITY CalcFields;
+				SET rCalcFlds.PenaltyInfo = 'Y';
+				SET rCalcFlds.PaymentCollectionInfo = 'Y';
+				SET rCalcFlds.InvoiceInfo = 'Y';
+				CREATE LASTCHILD OF rOutResp AS rResShell IDENTITY ResShell;
+				CREATE LASTCHILD OF rResShell AS rResHdr IDENTITY ResHeader;
+				SET rResHdr.ResID = rEnv.Temp.ReservationId;
+				SET rResHdr.AgencyID = rEnv.Temp.agencyId;
+				SET rResHdr.SourceCode = rEnv.Temp.Channel;
+				CREATE LASTCHILD OF rResShell.ResPaymentSchedule AS rExtension IDENTITY Extension;
+				SET rExtension.DurationBasis = rOrgMsg.*:ResPaymentScheduleExtension.*:DurationBasis;
+				SET rExtension.Duration = rOrgMsg.*:ResPaymentScheduleExtension.*:Duration;
+			
+		END IF;
+-- 		-- Creating final response
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY UpdateBooking_IN; 
+   		SET rResp = rOutResp;
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE UpdateBooking_ProcessResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rResp REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+
+--		CALL CopyEntireMessage();
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'
+			THEN
+				SET bFatalError = TRUE;
+			END IF;		
+			MOVE rError NEXTSIBLING;
+		END WHILE;
+		
+		IF bFatalError = TRUE 
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UpdateBooking API Returned Errors ...', rEnv);
+			CALL CopyEntireMessage();
+			--CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		
+ 		SET rEnv.Temp.Message.UpdateBkg.UpdateBooking_OUT = rIn;
+		 		 	
+		RETURN TRUE; 
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_StoreBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rPaymentOpt REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rIn REFERENCE TO rEnv.Temp.Message.UpdateBkg.UpdateBooking_OUT;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;
+		DECLARE rOutRoot, rOut REFERENCE TO OutputRoot;
+	
+--		 Copy non-fatal errors to Env
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			CALL StoreErrorsAsWarnings(rIn.Errors, rEnvInMsg, rEnv, rOutRoot);	
+		END IF;		
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling StoreBooking API ...', rEnv);
+
+			-- set the endpoint of the VX server
+--			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rOut;
+			SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET rOut.MsgHeader.SessionGUID = rEnv.Temp.SessionGUID;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionGUID,rOut);			
+			SET rOut.MsgHeader.CallerInfo.OfficeCode = rEnv.officeCode;
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+			-- Setting this option to avoid calling UnlockBooking later
+			SET rOut.Options.Unlock = 'Y';
+			SET rOut.ResID = rEnv.Temp.ReservationId;
+	
+			RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_MapErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC;
+		MOVE rIn FIRSTCHILD;
+		MOVE rIn NEXTSIBLING;
+		
+		DECLARE rOutRoot,rOut REFERENCE TO OutputRoot;
+		CALL CreateWarningRespForVXErrors(rEnv, rEnvInMsg, rIn, rOutRoot);
+
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseExtendPaymentSchedule response message', 'xml', rEnv);
+
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+
+		RETURN FALSE;		
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseExtendPaymentSchedule_LogOutSession
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables.Temp;
+		DECLARE rLogOut REFERENCE TO OutputRoot;
+					
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.Logout_IN AS rLogOut;
+		SET rLogOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rLogOut.MsgHeader.SessionGUID = rEnv.Temp.SessionGUID;		
+		RETURN TRUE;
+		
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE StoreBooking_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rWarning REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.StoreBooking_OUT;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+
+--		CALL CopyEntireMessage();
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'
+			THEN
+				SET bFatalError = TRUE;
+			END IF;		
+			MOVE rError NEXTSIBLING;
+		END WHILE;
+		
+		IF bFatalError = TRUE 
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UpdateBooking API Returned Errors ...', rEnv);
+			CALL CopyEntireMessage();
+			--CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseExtendPaymentScheduleRS AS rOut;
+--		SET rEnv.Temp.Message.NCL_CruiseExtendPaymentScheduleRS = rIn;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		CREATE FIELD rOut.Success;
+		
+		IF EXISTS(rEnv.Temp.Warnings.*:Warning[]) THEN
+			FOR rEnvWarn AS rEnv.Temp.Warnings.*:Warning[] DO
+				CREATE LASTCHILD OF rOut.ns:Warnings AS rWarning IDENTITY ns:Warning;
+				
+				SET rWarning.(XMLNSC.Attribute)Code = rEnvWarn.Code;
+				SET rWarning.(XMLNSC.Attribute)ShortText = rEnvWarn.ShortText;
+				SET rWarning.(XMLNSC.Attribute)Type = rEnvWarn.Type;
+				SET rWarning VALUE = FIELDVALUE(rEnvWarn);
+			END FOR;
+		
+		END IF;
+---- Raote to caller return false
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		
+		RETURN FALSE;
+	END;
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+	
+END MODULE;
+
+

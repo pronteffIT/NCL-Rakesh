@@ -1,0 +1,534 @@
+BROKER SCHEMA com.ncl.ais
+--DECLARE vagncy NAMESPACE 'http://NCL_ValidateBookingLib';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_RET_AVAIL_AMENITIES_RESP';
+DECLARE ExternalChache SHARED ROW;
+DECLARE ExternalCacheStatus SHARED ROW;
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAvailAminities
+* MODULE NAME : Login
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_LogIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ;
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+        SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+        -- add metadata to log event
+        CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												'',
+												'',
+											 	rEnv);
+		--add payload to logging									 	
+		
+		IF (LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'RetrieveAvailAmenities request message', 'xml', rEnv);
+		END IF;
+		----preparing Login request
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		SET rOut.VerifyAgencyRequest.source.BookingChannel.CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rOut.VerifyAgencyRequest.source.RequestorID.ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rOut.VerifyAgencyRequest.source.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAvailAminities
+* MODULE NAME : Login
+* Description : This module filter message and build request for GetAvailAminity.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_Filter
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ;
+		DECLARE rAmenityOrdRes REFERENCE TO InputRoot.XMLNSC.UpdateAmenityOrder_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS;
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke GetAvailAmenityCodes api', rEnv);
+		DECLARE rGetAvailAminities REFERENCE TO OutputRoot.XMLNSC.GetAvailAmenityCodes_IN;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.GetAvailAmenityCodes_IN AS rGetAvailAminities;
+		
+--        SET rGetAvailAminities.MsgHeader.Version = VersonixAPIVersion;  
+--		SET rGetAvailAminities.MsgHeader.SessionGUID = rEnv.SessionId;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rGetAvailAminities);
+		SET rGetAvailAminities.Options.Store = 'Y';
+	
+
+		IF rIn.*:ReservationID.(XMLNSC.Attribute)ID IS NOT NULL THEN
+			SET rGetAvailAminities.AmenityOrder.AmOrderHeader.OrderID = CAST(rAmenityOrdRes.AmenityOrder.AmOrderHeader.OrderID AS INTEGER); 
+			SET rGetAvailAminities.AmenityOrder.AmOrderHeader.RequesterType = 'AGENCY';
+			SET rGetAvailAminities.AmenityOrder.AmOrderHeader.RequesterID = CAST(rEnv.agencyId AS INTEGER) ;
+			SET rGetAvailAminities.AmenityOrder.AmOrderHeader.RecipientType = 'FIT';
+			SET rGetAvailAminities.AmenityOrder.AmOrderHeader.RecipientID = CAST( rIn.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+			IF LENGTH(rIn.*:Currency.(XMLNSC.Attribute)CurrencyCode )>0 THEN
+				SET rGetAvailAminities.AmenityOrder.AmOrderHeader.Currency = CAST(rIn.*:Currency.(XMLNSC.Attribute)CurrencyCode AS CHARACTER);
+			ELSE
+				SET rGetAvailAminities.AmenityOrder.AmOrderHeader.Currency = rEnv.agencyCurrency;
+			END IF;
+		END IF;
+	
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAvailAminities
+* MODULE NAME : Login
+* Description : This module is used for copying response from GetAvailAminity and SetResponse.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_SetResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ;
+		DECLARE Amorder REFERENCE TO InputRoot.XMLNSC.GetAvailAmenityCodes_OUT.AmenityOrder;
+		DECLARE rOutavail REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS;
+		DECLARE tempVar ,cquerry,codeType,RecipientStatus CHARACTER '';
+		DECLARE refLoop REFERENCE TO rOutavail.ns:AvailableAmenityCodes;
+		DECLARE refItemLoop REFERENCE TO rOutavail.ns:AmenityOrder.ns:AmenityOrderItemsInfo.ns:AmenityOrderItems;
+       
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS AS rOutavail;
+		--------response for warning and other default
+		IF LENGTH(InputRoot.XMLNSC.GetAvailAmenityCodes_OUT.Errors.Error.ErrorMessage) > 0 THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur while GetAvailAmenityCodes api', rEnv);
+			SET OutputRoot.XMLNSC.Error.Text = InputRoot.XMLNSC.GetAvailAmenityCodes_OUT.Errors.Error.ErrorMessage;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			-- Build Response
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOutavail);
+
+			CREATE LASTCHILD OF rOutavail NAMESPACE ns NAME 'Success';
+
+			SET rOutavail.ns:AmenityOrder.(XMLNSC.Attribute)ID = Amorder.AmOrderHeader.OrderID;
+			SET rOutavail.ns:AmenityOrder.(XMLNSC.Attribute)OrderDate = Amorder.AmOrderHeader.OrderDate;
+			-- -- same querry for Amenity Status
+	
+			DECLARE orderStatus,status,systemName,CodeType CHARACTER;
+			SET orderStatus = Amorder.AmOrderHeader.OrderStatus;
+			IF LENGTH(rIn.*:POS.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code) >0 THEN
+				SET systemName = rIn.*:POS.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			ELSE
+				SET systemName = 'NCLWEBC';
+			END IF;
+			SET codeType = 'AM_STS';
+			IF NOT EXISTS(ExternalChache.resultset[]) THEN
+			SET cquerry = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+			DETAILS.long_description, details.external_xref_id FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+			INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+			INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID
+			Where NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? ';
+			---AND DETAILS.SW_CODE = ?';
+			SET ExternalChache.resultset[] = PASSTHRU(cquerry VALUES (systemName,codeType));
+			END IF;
+			SET rOutavail.ns:AmenityOrder.(XMLNSC.Attribute)Status =THE(SELECT ITEM A.EXTERNAL_CODE FROM ExternalChache.resultset[] AS A WHERE
+			A.SW_CODE = orderStatus);
+			SET rOutavail.ns:AmenityOrder.ns:RequestorInfo.(XMLNSC.Attribute)ID = Amorder.AmOrderHeader.RequesterID;
+			SET rOutavail.ns:AmenityOrder.ns:RequestorInfo.(XMLNSC.Attribute)OriginatorType =Amorder.AmOrderHeader.RequesterType;
+			SET rOutavail.ns:AmenityOrder.ns:RequestorInfo.ns:Phone = Amorder.AmOrderHeader.RequesterPhone;
+			SET rOutavail.ns:AmenityOrder.ns:RecipientInfo.(XMLNSC.Attribute)ID =Amorder.AmOrderHeader.RecipientID;
+			-- --DB Querry for external code
+			SET RecipientStatus = Amorder.AmOrderHeader.RecipientStatus;
+			SET codeType = 'STS';
+			IF NOT EXISTS(ExternalCacheStatus.resultSetnext[]) THEN
+			SET cquerry = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+			DETAILS.long_description, details.external_xref_id FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+			INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+			INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID
+			Where NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=?';
+			SET ExternalCacheStatus.resultSetnext[] = PASSTHRU(cquerry VALUES (systemName,codeType));
+			END IF;
+			SET rOutavail.ns:AmenityOrder.ns:RecipientInfo.(XMLNSC.Attribute)Status = THE(SELECT ITEM A.EXTERNAL_CODE FROM ExternalCacheStatus.resultSetnext[] AS A WHERE
+			A.SW_CODE = RecipientStatus);
+			SET rOutavail.ns:AmenityOrder.ns:RecipientInfo.(XMLNSC.Attribute)Type =Amorder.AmOrderHeader.RecipientType;
+			--Giftcard Details
+			SET rOutavail.ns:AmenityOrder.ns:GiftCardInfo.ns:GiftCardComplimentsOf =Amorder.AmOrderHeader.ComplimentsOf;
+			SET rOutavail.ns:AmenityOrder.ns:GiftCardInfo.ns:GiftCardTo.ns:Surname =Amorder.AmOrderHeader.GiftCardTo;
+			SET rOutavail.ns:AmenityOrder.ns:GiftCardInfo.ns:GiftCardMessage =Amorder.AmOrderHeader.GiftCardMessage;
+			SET rOutavail.ns:AmenityOrder.ns:AmenityOrderInfo.ns:Currency.(XMLNSC.Attribute)CurrencyCode =Amorder.AmOrderHeader.CurrencyCode;
+			SET rOutavail.ns:AmenityOrder.ns:AmenityOrderInfo.ns:ISOrderValid =Amorder.AmOrderHeader.OrderValid;
+			SET rOutavail.ns:AmenityOrder.ns:AmenityOrderInfo.ns:ISDispatchedOK =Amorder.AmOrderHeader.DispatchedOK;
+			SET rOutavail.ns:AmenityOrder.ns:AmenityOrderInfo.ns:ISTerminationCompleted = Amorder.AmOrderHeader.TerminationCompleted;
+			SET rOutavail.ns:AmenityOrder.ns:AmenityOrderInfo.ns:ISInvoiceValid =Amorder.AmOrderHeader.InvoiceValid;
+			SET rOutavail.ns:AmenityOrder.ns:AmenityOrderInfo.ns:ISRefundDoneAfterCancellation =Amorder.AmOrderHeader.CancelRefundDone;
+			-- Preparing details of amenityorder Item
+			CREATE FIELD rOutavail.ns:AmenityOrder.ns:AmenityOrderItemsInfo.ns:AmenityOrderItems AS refItemLoop;
+			FOR Source AS Amorder.AmorderItems.AmOrderItems.AmOrderItem[] DO
+				CREATE LASTCHILD OF rOutavail.ns:AmenityOrder.ns:AmenityOrderItemsInfo.ns:AmenityOrderItems AS refItemLoop NAMESPACE ns NAME 'AmenityOrderItem';
+				SET refItemLoop.ns:AmenityOrderItem.(XMLNSC.Attribute)ID =Amorder.AmOrderItems.AmOrderItem.AmenityOrderItemID;
+				SET refItemLoop.ns:AmenityOrderItem.(XMLNSC.Attribute)AmenityType =Amorder.AmOrderItems.AmOrderItem.AmenityType;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityCategory =Amorder.AmOrderItems.AmOrderItem.AmCategory;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityCode =Amorder.AmOrderItems.AmOrderItem.AmenityCode;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenitySubCode =Amorder.AmOrderItems.AmOrderItem.AmenitySubCode;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityName =Amorder.AmOrderItems.AmOrderItem.AmenityName;
+				SET refItemLoop.ns:AmenityOrderItem.ns:Quantity =Amorder.AmOrderItems.AmOrderItem.Quantity;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityPlaceCode =Amorder.AmOrderItems.AmOrderItem.AmPlaceCode;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityItemDeliveryInfo.ns:DeliveryType =Amorder.AmOrderItems.AmOrderItem.AmDeliveryType;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityItemDeliveryInfo.ns:DayDeliveryBasis =Amorder.AmOrderItems.AmOrderItem.DayDeliveryBasis;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityItemDeliveryInfo.ns:ItemDeliveryDay =Amorder.AmOrderItems.AmOrderItem.ItemDeliveryDay;
+				SET refItemLoop.ns:AmenityOrderItem.ns:AmenityItemDeliveryInfo.ns:ItemDeliveryDay =Amorder.AmOrderItems.AmOrderItem.ItemDeliveryDay;
+				IF Amorder.AmOrderItems.AmOrderItem.ItemDeliveryTime IS NOT NULL THEN
+					SET refItemLoop.ns:AmenityOrderItem.ns:AmenityItemDeliveryInfo.ns:ItemDeliveryDate =
+					Amorder.AmOrderItems.AmOrderItem.ItemDeliveryTime;
+				ELSE
+					DECLARE CurDateTime GMTTIMESTAMP ;
+					SET CurDateTime =CURRENT_GMTTIMESTAMP;
+					SET rOutavail.ns:AmenityOrder.ns:AmenityOrderItemsInfo.ns:AmenityOrderItems.ns:AmenityOrderItem.ns:AmenityItemDeliveryInfo.ns:ItemDeliveryDate =
+					CurDateTime;
+				END IF;
+				SET rOutavail.ns:AmenityOrder.ns:AmenityOrderItemsInfo.ns:AmenityOrderItems.ns:AmenityOrderItem.ns:Guest.(XMLNSC.Attribute)LoyaltyMembershipID =
+				Amorder.AmOrderItems.AmOrderItem.GuestID;
+			END FOR;
+
+			FOR Source AS InputRoot.XMLNSC.GetAvailAmenityCodes_OUT.AvailAmenityCodes.AvailAmenityCode[] DO
+				CREATE LASTCHILD OF rOutavail.ns:AvailableAmenityCodes AS refLoop NAMESPACE ns NAME 'AvailAmenityCode';
+				SET refLoop.ns:AmenityCategory=Source.AmCategory;
+				SET refLoop.ns:AmenityType=Source.AmenityType;
+				SET refLoop.ns:AmenityCategory=Source.AmCategory;
+				SET refLoop.ns:AmenityCode =Source.AmenityCode;
+				SET refLoop.ns:AmenityName = Source.AmenityName;
+				SET tempVar = Source.ProviderCode;
+				SET rEnv.Temp.FinalResp[] =PASSTHRU('select  Provider_name,Provider_type from AM_SRVCE_PROVIDER where provider_code=?',tempVar);
+				SET refLoop.ns:AmenityProvider.ns:Name=COALESCE(rEnv.Temp.FinalResp.PROVIDER_NAME,'');
+				SET refLoop.ns:AmenityProvider.ns:Type=COALESCE(rEnv.Temp.FinalResp.PROVIDER_TYPE,'null');
+
+				SET refLoop.ns:Comments=Source.Comments;
+				SET refLoop.ns:Price=Source.Price;
+				SET refLoop.ns:Currency.(XMLNSC.Attribute)CurrencyCode=Source.Currency;
+				SET refLoop.ns:ISSuggested = Source.IsSuggested;
+				SET refLoop.ns:ISMandatory = Source.IsMandatory;
+			END FOR;
+			---addd payload
+			
+			 DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'retriveavailAminities Response message', 'xml', rEnv);
+		END IF;
+            SET OutputRoot.XMLNSC = NULL;
+            SET OutputRoot.BLOB.BLOB = bPayload;
+		END IF;
+		IF rOutavail.ns:AmenityOrder.ns:RequestorInfo.(XMLNSC.Attribute)OriginatorType='INDIVIDUAL' THEN
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;		
+			CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rOut);
+			SET rOut.Clients.ClientID = rEnv.ns:NCL_CruiseRetrieveAvailAmenitiesRS.ns:AmenityOrder.ns:RequestorInfo.(XMLNSC.Attribute)ID;				
+			PROPAGATE TO TERMINAL 'out3';
+		END IF;
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAvailAminities
+* MODULE NAME : Login
+* Description : This module is used for copying response from DbResponse.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_DBSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE dbSearchRef REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT.Clients.Client;
+		DECLARE ref REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRS;
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.MQMD = rEnv.MQMD ;
+
+		IF EXISTS(InputRoot.XMLNSC.DbSearch_OUT.Errors.Error.ErrorMessage[]) THEN
+			SET OutputRoot.XMLNSC.Error.Text = InputRoot.XMLNSC.DbSearch_OUT.Errors.Error.ErrorMessage;
+			PROPAGATE TO TERMINAL'out1';
+		END IF;
+		--save reuestor info
+		SET rEnv.RequestorInfo.RequestorInfo.Name.GivenName =dbSearchRef.FirstName;
+		SET rEnv.RequestorInfo.RequestorInfo.Name.MiddleName =dbSearchRef.MiddleName;
+		SET rEnv.RequestorInfo.RequestorInfo.Name.SurName =dbSearchRef.LastName;
+		SET rEnv.RequestorInfo.RequestorInfo.Name.NameTitle =dbSearchRef.Title;
+		SET rEnv.RequestorInfo.RequestorInfo.Phone =
+		rEnv.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS.ns:AmenityOrder.ns:RequestorInfo.ns:Phone;
+		SET rEnv.RequestorInfo.RequestorInfo.(XMLNSC.Attribute)OriginatorType =
+		ref.ns:AmenityOrder.ns:RequestorInfo.(XMLNSC.Attribute)OriginatorType;
+		--copy field
+		SET OutputRoot.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRS.*:AmenityOrder.*:RequestorInfo =
+		rEnv.RequestorInfo.RequestorInfo;
+		-----add payload
+		
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'retriveavailAmenities Response message', 'xml', rEnv);
+	END IF;
+
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAvailAminities
+* MODULE NAME : Login
+* Description : This module is used for SetWarnings.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_SET_Warnings
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS;
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.MQMD = rEnv.MQMD ;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		--warning
+		IF EXISTS(InputRoot.XMLNSC.DbSearch_OUT.Errors.Error[]) THEN
+			SET rOut.ns:Warnings.ns:Warning = InputRoot.XMLNSC.Error.Text ;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText =SUBSTRING(InputRoot.XMLNSC.Error.Text FROM 1 FOR 64);
+		ELSE
+			SET rOut.ns:Warnings.ns:Warning = InputRoot.XMLNSC.Error.Text;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText =SUBSTRING(InputRoot.XMLNSC.Error.Text FROM 1 FOR 64);
+		END IF;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		--logging request
+		
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'retriveavailamenities Response message', 'xml', rEnv);
+		END IF;
+      
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAvailAminities
+* MODULE NAME : Login
+* Description : This module is used for RuntimeError.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+
+		IF EXISTS(InputExceptionList.RecoverableException[])THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while manageAccTrans api', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS AS rOut;
+	        CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from backend ,Please try again later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';		
+		END IF;
+
+END;
+		END MODULE;
+		--COmpute
+		CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRemoveAmenityOrderRQ;
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRemoveAmenityOrderRS;
+		DECLARE cErrorText CHARACTER ;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRemoveAmenityOrderRS AS runTimeErr;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,runTimeErr);
+		
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System backend error,Please try again later';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailAmenities_UpdateAmenityOrderReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS;
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		--copy parameter from login out
+		SET rEnv.agencyId = rAgency.agencyID ;
+		SET rEnv.agencyCurrency =rAgency.agencyCurrency;
+		SET rEnv.SessionId = rAgency.sessionGUID;
+		SET rEnv.Temp.Endpoint =  COALESCE(rAgency.endpoint, '');
+		
+		
+		-- This flow will decide the path to carryon based on the response obtained from the Callable flow.
+		IF EXISTS(rAgency.agencyNotFound.(XMLNSC.Attribute)ShortText[]) OR
+			EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)ShortText[]) OR
+			EXISTS (rAgency.loginError.(XMLNSC.Attribute)ShortText[])
+			THEN
+			SET OutputRoot.MQMD = rEnv.MQMD ;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailAmenitiesRS AS rOut;
+			-- If error exist from the callable invoke then send to Generic warning
+	        CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			--warning
+			IF EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)ShortText[]) THEN
+		    	SET rOut.ns:Errors.ns:Error= rAgency.runtimeError;
+				SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = rAgency.runtimeError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = rAgency.runtimeError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = rAgency.runtimeError.(XMLNSC.Attribute)Type;
+			END IF;
+			IF  EXISTS(rAgency.loginError.(XMLNSC.Attribute)ShortText[]) OR EXISTS(rAgency.agencyNotFound.(XMLNSC.Attribute)ShortText[])THEN
+			SET	rOut.ns:Warnings.ns:Warning = rAgency.loginError;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(rAgency.agencyNotFound.(XMLNSC.Attribute)Code ,rAgency.loginError.(XMLNSC.Attribute)Code) ;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(rAgency.agencyNotFound.(XMLNSC.Attribute)ShortText,
+			rAgency.loginError.(XMLNSC.Attribute)ShortText);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type =COALESCE(rAgency.agencyNotFound.(XMLNSC.Attribute)Type,rAgency.loginError.(XMLNSC.Attribute)Type);		
+			END IF;
+			-----add payload
+			
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'RetriveAvailAmenities message', 'xml', rEnv);
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke GetAvailAmenityCodes api', rEnv);
+			DECLARE rUpdateAminityOrd REFERENCE TO OutputRoot.XMLNSC.UpdateAmenityOrder_IN;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.UpdateAmenityOrder_IN AS rUpdateAminityOrd;
+								
+--            SET rUpdateAminityOrd.MsgHeader.Version = VersonixAPIVersion;  
+--			SET rUpdateAminityOrd.MsgHeader.SessionGUID = rEnv.SessionId;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rUpdateAminityOrd);
+			SET rUpdateAminityOrd.Options.Store = 'N';
+			
+			
+			--IF rIn.*:AmenityOrder.(XMLNSC.Attribute)ID IS NOT NULL THEN
+			--	SET OutputRoot.XMLNSC.GetAvailAmenityCodes_IN.Options.OrderID =
+			--	CAST(rEnv.XMLNSC.*:NCL_CruiseRetrieveAvailAmenitiesRQ.*:AmenityOrder.(XMLNSC.Attribute)ID AS INTEGER);
+			--END IF;
+
+			IF rIn.*:ReservationID.(XMLNSC.Attribute)ID IS NOT NULL THEN
+				SET rUpdateAminityOrd.AmenityOrder.AmOrderHeader.RequesterType = 'AGENCY';
+				SET rUpdateAminityOrd.AmenityOrder.AmOrderHeader.RequesterID = CAST(rEnv.agencyId AS INTEGER) ;
+				SET rUpdateAminityOrd.AmenityOrder.AmOrderHeader.RecipientType = 'FIT';
+				SET rUpdateAminityOrd.AmenityOrder.AmOrderHeader.RecipientID = CAST( rIn.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+				IF LENGTH(rIn.*:Currency.(XMLNSC.Attribute)CurrencyCode )>0 THEN
+					SET rUpdateAminityOrd.AmenityOrder.AmOrderHeader.Currency = CAST(rIn.*:Currency.(XMLNSC.Attribute)CurrencyCode AS CHARACTER);
+				ELSE
+					SET rUpdateAminityOrd.AmenityOrder.AmOrderHeader.Currency = rEnv.agencyCurrency;
+				END IF;
+			END IF;
+
+		END IF;
+	END;
+END MODULE;

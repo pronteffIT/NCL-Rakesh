@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions" xmlns:recSepFieldsFmt="http://www.ibm.com/dfdl/RecordSeparatedFieldFormat">
+
+
+    <xsd:import namespace="http://www.ibm.com/dfdl/RecordSeparatedFieldFormat" schemaLocation="../../../IBMdefined/RecordSeparatedFieldFormat.xsd"/>
+    <xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format documentFinalTerminatorCanBeMissing="yes" encoding="US-ASCII" escapeSchemeRef="recSepFieldsFmt:RecordEscapeScheme" occursCountKind="implicit" ref="recSepFieldsFmt:RecordSeparatedFieldsFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+
+	<xsd:element dfdl:encoding="US-ASCII" ibmSchExtn:docRoot="true" name="CVS_MAINIFEST_ACK">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="%NL;%WSP*;" dfdl:separatorPosition="postfix">
+				<xsd:element name="header">
+					<xsd:complexType>
+						<xsd:sequence dfdl:ignoreCase="yes" dfdl:separatorSuppressionPolicy="anyEmpty">
+							<xsd:element default="REF_ID" ibmDfdlExtn:sampleValue="REF_ID" name="REF_ID" type="xsd:string"/>
+							<xsd:element default="SAIL_ID" ibmDfdlExtn:sampleValue="SAIL_ID" name="GROUP" type="xsd:string"/>							
+							<xsd:element default="IMPORT_STATUS" ibmDfdlExtn:sampleValue="IMPORT_STATUS" name="STATUS" type="xsd:string"/>							
+                            <xsd:element default="FAILED_REASON" ibmDfdlExtn:sampleValue="FAILED_REASON" name="REASON" type="xsd:string"/>
+                            <xsd:element default="REG_STATUS" ibmDfdlExtn:sampleValue="REG_STATUS" minOccurs="0" name="REG_STATUS" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>			
+				<xsd:element maxOccurs="unbounded" name="record">
+					<xsd:complexType>
+						<xsd:sequence dfdl:ignoreCase="yes" dfdl:separatorSuppressionPolicy="anyEmpty"> 
+							<xsd:element default="" ibmDfdlExtn:sampleValue="NCL-12345678" name="REF_ID" type="xsd:string"/>
+							<xsd:element default="" ibmDfdlExtn:sampleValue="42237" name="GROUP" type="xsd:string"/>
+							<xsd:element default="" ibmDfdlExtn:sampleValue="Dropped" name="STATUS" type="xsd:string"/>
+                            <xsd:element dfdl:nilKind="literalValue" dfdl:nilValue="%ES;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="Not registered" minOccurs="0" name="REASON" nillable="true" type="xsd:string"/>
+                            <xsd:element default="Registered" ibmDfdlExtn:sampleValue="Registered" minOccurs="0" name="REG_STATUS" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>				
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+
+
+
+</xsd:schema>

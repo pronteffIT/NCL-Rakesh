@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policies>
+  <policy policyType="MQEndpoint" policyName="Default" policyTemplate="MQEndpoint">
+    <connection>CLIENT</connection>
+    <destinationQueueManagerName>HDQPSWQAQM</destinationQueueManagerName>
+    <queueManagerHostname>167.118.127.78</queueManagerHostname>
+    <listenerPortNumber>14142</listenerPortNumber>
+    <channelName>ACE.SVRCONN</channelName>
+    <securityIdentity></securityIdentity>
+    <useSSL>false</useSSL>
+    <SSLPeerName></SSLPeerName>
+    <SSLCipherSpec></SSLCipherSpec>
+    <reconnectOption>disabled</reconnectOption>
+    <CCDTUrl></CCDTUrl>
+    <SSLCertificateLabel></SSLCertificateLabel>
+    <MQApplName></MQApplName>
+  </policy>
+</policies>

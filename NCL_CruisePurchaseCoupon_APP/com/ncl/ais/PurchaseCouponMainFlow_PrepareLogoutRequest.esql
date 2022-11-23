@@ -1,0 +1,21 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE PurchaseCouponMainFlow_PrepareLogoutRequest
+	
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot = NULL;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		IF LENGTH(COALESCE(rEnv.sessionGUID,'')) = 0 THEN
+			PROPAGATE TO TERMINAL 'nowhere';
+			RETURN FALSE;
+		END IF;
+		-- Build the Logout Message and invoke Versonix Logout API to close the session
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.sessionGUID;		
+		RETURN TRUE;
+	END;
+END MODULE;

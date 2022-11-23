@@ -1,0 +1,94 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_NEXT_COUPONS_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE INSERT_ERROR_CD EXTERNAL CHARACTER '';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseNextCoupons_RetrieveCoupons
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE vCouponType CHARACTER 'CRUISENEXT';		
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseNextCouponsRQ;
+		IF EXISTS(InputRoot.XMLNSC.*:NCL_CruiseFCCCouponsRQ[])
+			THEN 
+				SET rIn = InputRoot.XMLNSC.*:NCL_CruiseFCCCouponsRQ;
+				SET vCouponType = 'FCCOUPONS';
+		ELSE
+				SET vCouponType = 'CRUISENEXT';
+		END IF;	
+
+		SET rEnv.BkingChnlCompCd = UPPER(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code));
+
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		IF (LogPayLoad) THEN
+			--creating IIB Log Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise NextCoupons Request', 'xml', rEnv);
+		END IF;
+		-- call the procedure to copy attributes
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+		DECLARE cSupervisr CHARACTER 'N';
+		IF UPPER(TRIM(rIn.*:isSuperVisor)) = 'TRUE' OR UPPER(TRIM(rIn.*:isSuperVisor)) = 'Y' THEN
+			SET cSupervisr = 'Y';
+		END IF;
+
+		SET rEnv.Temp.Results = SELECT MAX(C.CREATE_TS) FROM Database.NCL_CRUISE_NEXT_COUPONS_TBL AS C WHERE C.AGENT_WEB_LOGIN_TXT = UPPER(rIn.*:AgentLogin) AND C.COUPON_TYPE = vCouponType;
+		DECLARE inDate INTEGER;
+		DECLARE putDate TIMESTAMP rEnv.Temp.Results;
+		SET inDate = (CURRENT_TIMESTAMP - putDate)HOUR;
+
+		IF inDate<=24 THEN
+
+			DECLARE cExternalCodeInfo,cErrorMsg CHARACTER ;
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.BkingChnlCompCd || '#' || ExternalCodeType,INSERT_ERROR_CD,XC10CacheMap,XC10ConnectionConfig);
+
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = rEnv.BkingChnlCompCd;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+			END IF;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			IF vCouponType = 'FCCOUPONS'
+				THEN CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseFCCCouponsRS AS rOut;
+				ELSE CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseNextCouponsRS AS rOut;
+			END IF;
+			SET cErrorMsg = SUBSTRING(SUBSTRING(COALESCE(cExternalCodeInfo, '') AFTER '#1#') BEFORE '#2#');
+			SET rOut.Warnings.Warning = COALESCE(cErrorMsg,'Cannot insert client record');
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = INSERT_ERROR_CD;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '2';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = COALESCE(cErrorMsg,'Request already recieved');
+		ELSE
+			INSERT INTO Database.NCLSEA.NCL_CRUISE_NEXT_COUPONS_TBL(AGENT_WEB_LOGIN_TXT, IS_SUPERVISOR_TXT, EMAIL_TXT, IS_COMPLETE_TXT, CREATE_TS, COUPON_TYPE)
+			VALUES( UPPER(rIn.*:AgentLogin),cSupervisr,rIn.*:Email,'N', CURRENT_TIMESTAMP, vCouponType);
+
+			PASSTHRU('COMMIT');
+			IF vCouponType = 'FCCOUPONS'
+				THEN CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseFCCCouponsRS AS rOut;
+				ELSE CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseNextCouponsRS AS rOut;
+			END IF;
+			CREATE FIELD rOut.Success;
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;

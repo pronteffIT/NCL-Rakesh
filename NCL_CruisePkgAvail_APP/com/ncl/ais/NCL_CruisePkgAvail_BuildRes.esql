@@ -1,0 +1,153 @@
+
+
+
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruisePkgAvail_BuildRes
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+
+		SET Environment.Variables.Temp.Message.GetAvailLandPackages_OUT=InputRoot.XMLNSC.GetAvailLandPackages_OUT;
+		DECLARE updateOut REFERENCE TO Environment.Variables.Temp.Message.GetAvailLandPackages_OUT;
+		DECLARE rEnv,rWarnings,rWarning,rOutResp,rResp,rDBOutReq REFERENCE TO Environment.Variables;
+		DECLARE rcitydetails,rcitydetail REFERENCE TO rEnv;
+		DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruisePkgAvailRQ;
+		DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+		CREATE LASTCHILD OF rEnv.Temp.Message AS rOutResp DOMAIN('XMLNSC') IDENTITY ns:NCL_CruisePkgAvailRS;
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		--atibutes
+		DECLARE i,k INTEGER 1;
+	
+--		CREATE FIELD rOutResp.Success; 	
+--				IF EXISTS(rEnv.Temp.Warnings.*:Warning[]) THEN
+--			FOR rEnvWarn AS rEnv.Temp.Warnings.*:Warning[] DO
+--				CREATE LASTCHILD OF rOutResp.Warnings AS rWarning IDENTITY Warning;		
+--				SET rWarning.(XMLNSC.Attribute)Code = rEnvWarn.Code;
+--				SET rWarning.(XMLNSC.Attribute)ShortText = rEnvWarn.ShortText;
+--				SET rWarning.(XMLNSC.Attribute)Type = rEnvWarn.Type;
+--				SET rWarning VALUE = FIELDVALUE(rEnvWarn);
+--			END FOR;
+--		END IF;	
+		-- Clear out Warnings
+		DETACH rEnv.Temp.Warnings;
+		SET rOutResp.SailingInfo.SelectedSailing.(XMLNSC.Attribute)Start=SUBSTRING(rEnv.Temp.Message.DBSearchResponse.Packages.Package.Vacation.From BEFORE 'T');
+		SET rOutResp.SailingInfo.SelectedSailing.(XMLNSC.Attribute)VoyageID=rEnv.Temp.Message.*:NCL_CruisePkgAvailRQ.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID;
+		DECLARE companycode CHARACTER rEnv.Temp.Message.*:NCL_CruisePkgAvailRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		DECLARE Status CHARACTER 'SELECT DETAILS.SW_CODE, DETAILS.EXTERNAL_CODE
+		FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+		INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+		INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = '''||companycode||''')
+		TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE = ''STS''';
+		SET Environment.dbresults.Status=PASSTHRU(Status);
+		CREATE LASTCHILD OF rEnv.Temp.Message AS rcitydetails IDENTITY CityDetails;
+		FOR src AS updateOut.AvailPackages.AvailPackage[] DO 
+			DECLARE hotel CHARACTER;
+			DECLARE rCityName CHARACTER;
+			FOR componenttype AS src.Definition.Components.Component[] DO
+
+				IF componenttype.Type='HOTEL' THEN
+					
+					SET rEnv.Temp.CityInfo[] = SELECT C.CityCode, C.CityName  FROM rEnv.Temp.Message.CityDetails.CityDetail[] AS C WHERE C.CityCode = componenttype.Location.From.Code;
+
+					DECLARE rCityRecID REFERENCE TO rEnv.Temp.CityInfo;
+					set hotel=componenttype.SubCode1;
+					IF EXISTS(rEnv.Temp.CityInfo[] ) THEN
+						SET rCityName = rCityRecID.CityName;
+					ELSE
+						-- set the endpoint of the VX server
+						SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+						CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+						CREATE LASTCHILD OF OutputRoot.XMLNSC AS rDBOutReq IDENTITY DbSearch_IN;
+						CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rDBOutReq);
+						SET rDBOutReq.MsgHeader.CallerInfo.UserInfo.Internal='';
+						SET rDBOutReq.Cities.CityCode=componenttype.Location.From.Code;
+						PROPAGATE TO LABEL 'InvokeDBSearch';			
+						CREATE LASTCHILD OF rcitydetails AS rcitydetail IDENTITY CityDetail;
+						set rcitydetail.CityCode=componenttype.Location.From.Code;
+						set rcitydetail.CityName=rEnv.Temp.Message.DBSearchResponse.Cities.City.CityName;	
+						SET rCityName = rEnv.Temp.Message.DBSearchResponse.Cities.City.CityName;
+					END IF;
+				END IF;
+			END FOR;
+
+			FOR Statusresults AS Environment.dbresults.Status[] DO
+				IF Statusresults.SW_CODE=src.Availability THEN
+					set Status=Statusresults.EXTERNAL_CODE;
+				END IF;
+			END FOR;
+			DECLARE prepostmetod CHARACTER src.Definition.PrePostMode;
+			DECLARE PackageTypeCode CHARACTER;
+			IF prepostmetod='PRE' THEN
+				set PackageTypeCode='2';
+			ELSEIF prepostmetod='POST' THEN
+				set PackageTypeCode='3';
+			ELSEIF prepostmetod='INCLUSIVE' THEN
+				set PackageTypeCode='1';
+			ELSEIF prepostmetod='PRETRANSFER' THEN
+				set PackageTypeCode='7';
+			ELSEIF prepostmetod='POSTTRANSFER' THEN
+				set PackageTypeCode='8';
+			END IF;
+
+			DECLARE BreakdownTypelength INTEGER LENGTH(src.GuestRefs);
+			DECLARE BreakdownTypecount CHARACTER SUBSTRING(src.GuestRefs FROM BreakdownTypelength FOR BreakdownTypelength+1);
+			DECLARE BreakdownType CHARACTER;
+			IF BreakdownTypecount=1 THEN
+				set BreakdownType='SGL';
+			ELSEIF BreakdownTypecount=2 THEN
+				set BreakdownType='DBL';
+			ELSEIF BreakdownTypecount=3 THEN
+				set BreakdownType='TRL';
+			ELSEIF BreakdownTypecount=4 THEN
+				set BreakdownType='QUA';
+			ELSEIF BreakdownTypecount>=5 THEN
+				set BreakdownType='DBL';
+			END IF;
+			DECLARE fromdate DATE SUBSTRING(src.Definition.Vacation.From BEFORE 'T');
+			DECLARE todate DATE SUBSTRING(src.Definition.Vacation.To BEFORE 'T');
+			DECLARE output INTEGER CAST((todate-fromdate)DAY AS INTEGER);
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)Type=src.Definition.Type;
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)Hotel=hotel;
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)Duration='P'||CAST(output+1 AS CHARACTER)||'D';
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)Start=SUBSTRING(src.Definition.Vacation.From BEFORE 'T');
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)CruisePackageCode=src.Definition.PackageID;
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)PackageTypeCode=PackageTypeCode;
+			SET rOutResp.CruisePackages.CruisePackage[i].(XMLNSC.Attribute)Description=src.Definition.Description;
+			SET rOutResp.CruisePackages.CruisePackage[i].Location=rCityName;
+			SET rOutResp.CruisePackages.CruisePackage[i].PriceInfo.(XMLNSC.Attribute)Status=Status;
+			SET rOutResp.CruisePackages.CruisePackage[i].PriceInfo.(XMLNSC.Attribute)Amount=src.PriceTotals.PriceTotal;
+			SET rOutResp.CruisePackages.CruisePackage[i].PriceInfo.(XMLNSC.Attribute)BreakdownType=BreakdownType;
+			SET rOutResp.CruisePackages.CruisePackage[i].PriceInfo.(XMLNSC.Attribute)AgeQualifyingCode=rEnv.Temp.Message.NCL_CruisePkgAvailRQ.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Code;
+			SET i=i+1;
+		END FOR;
+
+		SET OutputRoot = NULL;
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY ns:NCL_CruisePkgAvailRS; 
+   		SET rResp = rOutResp;
+
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

@@ -1,0 +1,186 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_SAILAWAY_FARE_SEARCH_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseSailAwayFareSearch_RetriveLowestFare
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rOutRef,rOutSailRef,envRef REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSailAwayFareSearchRQ;
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+											   COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+											   '', '','',rEnv);
+
+		IF (LogPayLoad) THEN
+			--creating IIB Log Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Sail Away Fare Search Request', 'xml', rEnv);
+		END IF;
+
+		DECLARE inRef REFERENCE TO rIn.*:POS.*:Source;
+		DECLARE agency_id INTEGER;
+		DECLARE RegionCode,SQLQry,TableName,SelectClause,TableASelectClause,FromClause,WhereClause,TableBSelectClause,OuterJoin,TableBGroupClause,JoinClause,TableAQuery,TableBQuery CHARACTER;
+		DECLARE CategoryCode CHARACTER COALESCE(rIn.*:CategoryCode,'IX');
+		DECLARE SailStartDate,SailEndDate DATE;
+		
+		SET agency_id 		= CAST(FIELDVALUE(inRef.*:RequestorID.(XMLNSC.Attribute)ID)AS INTEGER);
+		SET RegionCode 		= FIELDVALUE(rIn.*:RegionPref.(XMLNSC.Attribute)RegionCode);
+		SET SailStartDate 	= CAST(FIELDVALUE(rIn.*:SailingDateRange.(XMLNSC.Attribute)Start) AS DATE FORMAT 'yyyy-MM-dd');
+		SET SailEndDate 	= CAST(FIELDVALUE(rIn.*:SailingDateRange.(XMLNSC.Attribute)End) AS DATE FORMAT 'yyyy-MM-dd');
+		
+		SET TableName = getTableName();
+		SET SelectClause = 'select A.SHIP_CODE, A.PACKAGE_ID, A.VACATION_DATE, ROUND((A.DBL_AMOUNT_1 + A.DBL_AMOUNT_2)/2,2) AMT, (A.DBL_AMOUNT_1 + A.DBL_AMOUNT_2) TOTAL_AMT, 
+							A.GEOG_AREA, A.CURRENCY_CD, A.SAIL_DAYS, A.PORT_FROM, A.PORT_TO, B.SUB_REGION ';
+		SET TableASelectClause = 'select SHIP_CODE, PACKAGE_ID, VACATION_DATE, DBL_AMOUNT_1,DBL_AMOUNT_2, GEOG_AREA, CURRENCY_CD, SAIL_DAYS, PORT_FROM, PORT_TO,
+		 					CASE when STR_VALUE is null or trim(STR_VALUE) = '''' then GEOG_AREA ELSE STR_VALUE END as SUB_REGION ';
+		SET FromClause = ' from ' || TableName || ' FARE ';
+		SET WhereClause = 'where agency_id=? AND DC_SAIL_START>? AND DC_SAIL_END <? and cabin_category =? and sail_days>=5';
+		IF rIn.*:RegionPref.(XMLNSC.Attribute)RegionCode IS NOT NULL THEN
+			SET WhereClause = WhereClause || ' AND GEOG_AREA=? ';
+		END IF;
+		SET TableBSelectClause = 'select min((DBL_AMOUNT_1+DBL_AMOUNT_2)/2) AMT, geog_area,currency_cd, 
+								CASE when STR_VALUE is null or trim(STR_VALUE) = '''' then GEOG_AREA ELSE STR_VALUE END as SUB_REGION  ';
+		SET OuterJoin = ' LEFT OUTER JOIN 
+								(SELECT ROW_TYPE, FIELD_NAME, RECORD_ID, NUMBER_VALUE, DATE_VALUE, STR_VALUE from VCS_ADDITIONAL_FIELD_VALUE WHERE field_name = ''U_API_DESTINATIONS'' )VCS 
+								ON FARE.SAIL_ID = VCS.RECORD_ID ';
+		SET TableBGroupClause = ' group by geog_area,currency_cd, VCS.STR_VALUE ';
+		SET JoinClause = ' ON (A.DBL_AMOUNT_1+A.DBL_AMOUNT_2)/2 = B.AMT and A. GEOG_AREA = B.GEOG_AREA and A.CURRENCY_CD = B.CURRENCY_CD and A.SUB_REGION = B.SUB_REGION
+							ORDER BY GEOG_AREA,SUB_REGION ';
+
+		SET TableAQuery = '(' || TableASelectClause || FromClause || OuterJoin || WhereClause || ') A';
+		SET TableBQuery = '(' || TableBSelectClause || FromClause || OuterJoin || WhereClause || TableBGroupClause || ') B';
+		SET SQLQry = SelectClause || ' FROM ' || TableAQuery || ' JOIN ' || TableBQuery || JoinClause; 
+		
+		IF rIn.*:RegionPref.(XMLNSC.Attribute)RegionCode IS NULL THEN
+			SET rEnv.Temp.Results[]= PASSTHRU (SQLQry, agency_id,SailStartDate,SailEndDate,CategoryCode,agency_id,SailStartDate,SailEndDate,CategoryCode);
+		ELSE
+			SET rEnv.Temp.Results[]= PASSTHRU (SQLQry,agency_id,SailStartDate,SailEndDate,CategoryCode,RegionCode,agency_id,SailStartDate,SailEndDate,CategoryCode,RegionCode);
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseSailAwayFareSearchRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		CREATE FIELD rOut.Success;
+		DECLARE parentKey, newKey CHARACTER;
+		SET parentKey = '';
+		FOR envRef AS rEnv.Temp.Results[] DO
+			SET newKey = envRef.GEOG_AREA || '~' || envRef.SUB_REGION || '~' || envRef.CURRENCY_CD || '~' || CAST(envRef.TOTAL_AMT AS CHARACTER) || '~' || CAST(envRef.AMT AS CHARACTER);
+			IF parentKey <> newKey
+			THEN
+				CREATE LASTCHILD OF rOut.FaresByRegion AS rOutRef NAME 'Region';
+				SET rOutRef.(XMLNSC.Attribute)RegionCode 				= envRef.GEOG_AREA;
+				SET rOutRef.(XMLNSC.Attribute)SubRegion  				= envRef.SUB_REGION;
+				SET rOutRef.(XMLNSC.Attribute)Fare 						= CAST(envRef.AMT AS DECIMAL);
+				SET rOutRef.(XMLNSC.Attribute)Currency 					= envRef.CURRENCY_CD;
+				SET rOutRef.(XMLNSC.Attribute)TotalFare					=  CAST(envRef.TOTAL_AMT AS INTEGER);
+				SET rOutRef.(XMLNSC.Attribute)DecimalPlaces 			= '2';
+			END IF;
+			CREATE LASTCHILD OF rOutRef AS rOutSailRef NAME 'SailingInfo';
+			SET rOutSailRef.(XMLNSC.Attribute)ShipCode 		= envRef.SHIP_CODE;
+			SET rOutSailRef.(XMLNSC.Attribute)VoyageID  	= envRef.PACKAGE_ID;
+			SET rOutSailRef.(XMLNSC.Attribute)SailDays  	= envRef.SAIL_DAYS;
+			SET rOutSailRef.(XMLNSC.Attribute)VacationDate 	= CAST(envRef.VACATION_DATE AS DATE FORMAT 'yyyy-MM-dd');
+			SET rOutSailRef.(XMLNSC.Attribute)Origin  		= envRef.PORT_FROM;
+			SET rOutSailRef.(XMLNSC.Attribute)Destination  	= envRef.PORT_TO;
+			SET parentKey = newKey; 
+		END FOR;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Sail Away Fare Search Response', 'xml', rEnv);
+		END IF;
+		-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+	
+	-- Function to identify the table/view to query.
+	CREATE FUNCTION getTableName() RETURNS CHARACTER
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE SQLQuery CHARACTER;
+		DECLARE totalRecords INTEGER 0;
+		SET SQLQuery = 'select count(*) CNT from NCLFARE.VIEW_FARE_CACHE_FINAL_ALL';
+		--SET SQLQuery = 'select count(*) CNT from NCLFARE.FARE_CACHE_CD_FINAL';
+		SET rEnv.Temp.CountResults[]= PASSTHRU (SQLQuery);
+		FOR envRef AS rEnv.Temp.CountResults[] DO
+			SET totalRecords = envRef.CNT;
+		END FOR;
+		IF(totalRecords > 0) THEN 
+			RETURN 'NCLFARE.VIEW_FARE_CACHE_FINAL_ALL';
+		ELSE
+			RETURN 'NCLFARE.VIEW_FARE_CACHE_PD_FINAL_ALL';
+		END IF;
+		--IF(totalRecords > 0) THEN
+			--RETURN 'NCLFARE.FARE_CACHE_CD_FINAL';
+		--ELSE
+			--RETURN 'NCLFARE.FARE_CACHE_CD_FINAL_PD';
+		--END IF;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseNextCoupons_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSailAwayFareSearchRQ;
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseSailAwayFareSearchRS;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Sail Fare Search request message', 'xml', rEnv);
+		END IF ;
+	END IF;
+
+	IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+		---call logging Procedure
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception ', rEnv);
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		---Build Response for RuntimeError
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseSailAwayFareSearchRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System backend error , please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	RETURN TRUE;
+END;
+END MODULE;

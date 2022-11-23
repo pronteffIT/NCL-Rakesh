@@ -1,0 +1,381 @@
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_ADD_RES_CMNTS_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : Login_req
+* Description : This module login the session
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_Login_Req
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRQ;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		----metadataset Logging
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+		'',
+		'',
+		rEnv);
+		----Payload Logging
+		IF(LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise AddResComments request message', 'xml', rEnv);
+		END IF;
+		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRQ;
+		
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Versonix Login Service...', rEnv);
+  		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		SET rOut.LoginRequest.source.BookingChannel.CompanyName.Code =rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		RETURN TRUE;
+	END;
+	END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : LoadAgency
+* Description : This module Creates AgencyID
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_LoadAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rInLogin REFERENCE TO InputRoot.XMLNSC.*:LoginResponse;
+		DECLARE rOutref REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAddResCommentsRS;
+		DECLARE rIn REFERENCE TO rEnv.*:XMLNSC;
+		
+		-- from login out
+		SET rEnv.Temp.Endpoint = COALESCE(rInLogin.endpoint, '');
+
+		IF EXISTS(rInLogin.loginError[]) OR EXISTS(rInLogin.runtimeError[]) THEN
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAddResCommentsRS AS rOutref;
+			SET rOutref.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12229';
+			SET rOutref.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Parsing Error';
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		ELSE
+			SET rEnv.Temp.SessionId = rInLogin.sessionGUID;
+			
+			IF(rEnv.*:XMLNSC.*:Impersonate.*:AddAgentName = 'Y') THEN
+				PROPAGATE TO LABEL 'IMPERSONATE';
+				IF(rEnv.Temp.ImpersonateError = 'Y') THEN
+					-- Impersonation return error. Ignore for now.
+				END IF;
+			END IF;
+			
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Load Agency...', rEnv);
+  			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			IF (rEnv.*:XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID <>'') THEN
+				DECLARE loadAgency REFERENCE TO OutputRoot.XMLNSC.*:LoadAgency_IN;		
+				CREATE FIELD OutputRoot.XMLNSC.*:LoadAgency_IN AS loadAgency;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,loadAgency);
+--				SET loadAgency.MsgHeader.Version = VersonixAPIVersion;
+--				SET loadAgency.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+				SET loadAgency.AgencyID = CAST(rEnv.*:XMLNSC.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID AS INTEGER);
+
+			ELSE
+				-- add audit trail
+  				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Add Res History...', rEnv);				
+				DECLARE resCmnt REFERENCE TO OutputRoot.XMLNSC.*:AddResHistory_IN;
+				CREATE FIELD OutputRoot.XMLNSC.*:AddResHistory_IN AS resCmnt;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,resCmnt);
+--				SET resCmnt.MsgHeader.Version = VersonixAPIVersion;
+--				SET resCmnt.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+				SET resCmnt.Options.Comments = rEnv.*:XMLNSC.*:Comments;
+				SET resCmnt.Options.UserInitiated = 'Y';
+				SET resCmnt.ResID = CAST(rEnv.*:XMLNSC.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : AddResComments
+* Description : This module AddResComments
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_AddResComments
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rInput REFERENCE TO InputRoot.XMLNSC.*:LoadAgency_OUT;
+		DECLARE rIn REFERENCE TO rEnv.*:XMLNSC;
+		IF (rInput.*:Agency.*:AgencyHeader.*:AgencyID <> '') AND (rInput.*:Agency.*:AgencyHeader.*:IsActive= 'Y')THEN
+			
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Add Res History...', rEnv);
+  			
+			DECLARE resCmnt REFERENCE TO OutputRoot.XMLNSC.*:AddResHistory_IN;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.*:AddResHistory_IN AS resCmnt;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,resCmnt);
+--			SET resCmnt.MsgHeader.Version = VersonixAPIVersion;
+--			SET resCmnt.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			SET resCmnt.Options.Comments = rEnv.*:XMLNSC.*:Comments;
+			SET resCmnt.Options.UserInitiated = 'Y';
+			SET resCmnt.ResID = CAST(rEnv.*:XMLNSC.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Agency not found ...', rEnv);
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAddResCommentsRS;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRS AS rOut;
+			-- Call Procedure to copy attributes
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET rOut.Success = '';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12805';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Agency Not Active';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : Response
+* Description : This module generates Response
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rInput REFERENCE TO InputRoot.XMLNSC.*:AddResHistory_OUT;
+		DECLARE rIn REFERENCE TO rEnv.*:XMLNSC;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRS;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRS AS rOut;
+		-- Call Procedure to copy attributes
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		IF EXISTS(rInput.Errors.Error[]) THEN
+			SET rOut.Success = '';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Error Creating Res History';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+			SET rOut.Warnings.Warning.Value = rInput.*:Errors.*:Error.*:ErrorMessage;
+		ELSE
+			SET rOut.Success = '';
+			-- add response msg to log event
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise AddRes comments response message', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : LogOut
+* Description : This module LogOut
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		IF EXISTS(rEnv.Temp.SessionId[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : Exception
+* Description : This module handles Exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise ADD ResComments Invalid request message', 'xml', rEnv);
+			END IF;
+		END IF;
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddResComments
+* MODULE NAME : FaultHandling
+* Description : This module handles Fault
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/26/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_FaultHandling
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRS;
+
+		DECLARE cErrorText CHARACTER ;
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseAddResCommentsRS AS runTimeErr;
+
+		SET runTimeErr.Errors.Error = cErrorText;
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)ShortText = 'System backend error , Plese try again later';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseAddResComments_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.Temp.Endpoint;
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;

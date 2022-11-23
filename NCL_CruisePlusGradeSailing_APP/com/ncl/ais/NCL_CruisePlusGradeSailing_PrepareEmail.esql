@@ -1,0 +1,27 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruisePlusGradeSailing_PrepareEmail
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			
+			SET rEmail.EmailSubject = 'ERROR: Plus Grade Sailings';
+			SET rEmail.EmailContent = 'Error text - ' || COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		ELSE
+			SET rEmail.EmailSubject = 'Plus Grade Sailings run Successfully';
+			SET rEmail.EmailContent = 'Plus Grade Sailings run Successfully, filename - ' || rEnv.FTPFileName;
+		END IF;
+
+		SET rEmail.EmailAddress.FromAddress = FromEmail;
+		SET rEmail.EmailAddress.ToAddress = ToEmail;
+
+		RETURN TRUE;
+	END;	
+END MODULE;

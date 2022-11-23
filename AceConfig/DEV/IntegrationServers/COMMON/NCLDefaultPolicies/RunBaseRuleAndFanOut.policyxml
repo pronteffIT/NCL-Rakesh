@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policies>
+  <policy policyType="UserDefined" policyName="RunBaseRuleAndFanOut" policyTemplate="UserDefined">
+    <ECISEnvironmentURL>https://dev-claimssvcs.humana.com:48022/EnterpriseClaimDomainServices/V3/api/ClaimsService/claims</ECISEnvironmentURL>
+    <HostEnvironmentName>DEV</HostEnvironmentName>
+    <ODMEnvironmentURL>https://zrestest:4904/DecisionService/rest/RV_ThorRuleApp/1.0/RV_ThorEnrichRuleset</ODMEnvironmentURL>
+    <ECISApplicationKey>e4b74cde-b0e6-4598-8040-e758e1c68e83</ECISApplicationKey>
+    <CircuitBreakerSleepTimer>10000</CircuitBreakerSleepTimer>
+    <EAPMId>17328</EAPMId>
+    <BE_TraceLevel>disabled</BE_TraceLevel>
+    <ProviderApplicationKey>4352B4C3-A063-42FE-844F-27CCCD12EFED</ProviderApplicationKey>
+    <CISENVIRONMENT>sit</CISENVIRONMENT>
+    <ECIS_KeyAlias>dev-iibclaims.humana.com</ECIS_KeyAlias>
+    <ODM_KeyAlias>dev-iibclaims.humana.com</ODM_KeyAlias>
+    <FirstBusinessDay>9</FirstBusinessDay>
+    <SecondBusinessDay>11</SecondBusinessDay>
+    <KpiRunDate>2019-03-28</KpiRunDate>
+  </policy>
+</policies>

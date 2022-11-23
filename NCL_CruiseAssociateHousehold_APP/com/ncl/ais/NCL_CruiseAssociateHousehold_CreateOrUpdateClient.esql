@@ -1,0 +1,159 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseAssociateHousehold_CreateOrUpdateClient
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseAssociateHouseholdRQ;
+		DECLARE bPayload BLOB;
+		DECLARE rOut REFERENCE TO OutputRoot;	
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api response', 'xml', rEnv);
+		END IF;
+
+		IF EXISTS(rIn.agencyNotFound[]) OR EXISTS(rIn.loginError[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseAssociateHouseholdRS AS rOut;
+
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+			IF EXISTS(rIn.agencyNotFound[]) THEN
+				SET rOut.Warnings.Warning = rIn.*:agencyNotFound;
+			ELSE
+				SET rOut.Warnings.Warning = rIn.*:loginError;
+			END IF;
+
+			RETURN TRUE;
+			
+		ELSEIF EXISTS(rIn.runtimeError[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseAssociateHouseholdRS AS rOut;
+
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+			SET rOut.Errors.Error = rIn.*:runtimeError;
+
+			RETURN TRUE;
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Session established ...', rEnv);
+
+			SET rEnv.Temp.SessionId = rIn.*:sessionGUID;
+			SET rEnv.Temp.agencyId = rIn.*:agencyID;
+			SET rEnv.Temp.Endpoint = rIn.*:endpoint;
+		END IF;		
+
+
+		IF LENGTH(COALESCE(rOrgMsg.*:HouseholdID,'')) > 0 THEN
+			SET rEnv.HouseholdID = rOrgMsg.*:HouseholdID;
+			SET rEnv.HouseHoldOperation = 'UPDATE';
+		ELSE
+			SET rEnv.HouseHoldOperation = 'CREATE';
+		END IF;
+
+		CALL CreateManageClients(rEnv,rOut);
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling ManageClients api ...', rEnv);
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Calling ManageClients', 'xml', rEnv);
+		END IF;
+
+		PROPAGATE TO TERMINAL 'out1';
+
+		RETURN FALSE;		
+
+	END;
+
+	CREATE PROCEDURE CreateManageClients(IN rEnv REFERENCE, INOUT rOut REFERENCE )
+	BEGIN
+		DECLARE rHouseHold,rPhone,rMngCleint,rRefPhone,rClint REFERENCE TO rEnv;
+		DECLARE rInputMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseAssociateHouseholdRQ;
+		DECLARE SeqN INTEGER 1;				
+
+
+		SET rOut.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+
+		CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE FIELD rOut.XMLNSC.ManageClients_IN AS rMngCleint;			
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rMngCleint);
+
+		IF rEnv.HouseHoldOperation = 'UPDATE' THEN
+			-- Load Section --
+			SET rMngCleint.MsgHeader.ValidateMode = 'Y';
+			SET rMngCleint.Options.ReturnState = 'Y';
+			SET rMngCleint.Load.HouseholdIDs = rInputMsg.*:HouseholdID;
+
+			PROPAGATE TO LABEL 'ManageClients';
+			-- Update Section--
+			SET rOut.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD rOut.XMLNSC.ManageClients_IN AS rMngCleint;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rMngCleint);
+			SET rMngCleint.Options.ReturnState = 'Y';
+
+			FOR rInClint AS rInputMsg.*:Clients.*:ClientID[] DO
+
+				CREATE LASTCHILD OF rEnv.Temp.ClientInfo AS rClint NAME 'Client';
+				SET rClint.ClientHeader.ClientID = rInClint;
+				SET rEnv.Temp.LockClientIDs = COALESCE(rEnv.Temp.LockClientIDs,'')||' '|| rInClint;
+				SET rEnv.Temp.StoreClientIDs = COALESCE(rEnv.Temp.StoreClientIDs,'')||' '|| rInClint;
+			END FOR;
+			-- Lock the Current Client IDs for Update
+			SET rMngCleint.Lock.ClientIDs = rEnv.Temp.LockClientIDs;
+			SET rMngCleint.Lock.HouseholdIDs = rInputMsg.*:HouseholdID;
+			SET rMngCleint.Update.Households.Household.HouseholdHeader.HouseholdID = rInputMsg.*:HouseholdID;
+			SET rMngCleint.Update.Households.Household.HouseholdHeader.Clients = rEnv.Temp.ClientInfo;
+
+		ELSE
+			-- Create Section..
+			FOR rInClint AS rInputMsg.*:Clients.*:ClientID[] DO
+				CREATE LASTCHILD OF rEnv.Temp.ClientInfo AS rClint NAME 'Client';
+				SET rClint.ClientHeader.ClientID = rInClint;
+				SET rEnv.Temp.LockClientIDs = COALESCE(rEnv.Temp.LockClientIDs,'')||' '|| rInClint;
+				SET rEnv.Temp.StoreClientIDs = COALESCE(rEnv.Temp.StoreClientIDs,'')||' '|| rInClint;
+			END FOR;
+			SET rMngCleint.Options.ReturnState = 'Y';
+			SET rMngCleint.Lock.ClientIDs = rEnv.Temp.LockClientIDs;
+
+			CREATE FIELD rMngCleint.Create.Households.Household AS rHouseHold;
+			SET rHouseHold.HouseholdHeader.HouseholdName = rInputMsg.*:HouseholdName;
+			SET rHouseHold.HouseholdHeader.Clients = rEnv.Temp.ClientInfo;
+			SET rHouseHold.Addresses.Address.SeqN = 1;  
+			SET rHouseHold.Addresses.Address.AddressType = 'HOME ADDRESS';
+			SET rHouseHold.Addresses.Address.Line1 = rInputMsg.*:Address.*:AddressLine;
+			SET rHouseHold.Addresses.Address.City = rInputMsg.*:Address.*:CityName;
+			SET rHouseHold.Addresses.Address.State = rInputMsg.*:Address.*:StateProv;
+			SET rHouseHold.Addresses.Address.Country = rInputMsg.*:Address.*:CountryName;
+			SET rHouseHold.Addresses.Address.ZIP = rInputMsg.*:Address.*:PostalCode;
+
+			FOR rPhone AS rInputMsg.*:Telephone[] DO
+				CREATE LASTCHILD OF rHouseHold.Phones AS rRefPhone NAME 'Phone';
+				SET rRefPhone.SeqN = SeqN;
+				
+			    IF COALESCE(FIELDVALUE(rPhone.(XMLNSC.Attribute)PhoneLocationType), '') <> '' THEN 
+    				SET rRefPhone.PhoneType = SUBSTRING(com.ncl.ais.utils.LookupSWCodeUsingExternalCode('NCLWEBC',FIELDVALUE(rPhone.(XMLNSC.Attribute)PhoneLocationType), 'PUT') BEFORE '#1#');
+    			END IF;
+    			IF LENGTH(TRIM(rRefPhone.PhoneType)) = 0 THEN
+    				SET rRefPhone.PhoneType = 'HOME';
+    			END IF; 
+    			SET rRefPhone.Extension = FIELDVALUE(rPhone.(XMLNSC.Attribute)Extension);			
+				SET rRefPhone.IntlCode = FIELDVALUE(rPhone.(XMLNSC.Attribute)CountryAccessCode);
+				SET rRefPhone.PhoneNumber = FIELDVALUE(rPhone.(XMLNSC.Attribute)PhoneNumber);
+				SET rRefPhone.IsPrimary = FIELDVALUE(rPhone.(XMLNSC.Attribute)isPrimary);
+	
+				SET SeqN = SeqN + 1;
+			END FOR;
+		END IF;
+
+	END;
+END MODULE;

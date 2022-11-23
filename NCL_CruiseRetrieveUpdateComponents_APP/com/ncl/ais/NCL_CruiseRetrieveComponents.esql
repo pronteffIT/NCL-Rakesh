@@ -1,0 +1,348 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVE_COMPO_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE AgencyMap EXTERNAL CHARACTER ''; 
+
+--***********************************************************************************************
+--** Description of Module
+--** ===========================================================================================
+--** This Module calls Varify Agency app based on Reservation Id and Channel info.
+--***********************************************************************************************
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_BuildReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn, PackageID REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveResComponentsRQ;
+ 		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv; 
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		IF EXISTS(rIn.*:ReservationID[]) THEN
+			-- save frequently used elements in environment tree
+			SET rEnv.Temp.ReservationId = rIn.*:ReservationID.(XMLNSC.Attribute)ID;
+--			SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		END IF;
+		IF EXISTS(rIn.*:PackageID[]) THEN
+			FOR rPksId AS rIn.*:PackageID[] DO
+				CREATE LASTCHILD OF rEnv.Temp.Packages IDENTITY PackageID VALUE rPksId.(XMLNSC.Attribute)ID;
+			END FOR;
+		END IF;
+		SET rEnv.Temp.Channel = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+					
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ = rIn;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- removing default namespace declaration
+  		SET rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+	
+		RETURN TRUE;		
+	END;
+
+END MODULE;
+
+--***********************************************************************************************
+--** Description of Module
+--** ===========================================================================================
+--** This Module prepare the request for Loadbookings using reservation id to get the package id.
+--***********************************************************************************************
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_PrepareLoadBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+ 		DECLARE rOrgMsg REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveResComponentsRQ; 
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveResComponentsRS;
+ 		DECLARE rLoadBkngReq REFERENCE TO InputRoot.XMLNSC.LoadBooking_IN;
+-- 		DECLARE cLocalTranId REFERENCE TO InputRoot.MQMD.MsgId;
+--		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		DECLARE SessionToken CHARACTER '';			
+ 
+			CREATE FIELD Environment.Variables AS rEnv;  
+--			SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+			IF EXISTS(rOrgMsg.*:ReservationID[]) THEN
+				SET rEnv.Temp.ReservationId = rOrgMsg.*:ReservationID.(XMLNSC.Attribute)ID;
+ 			END IF;
+			IF EXISTS(rOrgMsg.*:PackageID[]) THEN
+				FOR rPksId AS rOrgMsg.*:PackageID[] DO
+					CREATE LASTCHILD OF rEnv.Temp.Packages IDENTITY PackageID VALUE rPksId.(XMLNSC.Attribute)ID;
+				END FOR;
+			END IF;
+			SET rEnv.Temp.Channel = rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;	
+			-- save MQMD header which is used when sending reply
+			SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+			SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+			SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+ 			
+ 			CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+			SET rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ = rOrgMsg;
+			SET rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ.(XMLNSC.NamespaceDecl)xmlns = NULL;
+			
+			IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+				SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+			END IF;
+			
+ 			IF NOT EXISTS(rOrgMsg.*:ReservationID[]) AND NOT EXISTS(rOrgMsg.*:PackageID[]) THEN
+ 				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveResComponentsRS AS rOut;		
+				CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);							
+				SET rOut.ns:Errors.ns:Error = 'ReservationId/PackageId Missing';				
+				RETURN TRUE;
+ 			END IF; 				
+ 			
+ 			IF rEnv.Temp.ReservationId IS NOT NULL OR rEnv.Temp.ReservationId <> '' THEN
+	 			IF EXISTS(rOrgMsg.*:SessionId.*:SessionToken[]) THEN
+					SET rEnv.SessionGUID = rOrgMsg.*:SessionId.*:SessionToken;
+								
+					CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rLoadBkngReq;
+					CALL com.ncl.ais.utils.CreateVersonixHeader(rOrgMsg.*:SessionId.*:SessionToken,rLoadBkngReq);
+					SET rLoadBkngReq.ResID = FIELDVALUE(rOrgMsg.*:ReservationID.(XMLNSC.Attribute)ID);
+					-- Load Booking
+					PROPAGATE TO TERMINAL 'out1';
+				ELSE
+					
+					DECLARE cRequestorId CHARACTER COALESCE(rOrgMsg.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, '0');
+					DECLARE cPCC CHARACTER COALESCE(rOrgMsg.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '');
+					DECLARE cSystemName CHARACTER COALESCE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'QUEST_INTERNAL');
+					
+					CALL com.ncl.ais.utils.LookupAgencyInfo(cRequestorId , cPCC, cSystemName, AgencyMap, XC10ConnectionConfig, rEnv);
+ 					
+					IF EXISTS(rEnv.Temp.AgencyInfoError[]) THEN
+						SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;				
+						CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveResComponentsRS;
+						SET rOut.ns:Warnings.ns:Warning = rEnv.Temp.AgencyInfoError.*:agencyNotFound;
+						
+						RETURN TRUE;	
+					END IF;
+					
+					CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rLoadBkngReq;
+					CALL com.ncl.ais.utils.CreateVersonixHeader(SessionToken, rLoadBkngReq);
+					SET rLoadBkngReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+					SET rLoadBkngReq.ResID = FIELDVALUE(rOrgMsg.*:ReservationID.(XMLNSC.Attribute)ID);
+					-- Load Booking
+					PROPAGATE TO TERMINAL 'out1';
+				END IF;
+ 			ELSE
+ 				PROPAGATE TO TERMINAL 'out2';
+ 			END IF; 			
+
+  		RETURN FALSE;
+	END;
+	
+END MODULE;
+
+--***********************************************************************************************
+--** Description of Module
+--** ===========================================================================================
+--** This Module prepare the request for DB Search and then map the final response based on
+--**  DB Search and loadbooking response.
+--***********************************************************************************************
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_PrepareLoadBookingResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		----------------------------------
+		-- Declaring References--
+		----------------------------------
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ;
+		DECLARE rLoadBkgRes REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rOut, rOutResp, rPkgs, rDBSearchReq, rResp, rDBOutput REFERENCE TO OutputRoot;
+		
+		CREATE LASTCHILD OF rEnv.Temp.Message AS rOutResp DOMAIN('XMLNSC') IDENTITY ns:NCL_CruiseRetrieveResComponentsRS; 
+    	CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg,rOutResp);
+--    	CREATE FIELD rOutResp.Success;
+				
+		IF rEnv.Temp.ReservationId IS NOT NULL OR rEnv.Temp.ReservationId <> '' THEN
+		 
+			SET rEnv.Temp.Message.LoadBkingResp = InputRoot.XMLNSC.LoadBooking_OUT;
+			-- ignore the Load booking errors when no reservation id present
+			IF EXISTS(rLoadBkgRes.Errors.Error[]) OR rEnv.Temp.ReservationId = '' THEN			 
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveResComponentsRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg,rOut);    						
+				SET rOut.ns:Warnings.ns:Warning = rLoadBkgRes.Errors.Error.ErrorMessage;			
+				RETURN TRUE;			
+			ELSE  
+	     		CREATE FIELD rOutResp.Success;
+				CREATE LASTCHILD OF rOutResp AS rPkgs IDENTITY Packages; 
+	 				--------------------------------------------------------------------------------
+					-- Calling DBDearch to get the GuestInfo Based on the Package/ProductType --
+					--------------------------------------------------------------------------------
+					FOR rPackages AS rLoadBkgRes.*:ResShell.*:ResPackages.*:ResPackage[] DO 
+	 					IF rPackages.PackageClass = 'VOYAGE' THEN
+	 						DECLARE rPackageID CHARACTER;
+							SET rPackageID = rPackages.PackageID;
+	 						-- Calling DBSearch Procedure
+	 						CALL CallDBSearch(Environment, rPackages, rPackageID, rDBOutput, rEnv, rPkgs); 	 						
+			  			END IF;	
+					END FOR;
+			END IF;
+		ELSE
+			-- loop trhough actual request for each package 
+			CREATE FIELD rOutResp.Success;
+			CREATE LASTCHILD OF rOutResp AS rPkgs IDENTITY Packages;
+			FOR rPackages AS rEnv.Temp.Packages.PackageID[] DO
+				DECLARE rPackageID CHARACTER;
+				SET rPackageID = rPackages;
+				CALL CallDBSearch(Environment, rPackages, rPackageID, rDBOutput, rEnv, rPkgs);
+ 			END FOR;
+		END IF;
+-- 		PROPAGATE TO LABEL 'LogOut';
+ 		-- Creating final response
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY ns:NCL_CruiseRetrieveResComponentsRS; 
+   		SET rResp = rOutResp;
+   			
+	RETURN TRUE;
+END; 
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_DBSearchResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+ 		SET rEnv.Temp.Message.DBSearchResponse = rIn;
+		
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Endpoint;
+		
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveResComponentsRS;
+
+ 		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+ 		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+ 		END IF;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveResComponentsRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+ 	
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+-- 		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		CALL CopyMessageHeaders();
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;		
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+ 
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY ns:NCL_CruiseRetrieveResComponentsRS;
+		-- Copy root level attributes from environment if the Input Message was stored
+		IF EXISTS (rEnv.Temp.Message.*:NCL_CruiseRetrieveResComponentsRQ[]) THEN
+			DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseRetrieveResComponentsRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOutResp);
+		END IF;
+ 
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';		
+		
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveComponents_LogOutReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables.Temp;
+		DECLARE rLogOut REFERENCE TO OutputRoot;
+		DECLARE rIn REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveResComponentsRQ;
+		-- Do not logout when ReturnTempState is true
+					
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.Logout_IN AS rLogOut;
+		SET rLogOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rLogOut.MsgHeader.SessionGUID = rEnv.SessionGUID;		
+		RETURN TRUE;
+		
+	END;
+END MODULE;

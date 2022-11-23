@@ -1,0 +1,13 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseBookingAdditionalHistory_DBSearchResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.CustomDbSearch_OUT;
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+ 		SET rEnv.Temp.Message.DBSearchResponse = rIn;
+		
+		RETURN FALSE;
+	END;
+
+END MODULE;

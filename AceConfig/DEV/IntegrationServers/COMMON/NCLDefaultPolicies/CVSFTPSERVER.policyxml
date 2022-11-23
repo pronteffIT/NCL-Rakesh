@@ -1,0 +1,21 @@
+<?xml version="1.1" encoding="UTF-8" standalone="yes"?>
+<policies>
+  <policy policyType="FtpServer" policyName="CVSFTPSERVER">
+    <allowedCiphers></allowedCiphers>
+    <fileFtpAccountInfo></fileFtpAccountInfo>
+    <fileFtpCompression>0</fileFtpCompression>
+    <fileFtpConnectionType>PASSIVE</fileFtpConnectionType>
+    <fileFtpDirectory></fileFtpDirectory>
+    <fileFtpScanDelay>600</fileFtpScanDelay>
+    <fileFtpServer>securetransfer.hdms.com</fileFtpServer>
+    <fileFtpTransferMode></fileFtpTransferMode>
+    <fileFtpUser>CVSFTP</fileFtpUser>
+    <knownHostsFile></knownHostsFile>
+    <mac></mac>
+    <preserveRemoteFileDate>FALSE</preserveRemoteFileDate>
+    <remoteTransferType>SFTP</remoteTransferType>
+    <sslProtocol>TLSv1.2</sslProtocol>
+    <strictHostKeyChecking>FALSE</strictHostKeyChecking>
+    <timeoutInterval>0</timeoutInterval>
+  </policy>
+</policies>

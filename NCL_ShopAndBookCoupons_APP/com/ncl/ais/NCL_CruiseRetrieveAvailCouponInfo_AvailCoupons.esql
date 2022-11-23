@@ -1,0 +1,206 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailCouponInfo_AvailCoupons
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.GetAvailCoupons_OUT;
+		
+		DECLARE lmi CHARACTER rEnv.Temp.LMI;
+		
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			--adding audit trail
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailCouponInformationRS AS rOut;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error response from VX GetAvailCoupons api ...', rEnv);
+			--create warnings in case DB Search has error response
+			SET rOut.ns:Warnings.ns:Warning = rIn.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rIn.Errors.Error.ErrorMessage FROM 1 FOR 64);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+			RETURN TRUE;
+		ELSE
+			
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'couponInfo';
+			--SET rEnv.couponInfo[<] = InputRoot.XMLNSC.GetAvailCoupons_OUT;
+			SET rEnv.{lmi} = InputRoot.XMLNSC.GetAvailCoupons_OUT;
+		END IF;
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAvailCouponInfo_CheckResID
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rResGuest,rTempRef REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.InpReq;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rInManageSession REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAvailCouponInformationRS;
+
+		IF LASTMOVE(rInManageSession) AND EXISTS(rInManageSession.SessionInfo.SessionToken[]) THEN
+
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Manage Session invoked', rEnv);
+
+			SET rEnv.Endpoint = rInManageSession.SessionInfo.Endpoint;
+			
+			SET rEnv.SessionGUID = rInManageSession.SessionInfo.SessionToken;
+			SET rEnv.AgencyID = rInManageSession.agencyID;
+		
+		
+		ELSEIF EXISTS(rInManageSession.*:Warnings[]) THEN
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Get session token failed ...', rEnv);
+
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveAvailCouponInformationRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg, rOut);
+			-- Construct The Error Response from Verify Agecncy Response
+			SET rOut.ns:Warnings = rInManageSession.*:Warnings;	
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+				
+		ELSEIF EXISTS(rInManageSession.*:Errors[]) THEN
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Get session token failed ...', rEnv);
+
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveAvailCouponInformationRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg, rOut);
+			-- Construct The Error Response from Verify Agecncy Response
+			SET rOut.ns:Errors = rInManageSession.*:Errors;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		ELSEIF LASTMOVE(rVAIn) AND EXISTS(rVAIn.*:sessionGUID[] ) THEN
+
+			SET rEnv.Endpoint = COALESCE(rVAIn.endpoint, '');
+			SET rEnv.SessionGUID = rVAIn.sessionGUID;
+			SET rEnv.AgencyID = rVAIn.*:agencyID;
+			-- SET rEnv.OfficeCode = rVAIn.*:officeCode;
+
+		ELSE
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveAvailCouponInformationRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg, rOut);
+			-- Construct The Error Response from Verify Agecncy Response
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAResponse(rVAIn, rOut);
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Or Warning not returned From Verify Agency...', rEnv);
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+
+	/*	IF EXISTS(rOrgMsg.*:ReservationID.(XMLNSC.Attribute)ID[]) THEN
+			SET rEnv.ResID = rOrgMsg.*:ReservationID.(XMLNSC.Attribute)ID;
+			RETURN TRUE;
+	*/	
+		IF EXISTS (rOrgMsg.ns:SailingInfo.ns:SelectedSailing[]) THEN
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			-- SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BkingChnlCompCd;
+			-- SET rOut.MsgHeader.ValidateMode = 'Y';
+			
+			SET rOut.ResShell.ResHeader.AgencyID = rEnv.AgencyID;
+			SET rOut.ResShell.ResHeader.SourceCode = rEnv.BkingChnlCompCd;
+			SET rOut.ResShell.ResHeader.OfficeCode = rVAIn.*:officeCode;
+			
+			IF com.ncl.ais.utils.IsEmpty(FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID)) THEN
+		
+				DECLARE SAIL_DATE_FROM,SAIL_DATE_TO DATE;
+				
+				DECLARE ShipCode CHARACTER  rOrgMsg.ns:SailingInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)ShipCode;
+				
+				SET  SAIL_DATE_FROM = CAST(CAST(CAST(FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)Start) AS DATE ) AS CHARACTER FORMAT 'dd-MM-yy') AS DATE FORMAT 'dd-MM-yy') ;
+				SET  SAIL_DATE_TO = CAST(CAST(CAST(FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedSailing.(XMLNSC.Attribute)End) AS DATE ) AS CHARACTER FORMAT 'dd-MM-yy')AS DATE FORMAT 'dd-MM-yy');
+	
+				SET rEnv.VoyageID = THE( SELECT ITEM sh.SAIL_ID FROM Database.sail_header AS sh ,Database.package_definition AS pd WHERE sh.ship_code = ShipCode AND pd.SAIL_ID = sh.SAIL_ID 
+									AND sh.sail_date_from = SAIL_DATE_FROM AND sh.SAIL_DATE_TO = SAIL_DATE_TO );
+
+			END IF;
+
+			DECLARE guestID INTEGER 1;
+			DECLARE guestRef CHARACTER '';
+			FOR rInGuest AS rOrgMsg.ns:GuestInfo.ns:Guest[] DO
+
+				CREATE LASTCHILD OF rOut.ResShell.ResGuests AS rResGuest NAME 'ResGuest';
+
+				SET rResGuest.GuestSeqN = COALESCE(rInGuest.(XMLNSC.Attribute)GuestRefNumber,guestID);
+				
+				-- SET rResGuest.GuestID = -guestID;
+				/* IF com.ncl.ais.utils.IsEmpty(rInGuest.(XMLNSC.Attribute)LoyaltyMembershipID) THEN
+				SET rResGuest.GuestID = -guestID;
+				END IF; */
+
+				SET rResGuest.ClientID =  FIELDVALUE(rInGuest.(XMLNSC.Attribute)LoyaltyMembershipID);
+
+				IF rInGuest.ns:GuestTransportation.(XMLNSC.Attribute)Mode = '14' THEN
+					-- Add the Air Bundles to the Guest
+					SET rResGuest.DynamicFields.Field.Name = 'GTWOUT';
+					SET rResGuest.DynamicFields.Field.StrVal = rInGuest.ns:GuestTransportation.ns:GatewayCity.(XMLNSC.Attribute)LocationCode;
+
+					CREATE LASTCHILD OF rResGuest.DynamicFields AS rTempRef NAME 'Field';
+					SET rTempRef.Name = 'GTWRET';
+					SET rTempRef.StrVal = rInGuest.ns:GuestTransportation.ns:GatewayCityRet.(XMLNSC.Attribute)LocationCode;
+					--TransportationRequestType
+				END IF;
+				
+				
+				-- guest ref require for ResPackage
+				SET guestRef = LTRIM(guestRef || ' ' || CAST(guestID AS CHARACTER));
+				
+				SET guestID = guestID +1;
+				
+			END FOR;
+			
+			IF COALESCE(rEnv.VoyageID, '') <> '' THEN
+				CREATE LASTCHILD OF rOut.ResShell.ResPackages AS rTempRef NAME 'ResPackage';
+				SET rTempRef.PackageID = rEnv.VoyageID ;
+				SET rTempRef.GuestRefs = guestRef;
+				SET rTempRef.PackageClass = 'VOYAGE';
+				SET rTempRef.Ship = FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)ShipCode);
+				SET rTempRef.PriceCategory = FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode);
+				SET rTempRef.BerthCategory = FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode);
+	
+				CREATE LASTCHILD OF rOut.ResShell.ResShipRequests AS rTempRef NAME 'ResShipRequest';
+				SET rTempRef.Category =
+				COALESCE(FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedCategory.(XMLNSC.Attribute)BerthedCategoryCode),FIELDVALUE(rOrgMsg.ns:SailingInfo.ns:SelectedCategory.(XMLNSC.Attribute)PricedCategoryCode));
+				SET rTempRef.InventoryReqType = 'GTY ONLY';
+			END IF; 	
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling UpdateBooking service ...', rEnv);
+						-- Calling UpdateBooking service
+				PROPAGATE TO TERMINAL 'out2';
+				
+		ELSE
+			RETURN TRUE;	
+			
+		END IF;
+		
+
+
+		RETURN FALSE;
+
+	END;
+
+
+END MODULE;
+

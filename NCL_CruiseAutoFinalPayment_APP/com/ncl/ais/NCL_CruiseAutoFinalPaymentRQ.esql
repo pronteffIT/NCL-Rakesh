@@ -1,0 +1,377 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayload EXTERNAL BOOLEAN FALSE;
+DECLARE ExtCodeShared SHARED ROW;
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_AUTO_FINAL_PYMT_RESP';
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentRQ_VerifyAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE bPayload BLOB;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseAutoFinalPaymentRQ;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InpReq';
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		SET rEnv.MessageID = cLocalTranId;
+		-- saving MQMD to send reply
+		SET rEnv.Temp.MQMD = InputRoot.MQMD;
+
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.InpReq = InputRoot.XMLNSC.*:NCL_CruiseAutoFinalPaymentRQ;
+		SET rEnv.BookChannel = FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rEnv.CompanyCode = FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ClientID, ''),
+		'','',rEnv);
+		
+		-- log payload
+		IF LogPayload THEN
+			DECLARE rInPymntOptions REFERENCE TO rEnv.Booking.Req.*:NCL_CruiseBookingPaymentRQ.*:ReservationInfo.*:PaymentOptions;
+			FOR pymntOptions AS rInPymntOptions.*:PaymentOption[] DO
+				IF FIELDVALUE(pymntOptions.*:PaymentCard.(XMLNSC.Attribute)CardNumber) IS NOT NULL THEN
+					SET pymntOptions.*:PaymentCard.(XMLNSC.Attribute)CardNumber = 'xxxxxxxxxxxxxxxx';
+				END IF;
+			END FOR;
+			DECLARE bPayload BLOB ASBITSTREAM(rEnv.InpReq CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Auto Final Payment Request', 'xml', rEnv);
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api request', 'xml', rEnv);
+		END IF;
+		
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling verify agency service to get session ...', rEnv);
+		-- create verify agency request
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		SET OutputRoot.XMLNSC.*:VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+	
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentRQ_BuildAutoFinalRQ
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE bPayload BLOB;
+		DECLARE rEnv,rOut,rOutPay,rOutFinalPymnt,rOutPayment REFERENCE TO Environment.Variables;
+		DECLARE rInReq REFERENCE TO rEnv.InpReq.*:ReservationInfo;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE BookingChannel CHARACTER;
+		SET BookingChannel = COALESCE(FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		SET rEnv.ReqID.CompanyCode = FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+		IF EXISTS(rVAIn.*:agencyID[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Session established ...', rEnv);
+
+			SET rEnv.SessionGUID = rVAIn.*:sessionGUID;
+			SET rEnv.agencyID = rVAIn.*:agencyID;
+			SET rEnv.agencyCurrency = rVAIn.*:agencyCurrency;
+			SET rEnv.Endpoint = COALESCE(rVAIn.*:endpoint,'');
+			SET rEnv.AFPOption = rInReq.*:AFPOption;
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking AutoFinalPayment Service...', rEnv);
+			--SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			CREATE FIELD OutputRoot.XMLNSC.AutoFinalPayment_IN AS rOutFinalPymnt;
+			SET rOutFinalPymnt.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET rOutFinalPymnt.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			SET rOutFinalPymnt.MsgHeader.MessageID = rEnv.MessageID;
+			SET rOutFinalPymnt.MsgHeader.Language = 'ENG';
+			SET rOutFinalPymnt.ResID			= FIELDVALUE(rInReq.*:ReservationID.(XMLNSC.Attribute)ID);
+			SET rOutFinalPymnt.ClientID			= rInReq.*:ClientID;
+			SET rOutFinalPymnt.AFPOption		= rInReq.*:AFPOption;
+			SET rOutFinalPymnt.Amount			= rInReq.*:PaymentOptions.*:PaymentOption.*:PaymentAmount;
+			MOVE rInReq TO rInReq.*:PaymentOptions.*:PaymentOption.*:PaymentCard;
+			IF UPPER(rEnv.AFPOption) = 'CREATE' THEN
+				
+				CREATE FIELD rOutFinalPymnt.CreditCard.CCData AS rOutFinalPymnt;
+				SET rOutFinalPymnt.CCNumber			= FIELDVALUE(rInReq.(XMLNSC.Attribute)CardNumber);
+				SET rOutFinalPymnt.CCType			= getSWCode(rEnv.ReqID.CompanyCode,rInReq.(XMLNSC.Attribute)CardCode);
+				SET rOutFinalPymnt.ControlNumber	= FIELDVALUE(rInReq.(XMLNSC.Attribute)SeriesCode);
+				SET rOutFinalPymnt.ExpDate			= CAST(CAST('01'||FIELDVALUE(rInReq.(XMLNSC.Attribute)ExpireDate)AS DATE FORMAT 'ddMMyy') AS CHARACTER FORMAT 'yyyy-MM');
+				SET rOutFinalPymnt.NameOnCard		= rInReq.*:CardHolderName;
+				SET rOutFinalPymnt.BillingAddress.Line1	= rInReq.*:Address.*:StreetNmbr;
+				SET rOutFinalPymnt.BillingAddress.Line2	= rInReq.*:Address.*:AddressLine;
+				SET rOutFinalPymnt.BillingAddress.Line3	= rInReq.*:Address.*:CityName;
+				SET rOutFinalPymnt.BillingAddress.City	= rInReq.*:Address.*:CityName;
+				SET rOutFinalPymnt.BillingAddress.State	= rInReq.*:Address.*:StateProv;
+				SET rOutFinalPymnt.BillingAddress.Country = rInReq.*:Address.*:CountryName;
+				SET rOutFinalPymnt.BillingAddress.ZIP	= rInReq.*:Address.*:PostalCode;
+				
+				DECLARE Index INTEGER 0;
+				CALL CreateThreeDSData(rEnv.InpReq,Index,rOutFinalPymnt);
+				CALL ForterAddionalData(rEnv.InpReq,Index,rOutFinalPymnt);
+				
+			END IF;
+
+			RETURN TRUE;
+
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseAutoFinalPaymentRS AS rOutPay;
+			MOVE rInReq TO rEnv.InpReq;
+			CALL com.ncl.ais.utils.CopyAttributes (rInReq,rOutPay);
+
+			IF EXISTS(rVAIn.agencyNotFound[]) OR EXISTS(rVAIn.loginError[]) THEN
+
+				IF EXISTS(rVAIn.agencyNotFound[]) THEN
+
+					SET rOutPay.ns:Warnings.ns:Warning = rVAIn.agencyNotFound;
+				ELSE
+					SET rOutPay.ns:Warnings.ns:Warning = rVAIn.loginError;
+				END IF;
+
+			ELSEIF EXISTS(rVAIn.runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				SET rOutPay.ns:Errors.ns:Error = rVAIn.runtimeError;
+
+			END IF;
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		END IF;
+	END;
+	
+END MODULE;
+
+CREATE PROCEDURE CreateThreeDSData (IN rIn REFERENCE,INOUT Index INTEGER,INOUT rCCData REFERENCE )
+BEGIN
+	IF	COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,'') <> '' THEN
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSversion';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSversion,'');
+	
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSdirectoryServerTransID';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSdirectoryServerTransID,'');
+	
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSauthVerificationValue';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSauthVerificationValue,'');
+
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECIFlag';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,''); 
+		
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECXid';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECXid,''); 
+	END IF;		
+END;
+
+CREATE PROCEDURE ForterAddionalData (IN rIn REFERENCE,INOUT Index INTEGER,INOUT rCCData REFERENCE )
+BEGIN
+	IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'') <> '' THEN
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'FraudTrackingOrderId';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'');
+	END IF;
+	IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'') <> '' THEN
+		SET Index = Index + 1;
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Code = 'DeviceID';
+		SET rCCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'');
+	END IF;	
+END;
+
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentRQ_BuildFinalRS
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOutPay,rAutoFinalPay,rErrResp REFERENCE TO Environment.Variables;
+		DECLARE rInPay REFERENCE TO rEnv.InpReq;
+		DECLARE rReqIn REFERENCE TO InputRoot.XMLNSC.AutoFinalPayment_OUT;
+		DECLARE inStatusCnt,i INTEGER;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.endPoint;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAutoFinalPaymentRS AS rOutPay;
+		CALL com.ncl.ais.utils.CopyAttributes(rInPay,rOutPay);
+
+		
+		IF EXISTS(rReqIn.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'AutoFinalPayment returned errors ...', rEnv);
+			SET rOutPay.ns:Status = rReqIn.Status;
+			CALL com.ncl.ais.utils.getAdvisoryCode(rReqIn.Errors.Error.ErrorCode,rEnv.BookChannel,rEnv);
+			FOR rError AS rReqIn.Errors.Error[] DO
+				CREATE LASTCHILD OF  rOutPay.ns:Warnings AS rErrResp NAMESPACE ns NAME 'Warning';
+				IF rEnv.Temp.FinalResp.EXTERNAL_CODE IS NULL THEN
+					SET rErrResp.(XMLNSC.Attribute)Code = rError.ErrorCode;
+					SET rErrResp.(XMLNSC.Attribute)ShortText = SUBSTRING(rError.ErrorMessage FROM 1 FOR 64);
+					SET rErrResp = FIELDVALUE(rError.ErrorMessage);
+				ELSE
+					SET rErrResp = rError.ErrorMessage;
+					SET rErrResp.(XMLNSC.Attribute)Code = rEnv.Temp.FinalResp.EXTERNAL_CODE;
+					SET rErrResp.(XMLNSC.Attribute)ShortText = rEnv.Temp.FinalResp.DESCRIPTION;
+				END IF;
+				IF rError.ErrorSeverity IN('W', 'I') THEN
+					SET rErrResp.(XMLNSC.Attribute)Type = '2';
+				ELSE
+					SET rErrResp.(XMLNSC.Attribute)Type = '3';
+				END IF;
+				
+			END FOR;
+			
+			PROPAGATE TO TERMINAL 'out';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Log Out..', rEnv);
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+
+			PROPAGATE TO TERMINAL 'out2';
+			
+			RETURN FALSE;
+		ELSE
+
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+			IF LogPayload THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AutoFinalPayment  Response..', 'xml', rEnv);
+			END IF;
+			
+			SET rOutPay.ns:Status = rReqIn.Status;
+			SET rOutPay.ns:Amount =  rReqIn.Amount;
+			SET rOutPay.ns:DueDate =  CAST(CAST(rReqIn.DueDate AS DATE FORMAT 'MM/dd/yyyy') AS CHARACTER FORMAT 'yyyy-MM-dd');
+			MOVE rReqIn TO rReqIn.AFPTransactions.Transaction;
+			IF  rReqIn.TransID IS NOT NULL    THEN 
+				CREATE FIELD rOutPay.ns:AFPTransactions.ns:Transaction AS rOutPay;
+				SET rOutPay.ns:TransID= rReqIn.TransID;
+				SET rOutPay.ns:SrcEntity.ns:ClientID	= rReqIn.SrcEntity.ClientID;
+				SET rOutPay.ns:DestEntity.ns:ResID		= rReqIn.DestEntity.ResID;
+				SET rOutPay.ns:Status			= rReqIn.Status;
+				SET rOutPay.ns:FormOfTrans = rReqIn.FormOfTrans;
+				SET rOutPay.ns:Type = rReqIn.Type;
+				SET rOutPay.ns:ExternalIdent = rReqIn.ExternalIdent;
+				SET rOutPay.ns:Currency = rReqIn.Currency;
+				SET rOutPay.ns:Amount = rReqIn.Amount;
+				SET rOutPay.ns:CCTransID = rReqIn.CCTransID;
+				SET rOutPay.ns:Timestamp = rReqIn.Timestamp;
+				SET rOutPay.CreatedBy = rReqIn.CreatedBy;
+				SET rOutPay.ns:CCMerchant = rReqIn.CCMerchant;
+				SET rOutPay.ns:Comments= rReqIn.Comments;
+				SET rOutPay.ns:CCServerResponse = rReqIn.CCServerResponse;
+				SET rOutPay.ns:CVVResponse = rReqIn.CVVResponse;
+				SET rOutPay.ns:AVSResponse= rReqIn.AVSResponse;
+			END IF;
+			PROPAGATE TO TERMINAL 'out';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, ' Agency Log Out..', rEnv);
+
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+
+			PROPAGATE TO TERMINAL 'out2';
+			
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentRQ_Handle_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,LogPayLoad REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF LogPayLoad THEN
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload,NodeLabel,'Cruise Booking Component Payment Exception..','xml',rEnv);
+			END IF;
+		END IF;
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception in CruiseBookingComponentPayment api', rEnv);
+		SET OutputRoot = InputRoot;
+
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAutoFinalPaymentRQ_RunTimeException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutPay REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rInPay REFERENCE TO rEnv.PayReq;
+		
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		
+		
+	    SET OutputRoot.MQRFH2.usr.Endpoint  = COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAutoFinalPaymentRQ AS rOutPay;
+		DECLARE rOutPayment REFERENCE TO rOutPay.ns:PaymentOptions;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[])  THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking Mangage Transfer api', rEnv);
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+				SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rInPay,rOutPay);		
+				CREATE FIELD rOutPayment.ns:Success;
+				SET rOutPay.ns:Warnings.ns:Warning = cErrorText;
+				SET rOutPay.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+				SET rOutPay.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+				SET rOutPay.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		END IF;		
+		RETURN TRUE;
+	END;
+END MODULE;
+CREATE PROCEDURE getSWCode(IN systemName CHARACTER,IN cardCode CHARACTER) RETURNS CHARACTER 
+BEGIN 
+	DECLARE ccQuery,ExternalCd CHARACTER; 
+	SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+	IF com.ncl.ais.utils.IsEmpty(ExternalCd) THEN 
+		SET ccQuery = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+									DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+									INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+									INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+									TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=''CreditCard'' AND DETAILS.EXTERNAL_CODE = ?'; 
+	
+		SET ExtCodeShared.Rows[] = PASSTHRU(ccQuery,systemName,cardCode); 
+		SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+	END IF; 
+RETURN ExternalCd; 
+END;
+

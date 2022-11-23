@@ -1,0 +1,149 @@
+BROKER SCHEMA com.ncl.ais
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     CheckErrorCode
+ * Description       :     This filter module conditionally routes the message to either generate
+ *							a warning response message to caller or go for further processing
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE FILTER MODULE NCL_ProcessStoreAmenityOrderErrorResponse_CheckErrorCode
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		IF Root.XMLNSC.StoreAmenityOrder_OUT.Errors.Error.ErrorCode = '25048' THEN
+			RETURN TRUE;
+		ELSE
+			RETURN FALSE;
+		END IF;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     ProcessAmenities
+ * Description       :     This module checks if the database update of StoreAmenities was completed
+ *							before the API errored out and sends a response message accordingly
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_ProcessStoreAmenityOrderErrorResponse_ProcessAmenities
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOutResp, rOutWarnings, rOutTPAExt REFERENCE TO Environment.Variables;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.StoreAmenityOrder_OUT.Errors;
+		
+		-- Compute FinalAmenityCount	
+		SET rEnv.FinalAmenityCount = com.ncl.ais.utils.GetAmenityCountByResID(rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);	 
+		
+		IF rEnv.FinalAmenityCount > rEnv.InitialAmenityCount 
+		THEN
+			DECLARE AmenityOrderID CHARACTER SUBSTRING(SUBSTRING(rIn.Error.ErrorMessage AFTER '#') BEFORE ' ');
+			DECLARE bPayload BLOB;
+			-- Generate the Response Message and Dispatch
+			CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+			-- Set the MQMD header details from the Environment
+			SET OutputRoot.MQMD = Environment.MQMD;
+			--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseCreateAmenityOrderItemsRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rEnvIn, rOutResp);			
+		
+			CREATE LASTCHILD OF rOutResp IDENTITY sc:Success;
+			
+			CREATE LASTCHILD OF rOutResp AS rOutWarnings IDENTITY sc:Warnings;
+			-- TODO What should this value be?
+			SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)Code = 'A9000';
+			SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'Amenity Order#' || AmenityOrderID || ' has been created but could not be retrieved at this time';
+			SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)Type = 2;
+			
+			CREATE LASTCHILD OF rOutResp AS rOutTPAExt IDENTITY sc:TPA_Extensions;
+			SET rOutTPAExt.sc:ExtensionName = 'AmenityOrderID';
+			SET rOutTPAExt.sc:ExtensionValue = AmenityOrderID;
+			
+			-- Log the response payload
+			SET bPayload = OutputRoot.XMLNSC;
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateAmenityOrderItems response message', 'xml', rEnv);
+			
+			PROPAGATE TO TERMINAL 'Output';			
+		ELSE
+			-- TODO Should I copy MQMD details here?
+			CALL CopyEntireMessage();
+			PROPAGATE TO TERMINAL 'Warning';
+		END IF;
+		
+		RETURN FALSE;
+	END;
+	
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     CallGenericWarningHandler
+ * Description       :     This module prepares the message to be sent to the generic
+ *							warning subflow.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_ProcessStoreAmenityOrderErrorResponse_CallGenericWarningHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.StoreAmenityOrder_OUT.Errors;
+		DECLARE rEnvIn REFERENCE TO Environment.Variables.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE rEnv, rEnvInAttr REFERENCE TO Environment.Variables;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+		-- Set the MQMD header details from the Environment
+		SET OutputRoot.MQMD = Environment.MQMD;
+		--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		
+		-- Pass the attributes to the stored proc
+		CREATE FIELD rEnv.XMLNSC.sc:NCL_CruiseCreateAmenityOrderItemsRQ AS rEnvInAttr; 
+		CALL com.ncl.ais.utils.CopyAttributes(rEnvIn,rEnvInAttr);
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+		-- if errors exist in response then propagate to the generic warning node to handle the error.
+   		SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.StoreAmenityOrder_OUT.Errors;
+   		SET OutputRoot.XMLNSC.Body.Code = rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+   		SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseCreateAmenityOrderItemsRS';
+   		
+		RETURN TRUE;
+	END;
+END MODULE;
+

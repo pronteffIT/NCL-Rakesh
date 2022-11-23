@@ -1,0 +1,2137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xhtml="http://www.w3.org/1999/xhtml" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation>This schema contains data type definitions for client/household management operations</xs:documentation>
+	</xs:annotation>
+	<xs:complexType name="Client">
+		<xs:annotation>
+			<xs:documentation>Client profile.</xs:documentation>
+			<xs:appinfo source="Versonix">
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="ClientHeader" type="ClientHeader">
+				<xs:annotation>
+					<xs:documentation>Basic client data (like first/last name, birthday, nationality, etc)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Phones" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client phones. Unlimited amount of phones can be specified.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Phone" type="Phone" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Client phone of specific type</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Preferences" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client preferences (like diet, accommodation preferences, etc). Unlimited amount of preferences is allowed but all preference types must be previously set up in SeaWare database.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Preference" type="ClientPreference" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Client preference of specific type</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Classifications" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client classifications - additional user defined properties to classify clients. Unlimited amount of classifications is allowed but all classification types must be previously set up in SeaWare database.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Classification" type="Classification" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Client classification property</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Programs" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client marketing programs (programs that are applied to this client, i.e. client is member of them). Unlimited amount of programs is allowed but all of them must be previously set up in SeaWare database.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Program" type="ProgramMembership" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Client marketing program</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SpecialDates" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Dates that have special meaning for client (like any kind of anniversaries, etc)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SpecialDate" type="ClientSpecialDate" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Client special date pf specific type</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="CarRegistrations" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Information about cars that belong to this client. <xhtml:span class="attention">Supported in 041113 only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="CarRegistration" type="ClientCarRegistration" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Client car details</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="BorderForms" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="BorderForm" type="BorderFormInfo" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ClientHeader">
+		<xs:annotation>
+			<xs:documentation>Common Data for the Client</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="ClientID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If positive - refers to an existing record in the Seaware client database. If omitted or has zero value -  defines new client profile. If negative - refers to previously created Client (that is already stored in temporary storage)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HouseholdID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Refers to the Household element for the client. The household profile can either be stored in the client database on the cruise line side or be maintained as part of the session. The system will first try to locate the profile in the Household elements of the session and then will go into the client database (only if provided HouseholdID is greater than 0). Negative numbers (-1, -2, etc.) should be used for new households.  <xhtml:span class="versiondiff">In 041113 this is a not mandatory field</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LastName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Last name must be provided for the StoreBooking and StoreClient messages.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="FirstName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>First name must be provided for the StoreBooking and StoreClient messages.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="MiddleName" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="EMail" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Email address</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="80"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="DefaultDocDelivery" type="DeliveryType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default delivery type for travel documents.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsActive" type="Boolean" default="Y" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Inactive clients should not be shown in dropdowns or other selection lists by default. Other than that they should be still functional.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Salutation" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Suffix" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Title" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Occupation" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Birthday" type="xs:date" nillable="true" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's birthday. If nil="true" than birthday data will be cleared in database.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BirthPlace" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's birth place (city, town, etc).</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="CountryOfBirth" type="CountryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's birth country.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Gender" type="Gender" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's gender.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Nationality" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's nationality.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Citizenship" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's citizenship.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Language" type="LanguageCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's native (or preferred) language.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LastNameNative" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Last name in Native Language.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="FirstNameNative" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>First name must in Native Language.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="MiddleNameNative" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Middle name in Native Language.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="SuffixNative" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Suffix in Native Language.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="TitleNative" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Title in Native Language.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="IsHandicapped" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Is client handicapped</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MarketingAllowed" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Does client permit to contact his/her because of some marketing campaigns (to send some marketing materials, promotions, etc). If all transports below set to "false" than client doesn't allow to contact him/her.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Mail" type="Boolean" default="N" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Client permits to receive marketing information by mail (in paper form).</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="EMail" type="Boolean" default="N" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Client permits to receive marketing information by e-mail (in electronic form).</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Phone" type="Boolean" default="N" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Client permits marketing calls over the phone.</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="SMS" type="Boolean" default="N" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Client permits to receive marketing information on his/her mobile phone by SMS.</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="IsSmoker" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Does client smoke?</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Passport" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's passport data</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Number" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Passport number</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="IssuedBy" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>The organization who issued the passport</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="IssuedOn" type="xs:date" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>The date when passport was issued</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ExpirationDate" type="xs:date" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>The date when passport is expired</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Referral" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>The source of information about company's services for this specific client (e.g. where did they found information about this cruise line company or who referred them to this company, etc.). If no child elements are set then the referral information will be removed from database.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Type" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Referral type. Must be predefined in SeaWare setup. Possible values could be: "CLIENT" (other client advised to use company's services), "INTERNET" (client has found company somewhere in the Internet), etc</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Date" type="xs:date" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ClientID" type="RecordID" nillable="true" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Reference to an existing client in SeaWare in case if referred by a person.. If nil="true" then client reference will be removed from database.</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="HouseholdID" type="RecordID" nillable="true" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Reference to existing household in SeaWare in case if referred by a household member. If nil="true" then household reference will be removed from database.</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Source" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Some additional information about referral source for some referral types. For example, if referral type is INTERNET this field can contain address of the site or search engine that was used by client.</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ClientType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Type of client. Value depends on SeaWare setup (all client types must be set up in SeaWare).</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="15"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="GuestType" type="GuestType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default reservation guest type for this client. This guest type will be pre-selected for this client at reservation creation time (of course, it will be possible to change them later). All guest types must be created in SeaWare in advance.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SSN" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's Social Security Number. <xhtml:span class="attention">Input field only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="9"/>
+						<xs:fractionDigits value="0"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="CheckInPhoto" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Client's Check In photo.
+					</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:annotation>
+						<xs:documentation>Encoded picture.</xs:documentation>
+					</xs:annotation>
+					<xs:simpleContent>
+						<xs:extension base="xs:base64Binary">
+							<xs:attribute name="FileType" type="ShortComment" default="JPEG"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="WEB" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Web access related data.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="AllowAccess" type="Boolean" default="Y" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>If "Y" than client allows creating reservations via Internet using corresponding web application</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="LoginUsername" type="Username" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>User name to log into web application</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Password" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Password to log into web application.
+									<xhtml:span class="attention">Input field only, except when attribute ResetMode="RESPONSE" (new password will be returned in the response message)</xhtml:span>
+								</xs:documentation>
+								<xs:documentation/>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="Password">
+										<xs:attribute name="ResetMode">
+											<xs:simpleType>
+												<xs:restriction base="ListOfPwdResetModes">
+													<xs:maxLength value="2"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="LastLogin" type="xs:dateTime" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Client's last login date and time. <xhtml:span class="attention">Output only</xhtml:span>
+								</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DynamicFields" type="DynamicFields" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EligibleCruises" nillable="true" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Returns the number of Eligible Cruises.  Output only. <xhtml:span class="attention">Supported in 040808 only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:integer">
+						<xs:totalDigits value="9"/>
+						<xs:fractionDigits value="0"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ClientPreference">
+		<xs:annotation>
+			<xs:documentation>Client preference</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Type" type="Code">
+				<xs:annotation>
+					<xs:documentation>Predefined, cruise line specific preference type code, for example, 'DIET', 'BED', 'PILLOWS', etc.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Code" type="Code" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Example: 'KOSHER' for Type = 'DIET'</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ProgramMembership">
+		<xs:annotation>
+			<xs:documentation>Client/Agency participation in miscellaneous programs such as frequent flyer programs, etc.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="ProgramCode" type="Code">
+				<xs:annotation>
+					<xs:documentation>Examples: 'AA Mileage', 'UA Mileage', etc.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AccountData" type="ClubAccountInfo" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>AccountNumber only can be changed</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ActiveFrom" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Date when program membership is activated</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:date">
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ActiveTo" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Date when program membership is ended</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:date">
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ExternalAccountNumber" type="LongCode" minOccurs="0"/>
+			<xs:element name="ExternalTierLevel" type="TierLevel" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>For example, 'SILVER', 'GOLD', etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ClubAccountInfo">
+		<xs:annotation>
+			<xs:documentation>Club account details. Club accounts are used to award loyal customers (frequent travelers) and possible to encourage new customers. Usually club member gets some points for each voyage. Amount of points can depend on mileage of voyage, number of additional purchased services, etc. Than client can use these points to buy new products. Several club membership levels can be introduced. Higher level - more preferences and additional services.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AccountNumber" type="ClubAccountNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Club account number</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Cards" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Club account cards that are associated with a client</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Card" type="ClubCard" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Owner" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Owner of this club account (either Client or Agency). <xhtml:span class="attention">Output only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="AgencyID" type="RecordID">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ClientID" type="RecordID">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ClubType" type="ClubType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Club account type. <xhtml:span class="attention">Output only for existing accounts (it's impossible to change club account type).</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TierLevel" type="TierLevel" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Club account level. Usually higher level - more preferences and advantages</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsActive" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Is this club account active?</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CreatedDate" type="xs:date" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Club account creation date</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AvailPoints" type="xs:double" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Number of point collected on this club account. <xhtml:span class="attention">Output only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PointsBalance" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Amount of available points by point type. Only point types with non-zero balance are included in response. <xhtml:span class="attention">Output only</xhtml:span>
+					</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="PointTypeBalance" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="PointType" type="LongCode"/>
+									<xs:element name="Amount" type="Money"/>
+									<xs:element name="EarnedForLevel" type="Money" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Amount of points earned towards next level (or to keep current level for the highest level). Populated only for accounts for which upgrade is possible and only for point types that participate in the eligibility calculation.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TierLevelHistory" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Historical data for club account tier levels. This data allows to analyze when club account level was changed to what value and why. <xhtml:span class="attention">Output only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="TierLevelInfo" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="TierLevel" type="TierLevel">
+										<xs:annotation>
+											<xs:documentation>Club account level value</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="EffectiveDate" type="xs:dateTime">
+										<xs:annotation>
+											<xs:documentation>When this level was assigned</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Reason">
+										<xs:annotation>
+											<xs:documentation>Why this level was assigned</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="100"/>
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="LevelStart" type="xs:date"/>
+									<xs:element name="LevelEnd" type="xs:date" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Clients" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only for Client Program</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ClientInfo" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="ClientID" type="RecordID">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="ProgramCode" type="Code">
+										<xs:annotation>
+											<xs:documentation>Examples: 'AA Mileage', 'UA Mileage', etc.</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="ActiveFrom" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:date">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="ActiveTo" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:date">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ClubCard">
+		<xs:annotation>
+			<xs:documentation>Club account card details</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="CardNumber">
+				<xs:annotation>
+					<xs:documentation>Club account card number</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="20"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="AccountNumber" type="ClubAccountNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Club account number</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OrderDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:documentation>Date when card was ordered</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Owner">
+				<xs:annotation>
+					<xs:documentation>Card owner. <xhtml:span class="attention">As input parameter used for new cards only.</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="ClientID" type="RecordID">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="AgencyID" type="RecordID">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="OrderedBy" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Who ordered this card</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="IsManual" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Is card ordered manually or automatically (because of some rules defined)? <xhtml:span class="attention">Output only</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Reason" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Why this card was ordered</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>
+						<xhtml:span class="warning">TBD</xhtml:span>
+					</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Valid" type="DateRange" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Date range when card is valid</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Sent" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Details about the fact that card was sent to the owner</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Date" type="xs:date" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Date when card was sent to the owner</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="OrderNumber" type="xs:integer" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>
+									<xhtml:span class="warning">TBD</xhtml:span>
+								</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="SentBy" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Staff member who sent this card</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ProgramCode" type="Code" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ClubType" type="ClubType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TierLevel" type="TierLevel" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ClubAccountTransaction">
+		<xs:all>
+			<xs:element name="Action" type="ClubAccountTransType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TransDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Explanation">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:whiteSpace value="collapse"/>
+						<xs:maxLength value="100"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ExtRef" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Mandatory in input messages</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TotalAmount" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used for transactions being created instead of Points</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Confirmed" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Entity" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="ResID" type="RecordID" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Ship" type="ShipCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PurchasePlace" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Name">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Type">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="15"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="PurchaseDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Points" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Point" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Type" type="PointType">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Quantity" type="xs:double">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Valid" type="OpenDateRange" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Amount" type="Money" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="PurchaseSource">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:annotation>
+						<xs:documentation>Source Of Purchase  MANUAL or EXTERNAL</xs:documentation>
+					</xs:annotation>
+					<xs:restriction base="xs:string">
+						<xs:whiteSpace value="collapse"/>
+						<xs:enumeration value="MANUAL"/>
+						<xs:enumeration value="EXTERNAL"/>
+						<xs:enumeration value="INTERNAL"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="PurchaseOperator" type="OracleUsername" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PurchaseDiscount" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PurchaseReceipt" type="xs:integer" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PurchaseCashier" type="LongCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:simpleType name="ClubAccountTransType">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="50"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="POINTS CALCULATED"/>
+			<xs:enumeration value="POINTS CONFIRMED"/>
+			<xs:enumeration value="POINTS APPLIED"/>
+			<xs:enumeration value="POINTS REDEEMED"/>
+			<xs:enumeration value="POINTS EXPIRED"/>
+			<xs:enumeration value="ACCOUNT LEVEL UPDATE"/>
+			<xs:enumeration value="MANUAL ADJUSTMENT"/>
+			<xs:enumeration value="EXTERNAL REPORT"/>
+			<xs:enumeration value="INITIAL IMPORT"/>
+			<xs:enumeration value="ARCHIVE"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="ClientSpecialDate">
+		<xs:annotation>
+			<xs:documentation>Date of special meaning to the client (anniversaries, etc.)</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Type" type="LongCode">
+				<xs:annotation>
+					<xs:documentation>Must be set up in SeaWare in advance</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SpecialDate" type="xs:date" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ClientCarRegistration">
+		<xs:annotation>
+			<xs:documentation>Client car or trailer registration data. <xhtml:span class="attention">Supported in 041113 only</xhtml:span>
+			</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="RegistrationDate" type="xs:date" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Data when car was registered</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LicensePlate" type="LicensePlate">
+				<xs:annotation>
+					<xs:documentation>Car license plate number</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarYear" type="CarYear" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car built year</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarMake" type="CarMake" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car maker name (like AUDI, TOYOTA, FORD, etc)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarModel" type="CarModel" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car model with this specific maker model line. For example: A4 for AUDI or FOCUS for FORD</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarOption" type="CarOption" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>More details about this specific model</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsTrailer" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Should be "Y" if this is registration data for trailer</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarPriceCategory" type="CarPriceCategory" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Price category of this kind of cars (prices will be calculated depending on this value). All car price categories must be set up in SeaWare in advance.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarWidth" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car width in units set up in SeaWare</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarHeight" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car height in units set up in SeaWare</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarLength" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car length in units set up in SeaWare</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarClearance" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car clearance in units set up in SeaWare</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarWeight" type="CarWeight" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car weight in units set up in SeaWare</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Country" type="CountryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Country where car is registered</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="State" type="StateCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Car registration state (applicable for some countries)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="Household">
+		<xs:annotation>
+			<xs:documentation>Household profile</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="HouseholdHeader" type="HouseholdHeader">
+				<xs:annotation>
+					<xs:documentation>Common data for the Household (Family)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Addresses" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Address" type="Address" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Phones" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Phone" type="Phone" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="HouseholdHeader">
+		<xs:annotation>
+			<xs:documentation>Common data for the Household (Family)</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="HouseholdID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If positive - refers to an existing record in the Seaware client database. If negative - defines new household profile.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Clients" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>List of clients associated with that household object. This list can be specified, for example, at creation time in order to create household together with all it's clients within one API call.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Client" type="Client" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>This household client</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="HouseholdName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Usually the same as LastName (though can be any string to identify household)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="LastName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>The last name of one of the household clients ("head of family")</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Salutation" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>To be used in mailings for the household.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DynamicFields" type="DynamicFields" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:group name="PointTypeBalanceBaseInfo">
+		<xs:sequence>
+			<xs:element name="PointType" type="PointType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Amount" type="Money">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ExpirationDate" type="xs:date" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:group>
+	<xs:group name="PointTypeBalanceDetailInfo">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:group ref="PointTypeBalanceBaseInfo">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:group>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:choice>
+				<xs:element name="ResID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtReference" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Reference to an external source of the earned point transaction.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:maxLength value="255"/>
+							<xs:whiteSpace value="collapse"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Explanation" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:group>
+	<xs:complexType name="BorderFormInfo">
+		<xs:annotation>
+			<xs:documentation>Passenger Info for customs, manifests, etc. It represents data required by border authorities.</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Can be provided to associate passenger information with a specific booking. The calling program should look for such record first if booking number is known. Then it should look for the record without ResID.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DocumentInfo" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Information on the identification document.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Type" type="LongCode" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Document Type, for example, PASSPORT, DRIVER LICENSE, etc.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Number" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Document Number</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="100"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="IssuedCountry" type="CountryCode" minOccurs="0"/>
+						<xs:element name="IssuedCity" type="CityName" minOccurs="0"/>
+						<xs:element name="ExpirationDate" type="xs:date" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="FormInfo" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Information on the form, which was used as source of the passenger information, for example, I-94.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Type" type="Code" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Form Type or Code, for example I-94</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Number" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Document Number</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="100"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="IssuedCountry" type="CountryCode" minOccurs="0"/>
+						<xs:element name="IssuedCity" type="CityName" minOccurs="0"/>
+						<xs:element name="ExpirationDate" type="xs:date" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="IsCompleted" type="Boolean">
+				<xs:annotation>
+					<xs:documentation>'N' can be used to store incomplete information in order to request completion at a later time.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Visa" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Visa Information</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Type" type="VisaType" minOccurs="0"/>
+						<xs:element name="Number" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Visa Number</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="100"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="IssuedCountry" type="CountryCode" minOccurs="0"/>
+						<xs:element name="IssuedCity" type="CityName" minOccurs="0"/>
+						<xs:element name="IssuedDate" type="xs:date" minOccurs="0"/>
+						<xs:element name="ExpirationDate" type="xs:date" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="EmergencyContact" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Emergency Contact information</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Name" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="100"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="PhoneNumber" type="PhoneNumber" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Phone number</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="IntlCode" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>International (country, region) code</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:decimal">
+									<xs:totalDigits value="5"/>
+									<xs:fractionDigits value="0"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Return" minOccurs="0">
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Airline" type="Airline" minOccurs="0"/>
+						<xs:element name="Flight" type="FlightNo" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Date" type="xs:date" minOccurs="0"/>
+						<xs:element name="Other" type="Code" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Type of other means of transportation</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DestinationAddress" minOccurs="0">
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Street" type="AddressLine" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="City" type="CityName" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="State" type="StateCode" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Country" type="CountryCode" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ZIP" type="ZipCode" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:simpleType name="VisaType">
+		<xs:annotation>
+			<xs:documentation>Visa Type, for example, H1, H4, etc.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="5"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>

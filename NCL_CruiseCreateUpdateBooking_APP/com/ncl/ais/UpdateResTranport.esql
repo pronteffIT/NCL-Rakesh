@@ -1,0 +1,326 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE UpdateResTranport_BuildAir
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv,rOut,rUpdtBkngReq,rTrans,rResTrans REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource,rResGuest REFERENCE TO rEnvInMsg.*:POS.*:Source;
+		DECLARE rUpdtBkgRes REFERENCE TO rEnv.Temp.UpdateBkg.UpdateBooking_OUT;
+		DECLARE rAvailGtwResp REFERENCE TO Environment.Variables.Temp.GetAvailGateways_OUT;
+		-- DECLARE airExists BOOLEAN FALSE;
+		-- SET cLocaltionCode = rOrgMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail.GuestTransportation;
+
+		DECLARE rGuestDtl REFERENCE TO rEnvInMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[1] ;
+		SET rEnv.Voyage[] = SELECT P.PackageID FROM rUpdtBkgRes.ResShell.ResPackages.ResPackage[] AS P WHERE P.PackageClass = 'VOYAGE' ;		
+		
+		-- WHILE (NOT airExists) AND LASTMOVE(rGuestDtl)
+		-- DO
+		-- IF FIELDVALUE(rGuestDtl.*:GuestTransportation.(XMLNSC.Attribute)Mode) = '14' THEN
+		-- SET airExists = TRUE;
+		-- END IF;
+		-- MOVE rGuestDtl NEXTSIBLING;
+		-- END WHILE;
+		--IF EXISTS(rEnvInMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[]) THEN
+		-- IF airExists = TRUE THEN
+
+		PROPAGATE TO LABEL 'AIR_TRANSPORT';
+
+		MOVE rAvailGtwResp TO Environment.Variables.Temp.GetAvailGateways_OUT;
+
+		IF EXISTS(rAvailGtwResp.Errors[]) THEN
+			-- create response message
+			CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateUpdateBookingRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg, rOut);
+
+			SET rOut.sc:Warnings.sc:Warning = COALESCE(FIELDVALUE(rAvailGtwResp.Errors.Error.errorMsg), '');
+			SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '11096';
+			SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'No Transportation Available for the selected City';
+			SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+			--RETURN TRUE;
+			PROPAGATE TO LABEL 'ROUTETOCALLER';
+			RETURN FALSE;
+		END IF;
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+
+		CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rUpdtBkngReq;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rUpdtBkngReq);
+		--SET rUpdtBkngReq.MsgHeader = rUpdtBkgRes.MsgHeader;
+		SET rUpdtBkngReq.Options.CalcFields.PenaltyInfo = 'Y';
+		SET rUpdtBkngReq.Options.CalcFields.InvoiceInfo = 'Y';
+		SET rUpdtBkngReq.ResShell.ResHeader = rUpdtBkgRes.ResShell.ResHeader;
+
+		DECLARE cGuestRefNum,cLocaltionCode,cGatewayCityRet CHARACTER;
+		
+		DECLARE TransferOutExcludedForGuests,TransferOutSelectedForGuests CHARACTER '';
+		DECLARE TransferRetExcludedForGuests,TransferRetSelectedForGuests CHARACTER '';
+		-- loop thru the guest details
+		FOR rGuestDtl AS rEnvInMsg.*:ReservationInfo.*:GuestDetails.*:GuestDetail[] DO
+			SET cGuestRefNum = FIELDVALUE(rGuestDtl.*:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+
+			SET rEnv.Temp.ResGuest = THE(SELECT RG FROM rUpdtBkgRes.ResShell.ResGuests.ResGuest[] AS RG WHERE RG.GuestSeqN = cGuestRefNum);
+			DECLARE rUpdtBkgResGuest,rTempRef REFERENCE TO rEnv.Temp.ResGuest;
+			-- copy the ResGuest node form The Existing UpdateBooking Response
+			CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResGuests AS rResGuest NAME 'ResGuest';
+			SET rResGuest.*[] = rUpdtBkgResGuest.*[];
+			-- If Guest Transportation is Air..						
+			IF rGuestDtl.*:GuestTransportation.(XMLNSC.Attribute)Mode = '14' AND
+				COALESCE(rGuestDtl.*:GuestTransportation.(XMLNSC.Attribute)Action,'')<> 'Remove' THEN
+				SET cLocaltionCode = rGuestDtl.*:GuestTransportation.*:GatewayCity.(XMLNSC.Attribute)LocationCode;
+				SET cGatewayCityRet = rGuestDtl.*:GuestTransportation.*:GatewayCityRet.(XMLNSC.Attribute)LocationCode;
+				--Transfer Exclusion
+				DECLARE cTransferMode CHARACTER COALESCE(rGuestDtl.*:GuestTransportation.*:ExcludeTransfer.(XMLNSC.Attribute)Mode,'ROUND');
+				DECLARE cTransportationType CHARACTER COALESCE(rGuestDtl.*:GuestTransportation.*:TransportationType,'ROUND');				
+				IF rGuestDtl.*:GuestTransportation.*:ExcludeTransfer = 'Y' THEN
+					IF cTransferMode = 'OUT' OR cTransferMode = 'ROUND' THEN
+						SET TransferOutExcludedForGuests = TransferOutExcludedForGuests || ' '|| cGuestRefNum;
+					ELSE
+						SET TransferOutSelectedForGuests = TransferOutSelectedForGuests || ' '|| cGuestRefNum;
+					END IF;
+					IF cTransferMode = 'RETURN'  OR cTransferMode = 'ROUND' THEN
+						SET TransferRetExcludedForGuests = TransferRetExcludedForGuests || ' '|| cGuestRefNum;
+					ELSE
+						SET TransferRetSelectedForGuests = TransferRetSelectedForGuests || ' '|| cGuestRefNum;
+					END IF;
+				ELSE
+					IF cTransportationType =  'OUT' OR cTransportationType =  'ROUND' THEN
+						SET TransferOutSelectedForGuests = TransferOutSelectedForGuests || ' '|| cGuestRefNum;
+					END IF;
+					IF cTransportationType =  'RETURN' OR cTransportationType =  'ROUND' THEN	
+						SET TransferRetSelectedForGuests = TransferRetSelectedForGuests || ' '|| cGuestRefNum;
+					END IF;
+				END IF;
+				
+				-- verify if the GateWay exist in the AvailGateway response.. 
+				--validate the port passed in Guesttransportation Request node is present in the GetAvailGateways_OUT message
+				SET rEnv.AirGateWay[] = SELECT ITEM A.Gateway FROM rAvailGtwResp.AvailGateways.AvailGateway[] AS A WHERE A.Gateway = cLocaltionCode;
+				--Validate Return Gateway
+				IF LENGTH(cGatewayCityRet)>0 AND cGatewayCityRet<>cLocaltionCode THEN
+					SET rEnv.AirGateWayRetun[] = SELECT ITEM A.Gateway FROM rAvailGtwResp.AvailGateways.AvailGateway[] AS A WHERE A.Gateway = cGatewayCityRet;
+				END IF;
+				--IF Air gateway is invalid return error	
+				IF NOT EXISTS(rEnv.AirGateWay[]) OR (LENGTH(cGatewayCityRet)>0 
+					AND cGatewayCityRet<>cLocaltionCode AND NOT EXISTS(rEnv.AirGateWayRetun[]))  THEN				
+					SET OutputRoot = NULL;
+					CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseCreateUpdateBookingRS AS rOut;
+					CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg, rOut);
+
+					SET rOut.sc:Warnings.sc:Warning = COALESCE(FIELDVALUE(rAvailGtwResp.Errors.Error.errorMsg), '');
+					--SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = rEnv.Temp.Objects.AirTransportations.Error.errorCode;
+					SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '11096';
+					--SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rEnv.Temp.Objects.AirTransportations.Error.errorMsg FROM 1 FOR 64);
+					SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'No Transportation Available for the selected City';
+					SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+
+					PROPAGATE TO LABEL 'ROUTETOCALLER';
+					RETURN FALSE;
+				ELSE
+					SET  rEnv.GtwOut = THE(SELECT F.StrVal FROM rResGuest.DynamicFields.Field[] AS F WHERE F.Name='GTWOUT');
+					SET  rEnv.GtwRet = THE(SELECT F.StrVal FROM rResGuest.DynamicFields.Field[] AS F WHERE F.Name='GTWRET');
+					SET  rEnv.BundledEffectiveDate = THE(SELECT F.DateVal FROM rResGuest.DynamicFields.Field[] AS F WHERE F.Name='BUNDLED_AIR_EFF_DATE');
+					--IF Air Gateway is changed
+					IF COALESCE(rEnv.GtwOut.StrVal,'') <> UPPER(cLocaltionCode) 
+						OR COALESCE(rEnv.GtwRet.StrVal,'') <> UPPER(COALESCE(cGatewayCityRet, cLocaltionCode))
+					THEN 
+						SET rResGuest.DynamicFields = NULL;
+						IF LENGTH(rEnv.BundledEffectiveDate.DateVal)>0 THEN
+							CREATE LASTCHILD OF rResGuest.DynamicFields AS rTempRef NAME 'Field';
+							SET rTempRef.Name = 'BUNDLED_AIR_EFF_DATE';
+							SET rTempRef.DateVal = rEnv.BundledEffectiveDate.DateVal;
+						END IF;					
+						-- IF the Arraival and Dep prots are same .. going for ROUND trip
+						IF cTransportationType = 'ROUND' THEN
+							-- Add the Air Bundles to the Guest
+							CALL ADD_GATEWAY(rResGuest,'GTWOUT',cLocaltionCode);
+							CALL ADD_GATEWAY(rResGuest,'GTWRET',COALESCE(cGatewayCityRet,cLocaltionCode));														
+						ELSE
+							-- ONE way Air 
+							IF cTransportationType = 'RETURN' THEN
+								CALL ADD_GATEWAY(rResGuest,'GTWRET',cLocaltionCode);																
+								CALL ADD_GATEWAY(rResGuest,'GTWOUT',NULL);							
+							ELSEIF cTransportationType = 'OUT' THEN
+								CALL ADD_GATEWAY(rResGuest,'GTWOUT',cLocaltionCode);
+								CALL ADD_GATEWAY(rResGuest,'GTWRET',NULL);								
+							END IF;
+						END IF;
+					END IF;
+				END IF;
+			ELSE
+				--Remove Gateway
+				IF rGuestDtl.*:GuestTransportation.(XMLNSC.Attribute)Mode = '14' AND
+					COALESCE(rGuestDtl.*:GuestTransportation.(XMLNSC.Attribute)Action,'')= 'Remove' 
+				THEN
+					--Set the Gateway to NULL
+					SET  rEnv.BundledEffectiveDate = THE(SELECT F.DateVal FROM rResGuest.DynamicFields.Field[] AS F WHERE F.Name='BUNDLED_AIR_EFF_DATE');
+					SET rResGuest.DynamicFields = NULL;
+					IF LENGTH(rEnv.BundledEffectiveDate.DateVal)>0 THEN
+						CREATE LASTCHILD OF rResGuest.DynamicFields AS rTempRef NAME 'Field';
+						SET rTempRef.Name = 'BUNDLED_AIR_EFF_DATE';
+						SET rTempRef.DateVal = rEnv.BundledEffectiveDate.DateVal;
+					END IF;	
+					
+					CALL ADD_GATEWAY(rResGuest,'GTWOUT',NULL);
+					CALL ADD_GATEWAY(rResGuest,'GTWRET',NULL);
+				
+				END IF;
+			END IF;
+
+			DETACH rEnv.Temp.ResGuest;
+			DETACH rEnv.AirGateWay;
+		END FOR;
+		--Set Component Options in ResPackagespackage
+		--Set Component Options in ResPackagespackage
+		IF LENGTH(TransferOutExcludedForGuests) > 0 OR LENGTH(TransferRetExcludedForGuests) > 0   THEN
+			DECLARE rResPackageReq REFERENCE TO rUpdtBkngReq.ResShell.ResPackages.ResPackage;			
+			--Disable Automatic Transfer addition mode
+			SET rUpdtBkngReq.ResShell.ResHeader.AutoTransfersMode = 'MANUAL';				
+			DECLARE rOptions REFERENCE TO rUpdtBkngReq.ResShell.ResPackages.Options;
+			DECLARE rOption REFERENCE TO rUpdtBkngReq.ResShell.ResPackages.Options.Option;
+			DECLARE rTransferComponentIDs REFERENCE TO Environment.Variables.Temp.TransferComponentIDs;
+			FOR rp AS rUpdtBkgRes.ResShell.ResPackages.ResPackage[] DO
+				CREATE LASTCHILD OF rUpdtBkngReq.ResShell.ResPackages AS rResPackageReq NAME 'ResPackage';
+				DECLARE rOption REFERENCE TO rResPackageReq.Options.Option;
+				--Copy the Package												
+				SET rResPackageReq.*[] = rp.*[];
+				IF rp.PackageClass = 'VOYAGE' THEN					
+					SET rResPackageReq.Options = NULL;								
+					IF EXISTS(rp.Options[]) 
+					THEN
+						--Copy Any Component option which is not Transfer component														
+						FOR option AS rp.Options.Option[] DO
+							IF NOT EXISTS(SELECT T.* FROM Environment.Variables.Temp.CompRecordID[] AS T
+											 WHERE T.CompRecordID = option.CompRecordID) THEN
+								CREATE LASTCHILD OF  rResPackageReq.Options AS rOption NAME 'Option';
+								SET rOption.*[] = option.*[];								 
+							END IF;
+						END FOR;							
+					END IF;
+					IF NOT EXISTS(rResPackageReq.Options[]) THEN
+						CREATE LASTCHILD OF  rResPackageReq AS rOptions  NAME 'Options';
+					END IF;
+					--Add Transfer Components with exclusion by guest
+					FOR rComponentId AS Environment.Variables.Temp.CompRecordID[] DO
+						CREATE LASTCHILD OF  rResPackageReq.Options AS rOption NAME 'Option';								
+						SET rOption.CompRecordID = rComponentId.CompRecordID;
+						IF rComponentId.Type = 'AIRPORT TO PORT' THEN
+							SET rOption.SelectedForGuests = SubGuestRef(rp.GuestRefs,TRIM(TransferOutSelectedForGuests));
+							SET rOption.ExcludedForGuests = SubGuestRef(rp.GuestRefs,TRIM(TransferOutExcludedForGuests));
+						END IF;
+						IF rComponentId.Type = 'PORT TO AIRPORT' THEN
+							SET rOption.SelectedForGuests = SubGuestRef(rp.GuestRefs,TRIM(TransferRetSelectedForGuests));
+							SET rOption.ExcludedForGuests = SubGuestRef(rp.GuestRefs,TRIM(TransferRetExcludedForGuests));
+						END IF;						
+					END FOR;
+					--Add Mandatory Sail Component ID
+					IF EXISTS(Environment.Variables.Temp.SailCompRecordID[])
+					THEN
+						FOR rComponentId AS Environment.Variables.Temp.SailCompRecordID[] DO
+							CREATE LASTCHILD OF  rResPackageReq.Options AS rOption NAME 'Option';
+							SET rOption.CompRecordID = rComponentId.CompRecordID;
+							SET rOption.IsSelected = 'Y';
+						END FOR;
+					END IF;
+					
+				END IF; 
+			END FOR;
+		END IF;			
+		-- clear messages from environment
+		SET rEnv.Temp.UpdateBkg.UpdateBooking_OUT = NULL;
+		SET rEnv.Temp.GetAvailGateways_OUT = NULL;
+		-- END IF;
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+		-- ELSE
+		-- RETURN TRUE;
+		-- END IF; -- End of IF airExists #29
+		
+
+		RETURN FALSE;
+	END;
+	CREATE PROCEDURE ADD_GATEWAY(INOUT rResGuest REFERENCE,IN  name CHARACTER, IN cLocaltionCode CHARACTER)
+	BEGIN
+		DECLARE rTempRef REFERENCE TO rResGuest.DynamicFields.Field;
+		CREATE LASTCHILD OF rResGuest.DynamicFields AS rTempRef NAME 'Field';
+		SET rTempRef.Name = name;
+		IF COALESCE(cLocaltionCode, '') = ''  THEN
+			CREATE FIELD rTempRef.StrVal;
+		ELSE
+			SET rTempRef.StrVal = cLocaltionCode;
+		END IF;
+	END ;  
+END MODULE;
+
+/*
+   If subGuestRef is 1 2
+   masterGuestRef is 2 3 4
+   Return 2     
+*/
+CREATE FUNCTION SubGuestRef( IN subGuestRef CHARACTER , IN masterGuestRef CHARACTER ) RETURNS CHARACTER
+BEGIN
+	DECLARE del CHAR ' ';
+	DECLARE finalGuestRef CHARACTER '' ;	
+	DECLARE guestRef CHARACTER;
+	
+	WHILE LENGTH(masterGuestRef) > 0 DO
+		SET  guestRef= SUBSTRING(masterGuestRef BEFORE del);
+		IF 	guestRef = '' THEN
+			SET guestRef = masterGuestRef;
+			SET masterGuestRef = '';
+		END IF;				
+		IF CONTAINS(subGuestRef,guestRef) THEN
+			IF finalGuestRef = '' THEN
+				SET finalGuestRef = guestRef;
+			ELSE
+				SET finalGuestRef = finalGuestRef || ' '|| guestRef;
+			END IF; 
+		END IF;
+		SET masterGuestRef = SUBSTRING (masterGuestRef AFTER del); 
+	END WHILE;
+	RETURN finalGuestRef;
+END;
+
+CREATE COMPUTE MODULE UpdateResTranport_ProcessResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rResponse REFERENCE TO Environment.Variables;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC;
+		DECLARE rEnvInMsg REFERENCE TO rEnvIn.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+		--CALL CopyEntireMessage();
+
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'
+				THEN
+				SET bFatalError = TRUE;
+			END IF;
+			MOVE rError NEXTSIBLING;
+		END WHILE;
+		--IF rIn.Errors.Error.ErrorSeverity = 'E' OR rIn.Errors.Error.ErrorSeverity = 'F' OR rIn.Errors.Error.ErrorSeverity = 'OPERATION'
+		IF bFatalError = TRUE
+			THEN
+			CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		-- Copy non-fatal errors to Env
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			CALL StoreErrorsAsWarnings(rIn.Errors, rEnvInMsg, rEnv, rOutRoot);
+		END IF;
+
+		CALL CopyEntireMessage();
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

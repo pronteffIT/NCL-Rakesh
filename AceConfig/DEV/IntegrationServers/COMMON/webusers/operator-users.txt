@@ -1,0 +1,2 @@
+operator1 password1
+operator2 password2

@@ -1,0 +1,88 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE xsi NAMESPACE 'http://www.w3.org/2001/XMLSchema-instance';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE Default_ReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_PURCHASE_COUPON_RESP';
+DECLARE ExtCodeShared SHARED ROW;
+DECLARE vagncy NAMESPACE 'http://NCL_ValidateBookingLib';
+
+CREATE COMPUTE MODULE PurchaseCouponMainFlow_ValidateInput
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutPayment REFERENCE TO Environment.Variables;	 
+		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruisePurchaseCouponRQ;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET rEnv.Temp.Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID));
+		SET rEnv.Temp.Channel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code), '');
+		-- Saving Headers in Environment
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = Default_ReplyQ;
+		END IF;
+		SET rEnv.Temp.ClientId = COALESCE(rIn.*:ClientID,'');
+		SET rEnv.Temp.Amount = CAST (rIn.*:Amount AS DECIMAL (10,2) DEFAULT 0.00)/100;
+		SET rEnv.Temp.Currency = COALESCE(rIn.*:Currency,'');
+		SET rEnv.Temp.CouponClass = COALESCE(rIn.*:CouponClass,'');
+		SET rEnv.Temp.AgentID = COALESCE(rIn.*:AgentID,'');
+		SET rEnv.Temp.FormOfTrans = COALESCE(rIn.*:FormOfTrans,'');
+		
+		IF rEnv.Temp.Amount <=0 THEN
+			CALL BUILD_VALIDATION_ERROR('Invalid Amount:' || CAST(rEnv.Temp.Amount as CHAR),rEnv);
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;			
+		END IF; 
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'PayReq';
+		SET rEnv.PayReq = InputRoot.XMLNSC.*:NCL_CruisePurchaseCouponRQ;
+		-- create verify agency request
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;		
+		RETURN TRUE;
+	END;
+	
+	CREATE FUNCTION GET_AGENT_ID(IN agencyID CHARACTER) RETURNS INTEGER
+	BEGIN
+		DECLARE oldPos,pos INTEGER 1;
+		DECLARE agentID INTEGER 0;
+		DECLARE cAgencyAgentId,cAgencyId,cAgentId CHARACTER '';
+		DECLARE NCL_AGENT_MAP CHARACTER '';
+		IF LENGTH(NCL_AGENT_MAP) =0 THEN
+			RETURN agentID;
+		END IF;
+		X:LOOP
+		 	SET pos = POSITION('#' IN NCL_AGENT_MAP FROM oldPos);
+		 	SET cAgencyAgentId = '';
+		 	IF pos = 0 THEN
+				SET cAgencyAgentId = SUBSTRING(NCL_AGENT_MAP FROM oldPos);
+		 	ELSE
+		 		SET cAgencyAgentId = SUBSTRING(NCL_AGENT_MAP FROM oldPos FOR pos-oldPos);
+		 	END IF;
+		 	SET cAgencyId = SUBSTRING( cAgencyAgentId BEFORE ':');
+		 	SET cAgentId = SUBSTRING( cAgencyAgentId AFTER ':');
+		 	SET oldPos = pos + 1;
+		 	IF cAgencyId =  agencyID THEN
+		 		SET agentID =  cAgentId;
+		 		LEAVE X;
+		 	END IF;
+		 	IF pos <=0 THEN
+		 		LEAVE X;
+		 	END IF;			
+		END LOOP;
+		RETURN agentID;
+	END;
+	CREATE PROCEDURE BUILD_VALIDATION_ERROR(IN errorMessage CHARACTER,IN rEnv REFERENCE)
+	BEGIN
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorMessage = errorMessage;
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorCode='25074';
+		SET OutputRoot.XMLNSC.Body.Errors.Error.ErrorSeverity='E';
+		SET OutputRoot.XMLNSC.Body.Code = rEnv.Temp.Channel;
+		SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePurchaseCouponRS';
+	END;
+
+END MODULE;

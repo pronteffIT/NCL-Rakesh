@@ -1,0 +1,132 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE PurchaseCouponMainFlow_BuildCCReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:Impersonate_OUT;		
+		IF EXISTS(rOut.Errors.Error[]) THEN			
+			SET OutputRoot.XMLNSC.Body.Errors.Error = rOut.Errors.Error.ErrorMessage;			
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePurchaseCouponRS';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		CALL BuildManageAccTransReq(rEnv);
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE BuildManageAccTransReq(IN rEnv REFERENCE) 
+	BEGIN
+		DECLARE rIn REFERENCE TO rEnv.PayReq;
+		DECLARE rOut,rOutPayment REFERENCE TO Environment.Variables;
+		SET OutputRoot = NULL;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		--Set the Header
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.ManageAccTrans_IN AS rOut;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.*:sessionGUID,rOut);					
+		--Build the Payment
+		CREATE LASTCHILD OF rOut.Create.Payments AS rOutPayment NAME 'Payment';			
+		SET rOutPayment.SrcEntity.ClientID = rEnv.Temp.ClientId;
+		SET rOutPayment.DestEntity.ClientBankID = rEnv.Temp.ClientId;
+		SET rOutPayment.Amount = rEnv.Temp.Amount;
+		SET rOutPayment.Currency = rEnv.Temp.Currency;
+		SET rOutPayment.FormOfTrans = rEnv.Temp.FormOfTrans;
+		
+		SET rOutPayment.TransFormInfo.CCData.CCNumber = CAST(rIn.*:PaymentCard.(XMLNSC.Attribute)CardNumber AS INTEGER);			
+			--TODO Add a common proc for Credit Cards
+		DECLARE systemName CHARACTER COALESCE(rEnv.Temp.Channel,'NCLWEBC');
+		DECLARE codeType CHARACTER 'CreditCard';
+		DECLARE cardCode CHARACTER rIn.*:PaymentCard.(XMLNSC.Attribute)CardCode;
+		SET rOutPayment.TransFormInfo.CCData.ControlNumber = FIELDVALUE(rIn.*:PaymentCard.(XMLNSC.Attribute)SeriesCode);
+		SET rOutPayment.TransFormInfo.CCData.CCType = getSWCode(systemName,cardCode);
+		SET rOutPayment.TransFormInfo.CCData.ExpDate = CAST(CAST('01'||rIn.*:PaymentCard.(XMLNSC.Attribute)ExpireDate AS DATE FORMAT 'ddMMyy') AS CHARACTER FORMAT 'yyyy-MM');
+		SET rOutPayment.TransFormInfo.CCData.NameOnCard = rIn.*:PaymentCard.*:CardHolderName;
+		SET rOutPayment.TransFormInfo.CCData.ControlNumber = FIELDVALUE(rIn.*:PaymentCard.(XMLNSC.Attribute)SeriesCode);
+		SET rOutPayment.Comments = rIn.*:PaymentCard.*:Comments;
+		DECLARE Index INTEGER 0;
+		--Update address
+		CALL UpdateBillingAddress(	rIn,rOutPayment);
+		CALL ForterAddionalData(rIn,Index,rOutPayment);								
+		CALL CreateThreeDSData(rIn,Index,rOutPayment);
+	END;
+	CREATE PROCEDURE getSWCode(IN systemName CHARACTER,IN cardCode CHARACTER) RETURNS CHARACTER 
+	BEGIN 
+		DECLARE ccQuery,ExternalCd CHARACTER; 
+		SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+		IF com.ncl.ais.utils.IsEmpty(ExternalCd) THEN 
+			SET ccQuery = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+										DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+										INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+										INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+										TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=''CreditCard'' AND DETAILS.EXTERNAL_CODE = ?'; 
+		
+			SET ExtCodeShared.Rows[] = PASSTHRU(ccQuery,systemName,cardCode); 
+			SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+		END IF; 
+		RETURN ExternalCd; 
+	END;
+	
+	CREATE PROCEDURE UpdateBillingAddress (IN rIn REFERENCE,INOUT rOutPayment REFERENCE )
+	BEGIN
+			DECLARE rAddr REFERENCE TO  rIn.*:PaymentCard.*:Address;
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line1 = rAddr.*:AddressLine[1];
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line2 = rAddr.*:AddressLine[2];
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line3 = rAddr.*:AddressLine[3];
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line4 = rAddr.*:AddressLine[4]; 
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.City = rAddr.*:CityName;
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.State = FIELDVALUE(rAddr.*:StateProv.(XMLNSC.Attribute)StateCode);
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.Country = FIELDVALUE(rAddr.*:CountryName.(XMLNSC.Attribute)Code);
+			SET rOutPayment.TransFormInfo.CCData.BillingAddress.ZIP = rAddr.*:PostalCode;
+	END;
+
+
+	CREATE PROCEDURE CreateThreeDSData (IN rIn REFERENCE,INOUT Index INTEGER,INOUT rOutPayment REFERENCE )
+	BEGIN
+		IF	COALESCE(rIn.*:ThreeDSData.*:ThreeDSdirectoryServerTransID,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSversion';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSversion,'');
+		
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSdirectoryServerTransID';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSdirectoryServerTransID,'');
+		
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSauthVerificationValue';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSauthVerificationValue,'');
+	
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECIFlag';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,''); 
+			
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECXid';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECXid,''); 			
+		END IF;		
+	END;
+
+	CREATE PROCEDURE ForterAddionalData (IN rIn REFERENCE,INOUT Index INTEGER,INOUT rOutPayment REFERENCE )
+	BEGIN
+		IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'FraudTrackingOrderId';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'');
+		END IF;
+		IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'DeviceID';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'');
+		END IF;
+		IF COALESCE(rIn.*:OperatorEmail,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'OperatorEmail' ;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value= rIn.*:OperatorEmail;
+		END IF;
+		IF COALESCE(rIn.*:PaymentCard.*:Comments,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'CF_COMMENTS';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value= SUBSTRING(rIn.*:PaymentCard.*:Comments FROM 1 FOR 100);			
+		END IF;	
+	END;	
+END MODULE;

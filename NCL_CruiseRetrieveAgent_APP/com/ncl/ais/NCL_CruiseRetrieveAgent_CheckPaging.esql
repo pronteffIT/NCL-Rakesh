@@ -1,0 +1,429 @@
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayload EXTERNAL BOOLEAN;
+DECLARE ns8 NAMESPACE 'http://nclapi/schemas';
+DECLARE vx NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVE_AGENT_RESP';
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgent
+* MODULE NAME : CheckPaging
+* Description : This module is used for checking the request to decide the path of execution i.e Paged search or Paging search.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgent_CheckPaging
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Retrieve Agent input request...', 'xml', rEnv);
+		END IF;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		DECLARE rOut REFERENCE TO rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+		CREATE FIELD rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ AS rIn;		
+		-- Uncomment the below block once GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',
+												'',
+												'',
+											 	rEnv);
+				
+
+
+		CASE
+
+		WHEN LENGTH(rIn.*:SortBy) > 0 THEN
+			-- PAGED
+			--CALL SP FOR PAGED----> NCLSEA.NCL_WESB_GET_AGENT_WITH_PAGED_V1
+			DECLARE p_searchby,p_searchvalue,p_agencyid,p_maxnumber,p_startingnumber,p_sortby,p_sortdirection CHARACTER;
+			DECLARE p_totalcount,p_last_agent_id,p_temp1,p_temp2,p_temp3,p_temp4,p_temp5 CHARACTER '';
+			SET rEnv.p_searchby = rIn.*:SearchBy;
+			SET rEnv.p_searchvalue = rIn.*:SearchValue;
+			SET rEnv.p_agencyid = FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID);
+
+			DECLARE MaxNumeric CHARACTER FIELDVALUE(rIn.(XMLNSC.Attribute)MaxResponses);
+			DECLARE MoreNumeric CHARACTER FIELDVALUE(rIn.(XMLNSC.Attribute)MoreDataEchoToken);
+
+			IF FIELDVALUE(rIn.(XMLNSC.Attribute)MaxResponses) = '' OR NOT (com.ncl.ais.utils.isNumeric(MaxNumeric)) THEN
+				SET rEnv.p_maxnumber = '0';
+			ELSE
+				SET rEnv.p_maxnumber = FIELDVALUE(rIn.(XMLNSC.Attribute)MaxResponses);
+			END IF;
+
+
+
+			IF FIELDVALUE(rIn.(XMLNSC.Attribute)MoreDataEchoToken) = '' OR NOT (com.ncl.ais.utils.isNumeric(MoreNumeric)) THEN
+				SET rEnv.p_startingnumber = '0';
+			ELSE
+				SET rEnv.p_startingnumber = FIELDVALUE(rIn.(XMLNSC.Attribute)MoreDataEchoToken);
+			END IF;
+
+			SET rEnv.p_sortby = rIn.*:SortBy;
+			SET rEnv.p_sortdirection = rIn.*:SortDirection;
+			--Call the stored proc here
+			IF NOT EXISTS(rIn.*:SearchValue[]) OR rIn.*:SearchValue = '' OR (rIn.*:SearchValue) IS NULL THEN
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				SET rOut.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Code = '12228';
+				SET rOut.ns8:Errors.ns8:Error.(XMLNSC.Attribute)ShortText = 'Field value for SearchValue is missing';
+				SET rOut.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Type = '3';
+				SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+	
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+					
+			END IF;
+
+			CALL DBPagedSP(rEnv.p_searchby,rEnv.p_searchvalue,rEnv.p_agencyid,rEnv.p_maxnumber,rEnv.p_startingnumber,rEnv.p_sortby,rEnv.p_sortdirection,
+			rEnv.p_totalcount,rEnv.p_last_agent_id,rEnv.p_temp1,rEnv.p_temp2,rEnv.p_temp3,rEnv.p_temp4,rEnv.p_temp5,rEnv.Temp.p_Cursor[]);
+			-- handle errors from database
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Called the DB stored procedure for paged search', rEnv);
+			IF SQLCODE <> 0 THEN
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;
+				SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+				CREATE FIELD rOut.ns8:Success;
+				SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '9915';
+				SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'invalid input or SEAP not available';
+				-- send the final response reply to queue
+				SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSE
+				--Return true if the DB call is successful
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB stored procedure for paged search executed successfully', rEnv);
+				RETURN TRUE;
+			END IF;
+
+		ELSE
+			-- PAGING
+			--CALL SP FOR PAGING---> NCLSEA.NCL_WESB_GET_AGENT_W_PAGING_V1
+			DECLARE p_webusername,p_email,p_agencyid,p_maxnumber,p_startingnumber CHARACTER;
+			DECLARE p_totalcount,p_last_agent_id,p_temp1,p_temp2,p_temp3,p_temp4,p_temp5 CHARACTER '';
+			--p_totalcount,p_last_agent_id,p_temp1,p_temp2,p_temp3,p_temp4,p_temp5,rEnv.Temp.p_Cursor[]
+			SET rEnv.p_webusername = FIELDVALUE(rIn.*:UserLogin.(XMLNSC.Attribute)UserLoginName);
+			SET rEnv.p_email = rIn.*:Email;
+			SET rEnv.p_agencyid = FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID);
+			DECLARE MaxNumeric CHARACTER FIELDVALUE(rIn.(XMLNSC.Attribute)MaxResponses);
+			DECLARE MoreNumeric CHARACTER FIELDVALUE(rIn.(XMLNSC.Attribute)MoreDataEchoToken);
+
+			IF FIELDVALUE(rIn.(XMLNSC.Attribute)MaxResponses) = '' OR NOT (com.ncl.ais.utils.isNumeric(MaxNumeric)) THEN
+				SET rEnv.p_maxnumber = '0';
+			ELSE
+				SET rEnv.p_maxnumber = FIELDVALUE(rIn.(XMLNSC.Attribute)MaxResponses);
+			END IF;
+
+			IF FIELDVALUE(rIn.(XMLNSC.Attribute)MoreDataEchoToken) = '' OR NOT (com.ncl.ais.utils.isNumeric(MoreNumeric)) THEN
+				SET rEnv.p_startingnumber = '0';
+			ELSE
+				SET rEnv.p_startingnumber = FIELDVALUE(rIn.(XMLNSC.Attribute)MoreDataEchoToken);
+			END IF;
+
+
+			CALL DBPagingSP(rEnv.p_webusername,rEnv.p_email,rEnv.p_agencyid,rEnv.p_maxnumber,rEnv.p_startingnumber,rEnv.p_totalcount,rEnv.p_last_agent_id,rEnv.p_temp1,rEnv.p_temp2,rEnv.p_temp3,rEnv.p_temp4,rEnv.p_temp5,rEnv.Temp.p_Cursor[]);
+			-- handle errors from database
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Called the DB stored procedure for paging search', rEnv);
+			IF SQLCODE <> 0 THEN
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;
+				SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+				CREATE FIELD rOut.ns8:Success;
+				SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '9915';
+				SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'invalid input or SEAP not available';
+				-- send the final response reply to queue
+				SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSE
+				--Return true if the DB call is successful
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'DB stored procedure for paging search executed successfully', rEnv);
+				RETURN TRUE;
+			END IF;
+
+		END CASE;
+
+	END;
+
+	CREATE PROCEDURE DBPagedSP (IN p_searchby CHARACTER,IN p_searchvalue CHARACTER,IN p_agencyid CHARACTER,IN p_maxnumber CHARACTER,
+	IN p_startingnumber CHARACTER,IN p_sortby CHARACTER,IN p_sortdirection CHARACTER,OUT p_totalcount CHARACTER,OUT p_last_agent_id CHARACTER,OUT p_temp1 CHARACTER,OUT p_temp2 CHARACTER,OUT p_temp3 CHARACTER,OUT p_temp4 CHARACTER,OUT p_temp5 CHARACTER )
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_GET_AGENT_W_PAGED_V1";
+
+	CREATE PROCEDURE DBPagingSP (INOUT p_webusername CHARACTER,INOUT p_email CHARACTER,INOUT p_agencyid CHARACTER,INOUT p_maxnumber CHARACTER,INOUT p_startingnumber CHARACTER,
+	OUT p_totalcount CHARACTER,OUT p_last_agent_id CHARACTER,OUT p_temp1 CHARACTER,OUT p_temp2 CHARACTER,OUT p_temp3 CHARACTER,OUT p_temp4 CHARACTER,OUT p_temp5 CHARACTER )
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_GET_AGENT_W_PAGING_V1";
+
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgent
+* MODULE NAME : FaultHandler
+* Description : This module is used to handle the unexpected IIB exceptions.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgent_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS AS runTimeErr;
+
+		SET runTimeErr.ns8:Errors.ns8:Error = cErrorText;
+		SET runTimeErr.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns8:Errors.ns8:Error.(XMLNSC.Attribute)ShortText = '';
+		SET runTimeErr.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Type = '3';
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent module IIB Error/Exception occured', rEnv);
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgent
+* MODULE NAME : FinalResponse
+* Description : This module is used for giving the final response of the service call.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgent_FinalResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rOut REFERENCE TO rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+		CREATE FIELD rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ AS rIn;
+		DECLARE rAgentWrkGetAgent REFERENCE TO rEnv.XMLNSC.agentWork_GetAgent.spGetAgentInfo;
+		CREATE FIELD rEnv.XMLNSC.agentWork_GetAgent.spGetAgentInfo AS rAgentWrkGetAgent;
+		DECLARE httpstatuscode CHARACTER 'X-Original-HTTP-Status-Code';
+
+		/*CASE
+
+		WHEN InputRoot.HTTPResponseHeader.{httpstatuscode} = 408 THEN
+			-- timeout
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.ns8:Success;
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '9919';
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'swResObj timeout';
+			SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent Encrypt decrypt service call timed out', rEnv);
+			RETURN TRUE;
+		WHEN EXISTS(InputExceptionList.RecoverableException[]) THEN
+			-- failed exception
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.ns8:Success;
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '9917';
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'Seaware is not available.    Please try later';
+			SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent Encrypt decrypt service call produced exception', rEnv);
+			RETURN TRUE;
+		ELSE*/
+			-- Send final response
+			SET rOut.(XMLNSC.Attribute)MoreDataEchoToken = rEnv.p_totalcount;
+			SET rOut.(XMLNSC.Attribute)MoreIndicator = 'false';
+			SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;			
+			SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+			CREATE FIELD rOut.ns8:Success;
+			--SET rOut.ns8:AgentInfo.(XMLNSC.Attribute)AgentLocation
+			--IMPLEMENT THE AGENT INFO HERE
+			FOR source AS rEnv.Temp.p_Cursor[] DO
+				CREATE FIELD rOut.ns8:AgentInfo;
+				SET rOut.ns8:AgentInfo.(XMLNSC.Attribute)AgentLocation = COALESCE(source.AGENT_LOCATION,'');
+				IF source.WEB_CANACCESAGENCYDATA = 'Y' THEN
+					SET rOut.ns8:AgentInfo.(XMLNSC.Attribute)SecurityLevel = 'SUPERVISOR';
+				ELSE
+					SET rOut.ns8:AgentInfo.(XMLNSC.Attribute)SecurityLevel = 'AGENT';
+				END IF;
+				SET rOut.ns8:AgentInfo.ns8:PersonName.ns8:NamePrefix = source.TITLE;
+				SET rOut.ns8:AgentInfo.ns8:PersonName.ns8:GivenName = source.FIRST_NAME;
+				SET rOut.ns8:AgentInfo.ns8:PersonName.ns8:MiddleName = source.MIDDLE_NAME;
+				SET rOut.ns8:AgentInfo.ns8:PersonName.ns8:Surname = source.LAST_NAME;
+				SET rOut.ns8:AgentInfo.ns8:Telephone.(XMLNSC.Attribute)PhoneNumber = COALESCE(source.PHONE_NUMBER,'');
+
+				IF LENGTH(source.ADDRESS_LINE1) > 0 THEN
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:AddressLine[1] = source.ADDRESS_LINE1;
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:AddressLine[2] = source.ADDRESS_LINE2;
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:CityName = source.ADDRESS_CITY;
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:PostalCode = source.ZIP;
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:StateProv = source.STATE_CODE;
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:StateProv.(XMLNSC.Attribute)StateCode = source.STATE_CODE;
+					SET rOut.ns8:AgentInfo.ns8:Address.ns8:CountryName.(XMLNSC.Attribute)Code = source.COUNTRY_CODE;
+
+				END IF;
+
+				SET rOut.ns8:AgentInfo.ns8:Email = source.EMAIL;
+				--SET rOut.ns8:AgentInfo.ns8:EmployeeInfo = InputRoot.SOAP.Body.*:processEncryptDecryptResponse.*:Encrypt_Decrypt.*:EncryptString;
+				SET rOut.ns8:AgentInfo.ns8:RestrictAccess  = source.WEB_CANACCESAGENCYDATA;
+				SET rOut.ns8:AgentInfo.ns8:EmployeeInfo.(XMLNSC.Attribute)EmployeeId = source.AGENT_ID;
+				--SET rOut.ns8:AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)Password = InputRoot.SOAP.Body.*:processEncryptDecryptResponse.*:Encrypt_Decrypt.*:DecryptString;
+				SET rOut.ns8:AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)UserLoginName = COALESCE(source.WEB_LOGIN_NAME,'');
+				SET rOut.ns8:AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)UserType = 'AGENT';
+				SET rOut.ns8:AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)WebLastLogin = source.WEB_LAST_LOGIN;
+
+			END FOR;
+--			SET rOut.ns8:AgentInfo.ns8:EmployeeInfo = InputRoot.SOAP.Body.ns:processEncryptDecryptResponse.ns:Encrypt_Decrypt.ns:EncryptString;
+--			SET rOut.ns8:AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)Password = InputRoot.SOAP.Body.ns:processEncryptDecryptResponse.ns:Encrypt_Decrypt.ns:DecryptString;
+
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)ISOCurrency = COALESCE(rEnv.Temp.AgencyDetails[1].DEFAULT_CURRENCY,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)AgencyType = COALESCE(rEnv.Temp.AgencyDetails[1].AGENCY_TYPE,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)ARCNumber = COALESCE(rEnv.Temp.AgencyDetails[1].ARC_NUMBER,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)BlacklistedAgency = 'False';
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)CLIANumber = COALESCE(rEnv.Temp.AgencyDetails[1].CLIA_NUMBER,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)CompanyType = COALESCE(rEnv.Temp.AgencyDetails[1].TAXPAYER_TYPE,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)IATANumber = COALESCE(rEnv.Temp.AgencyDetails[1].IATA_NUMBER,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)IdentificationNumber = COALESCE(rEnv.Temp.AgencyDetails[1].TAXPAYER_NUMBER,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)LegalName = COALESCE(rEnv.Temp.AgencyDetails[1].AGENCY_NAME,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)OfficeCode = COALESCE(rEnv.Temp.AgencyDetails[1].OFFICE_CODE,'');
+			SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)Website = COALESCE(rEnv.Temp.AgencyDetails[1].WEB_ADDRESS,'');
+			SET rOut.ns8:AgencyInfo.ns8:RequestorID.(XMLNSC.Attribute)ID = rEnv.Temp.AgencyDetails[1].AGENCY_ID;
+			SET rOut.ns8:AgencyInfo.ns8:RequestorID.ns8:CompanyName = rEnv.Temp.AgencyDetails[1].AGENCY_NAME;
+			SET rOut.ns8:AgencyInfo.ns8:Telephone.(XMLNSC.Attribute)PhoneNumber = rEnv.Temp.AgencyDetails[1].PHONE_NUMBER;
+			SET rOut.ns8:AgencyInfo.ns8:Address.ns8:AddressLine = rEnv.Temp.AgencyDetails[1].ADDRESS_LINE1;
+			SET rOut.ns8:AgencyInfo.ns8:Address.ns8:CityName = rEnv.Temp.AgencyDetails[1].ADDRESS_CITY;
+			SET rOut.ns8:AgencyInfo.ns8:Address.ns8:PostalCode = rEnv.Temp.AgencyDetails[1].ZIP;
+			SET rOut.ns8:AgencyInfo.ns8:Address.ns8:StateProv.(XMLNSC.Attribute)StateCode = rEnv.Temp.AgencyDetails[1].STATE_CODE;
+			SET rOut.ns8:AgencyInfo.ns8:Address.ns8:CountryName.(XMLNSC.Attribute)Code = rEnv.Temp.AgencyDetails[1].ADD_COUNTRY_CODE;
+			SET rOut.ns8:AgencyInfo.ns8:Email = rEnv.Temp.AgencyDetails[1].EMAIL_ADDRESS;
+			SET rOut.ns8:AgencyInfo.ns8:DSMName.ns8:GivenName = rEnv.Temp.AgencyDetails[1].DSM_FIRST;
+			SET rOut.ns8:AgencyInfo.ns8:DSMName.ns8:Surname = rEnv.Temp.AgencyDetails[1].DSM_LAST;
+			SET rOut.ns8:AgencyInfo.ns8:LanguageCode = rEnv.Temp.AgencyDetails.EXTRA1;
+
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Retrieve agent module Success response payload...', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+			RETURN TRUE;
+
+		--END CASE;
+
+	END;
+
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgent
+* MODULE NAME : Exception
+* Description : This module is used to handle the exceptions occured during the execution of the IIB flow.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgent_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Retrieve Agent input request message exception IIB...', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+
+END MODULE;

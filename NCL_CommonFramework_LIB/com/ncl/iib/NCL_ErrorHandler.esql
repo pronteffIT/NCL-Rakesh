@@ -1,0 +1,52 @@
+BROKER SCHEMA com.ncl.iib
+
+/* ------------------------------------------------------------------------------------
+ *  COMPANY           :     NCL
+ *  PROJECT           :     WSB-IIB Migration
+ *  SUBFLOW NAME      :     NCL_ErrorHandler.subflow
+ *  ESQL NAME         :     ErrorHandler_ConstructErrorLog
+ * 	DESCRIPTION       :    	This subflow used to get the exception details and add 
+ 							error details to log event. 
+ *-------------------------------------------------------------------------------------    
+ * ******************        MODIFICATION HISTORY   ***********************************
+ * ------------------------------------------------------------------------------------
+ * VERSION  CRNUM   DATE(MM/DD/CCYY)   Author                       Comments
+ * 1.0              10/30/2017        Prolifics					Initial Creation
+ * -----------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE ErrorHandler_ConstructErrorLog
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvExcp REFERENCE TO Environment;
+		DECLARE bExceptionList BLOB;
+		DECLARE cExceptionList CHARACTER;
+
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, '', '', '');
+		END IF;
+    	    	
+   		CREATE LASTCHILD OF rEnv.Log AS rEnvExcp DOMAIN 'XMLNSC';
+		SET rEnvExcp.Exception = rExcp;
+
+    	SET bExceptionList = ASBITSTREAM(rEnvExcp.Exception, rEnv.GTM.Encoding, rEnv.GTM.CodedCharSetId);
+		SET cExceptionList = CAST(bExceptionList AS CHARACTER CCSID rEnv.GTM.CodedCharSetId ENCODING rEnv.GTM.Encoding);	
+		
+		IF NOT EXISTS(rEnv.ErrorSummary[]) THEN					
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		IF EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError(cExceptionList, rEnv);
+		END IF;
+		
+		DETACH rEnv.ErrorSummary;
+		DETACH rEnvExcp.Exception;
+
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,192 @@
+BROKER SCHEMA com.ncl.ais
+
+--DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_AddGuestInfo_PrepareDBSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addGuestInfo;
+		DECLARE rDbSrch REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		DECLARE cClientId CHARACTER '';
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'addGuestInfo';
+		SET rEnv.Temp.addGuestInfo = rIn;
+		SET rEnv.Temp.SessionID = rIn.*:sessionGUID;
+		SET rEnv.Temp.ReservationID = rIn.*:reservationID;
+		SET rEnv.Temp.GuestID = rIn.*:amenityOrderItemReq.*:Guest.LoyaltyMembershipID;
+		
+		SET rEnv.Temp.Endpoint = rIn.*:Endpoint ;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet('', '', rEnv.Temp.ReservationID, rEnv.Temp.GuestID, '', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add guest info request message', 'xml', rEnv);
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling VX DBSearch api to get guest info ...', rEnv);
+
+		SET cClientId = THE(SELECT ITEM C.CLIENT_ID FROM Database.SEA.RES_GUEST AS RG, Database.SEA.CLIENT AS C 
+							WHERE RG.CLIENT_ID = C.CLIENT_ID AND RG.GUEST_ID = rEnv.Temp.GuestID AND RG.RES_ID = rEnv.Temp.ReservationID); 
+		
+		IF COALESCE(cClientId, '') = '' THEN
+			SET OutputRoot.XMLNSC.sc:addGuestInfoResponse.sc:amenityOrderItemRes = rEnv.Temp.*:addGuestInfo.*:amenityOrderItemReq;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			
+			CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rDbSrch;
+			
+			--SET rDbSrch.MsgHeader.Version = VersonixAPIVersion;
+			
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionID,rDbSrch);
+			
+--			IF LENGTH(COALESCE(rIn.*:sessionGUID,'')) > 0 THEN
+--				SET rDbSrch.MsgHeader.SessionGUID = rIn.*:sessionGUID;
+--			ELSE
+--				CREATE FIELD rDbSrch.MsgHeader.CallerInfo.UserInfo.Internal;
+--			END IF;			
+			
+			SET rDbSrch.Clients.ClientID = cClientId;
+
+			-- log payload
+			IF LogPayload THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search request message', 'xml', rEnv);
+			END IF;
+			
+			RETURN TRUE;			
+		END IF;
+				
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddGuestInfo_AddGuestDetails
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rDbSrch REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rDbSrchClient REFERENCE TO rDbSrch.Clients.Client;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:addGuestInfoResponse.amenityOrderItemRes;
+
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'DB search response message', 'xml', rEnv);
+		END IF;
+
+		IF EXISTS(rDbSrch.Errors.Error[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error response from VX DBSearch api while getting guest info ...', rEnv);
+			
+			-- send the input message to create error response
+			CREATE FIELD OutputRoot.XMLNSC.sc:addGuestInfoFault_warning AS rResp;			
+			CALL com.ncl.ais.utils.CreateResponseFromDBSearchErrors(rDbSrch, rResp);
+		ELSE		
+			CREATE FIELD OutputRoot.XMLNSC.sc:addGuestInfoResponse.sc:amenityOrderItemRes AS rResp;
+			
+			SET rResp = rEnv.Temp.*:addGuestInfo.*:amenityOrderItemReq;
+			
+			IF LASTMOVE(rDbSrchClient) THEN
+				IF EXISTS(rEnv.Temp.*:addGuestInfo.*:GuestNameOnly[]) THEN
+					SET rResp.sc:Guest.(XMLNSC.Attribute)LoyaltyMembershipID = rDbSrchClient.ClientID;
+					SET rResp.sc:Guest.sc:GuestName.sc:GivenName = rDbSrchClient.FirstName;
+					SET rResp.sc:Guest.sc:GuestName.sc:Surname = rDbSrchClient.LastName;
+				ELSE
+					SET rResp.sc:Guest.(XMLNSC.Attribute)BirthDate = rDbSrchClient.Birthday;
+					
+					-- delete the attribute first and then set the attribute to create it in right order
+					SET rResp.sc:Guest.(XMLNSC.Attribute)LoyaltyMembershipID = NULL;
+					SET rResp.sc:Guest.(XMLNSC.Attribute)LoyaltyMembershipID = rDbSrchClient.ClientID;
+					
+					SET rResp.sc:Guest.sc:GuestName.sc:GivenName = rDbSrchClient.FirstName;
+					SET rResp.sc:Guest.sc:GuestName.sc:MiddleName = rDbSrchClient.MiddleName;
+					SET rResp.sc:Guest.sc:GuestName.sc:Surname = rDbSrchClient.LastName;
+					SET rResp.sc:Guest.sc:GuestName.sc:NameTitle = rDbSrchClient.Title;
+				END IF;
+			END IF;
+		END IF;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add guest info response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddGuestInfo_CreateFaultMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:addGuestInfoFault;
+		
+		DECLARE bPayload BLOB;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.sc:addGuestInfoFault AS rResp;
+		
+		SET rResp.(XMLNSC.Attribute)Code = '12228';
+		SET rResp.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rResp.(XMLNSC.Attribute)Type = '3';
+		SET rResp = COALESCE(rEnv.ErrorSummary.ErrorText, 'System error from back end. Please try again later');	
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add guest info response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddGuestInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

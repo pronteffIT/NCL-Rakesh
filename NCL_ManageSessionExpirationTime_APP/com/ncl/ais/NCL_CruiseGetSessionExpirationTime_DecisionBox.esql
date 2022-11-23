@@ -1,0 +1,225 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE ns5 NAMESPACE 'http://nclapi/schemas';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseGetSessionExpirationTime
+ * MODULE NAME       :     DecisionBox
+ * Description       :     This module is used to decide the final response.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetSessionExpirationTime_DecisionBox
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns5:NCL_CruiseGetSessionExpirationTimeRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns5:NCL_CruiseGetSessionExpirationTimeRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseGetSessionExpirationTimeRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseGetSessionExpirationTimeRQ AS rIn;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Load agency service response payload...', 'xml', rEnv);
+
+		CASE
+
+		WHEN EXISTS(InputRoot.XMLNSC.LoadAgency_OUT.Errors.Error[]) THEN
+			-- Create SetSessionExpired
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.ns5:Success;
+			
+			DECLARE rOutWarnings REFERENCE TO rOut.ns5:Warnings;
+			CREATE FIELD rOut.ns5:Warnings AS rOutWarnings;
+			DECLARE rOutWarning REFERENCE TO rOutWarnings;
+			-- for loop for the warning messages
+			FOR source AS InputRoot.XMLNSC.LoadAgency_OUT.Errors.Error[] DO
+
+				CREATE LASTCHILD OF rOutWarnings AS rOutWarning NAMESPACE ns5 NAME 'Warning';
+				--SET rOutWarning = source.ErrorMessage;
+				SET rOutWarning.(XMLNSC.Attribute)Code = '12228';
+				SET rOutWarning.(XMLNSC.Attribute)ShortText = source.ErrorMessage;
+				SET rOutWarning.(XMLNSC.Attribute)Type = '3';
+				
+			END FOR;
+			-- Logging framework implementation
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Session Expired payload...', 'xml', rEnv);
+			END IF;
+--			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+
+
+		WHEN EXISTS(InputExceptionList.RecoverableException[]) THEN
+			-- If Service returned the exception then map those exceptions and send the response
+			DECLARE cErrorText CHARACTER;
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, InputExceptionList);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+			CREATE FIELD rOut.ns5:Success;
+			SET rOut.ns5:Warnings.ns5:Warning = cErrorText;
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Generic error in get expiration time';
+			SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+						
+			-- Logging framework implementation
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Load agency exception message payload...', 'xml', rEnv);
+			END IF;
+--			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+
+
+		WHEN EXISTS(InputRoot.XMLNSC.LoadAgency_OUT.Agency.AgencyHeader.AgencyID[])THEN
+			--Check if the agency is active or not.
+
+			IF InputRoot.XMLNSC.LoadAgency_OUT.Agency.AgencyHeader.IsActive[1] = 'Y' THEN
+				-- Call the DB and route the message in different ways
+				
+				CALL GetExpireTime(rEnv);
+				
+				IF CARDINALITY(rEnv.Temp.DbResponse[]) > 100 THEN
+					--If the result returned by the DB Exceeds than 100 then perform exeeds limit flow
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+					CREATE FIELD rOut.ns5:Success;
+					
+					SET rOut.ns5:Warnings.ns5:Warning = 'Number of records retrieved from database exceeds the maximum limit';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '12228';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Error getting expiration time - Match Exceedes Limit';
+					--Error getting expiration time - Record not found
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+					
+					-- Logging framework implementation
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					IF (LogPayload) THEN
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time DB Match Exceeds limit payload...', 'xml', rEnv);
+					END IF;
+--					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					SET OutputRoot.XMLNSC = NULL;
+					SET OutputRoot.BLOB.BLOB = bPayload;
+
+				ELSE IF (rEnv.Temp.DbResponse.TIMERELEASE) IS NULL THEN
+					-- If the result returned from the DB doesnot exist then send Record not found
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+					CREATE FIELD rOut.ns5:Success;
+			
+					SET rOut.ns5:Warnings.ns5:Warning = 'no record found';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '12228';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Error getting expiration time - Record not found';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+					-- Map the value here from the message obtained from the db call
+					
+					-- Logging framework implementation
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					IF (LogPayload) THEN
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time DB Record not found payload...', 'xml', rEnv);
+					END IF;
+--					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					SET OutputRoot.XMLNSC = NULL;
+					SET OutputRoot.BLOB.BLOB = bPayload;
+
+				ELSE IF SQLCODE <> 0 THEN
+					-- prepare the Generic Exception tree
+					-- if there are SQL exception then send this response
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+					CREATE FIELD rOut.ns5:Success;
+					SET rOut.ns5:Warnings.ns5:Warning = SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]');
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '12228';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Generic error in get expiration time';
+					SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+					-- Map the value here from the message obtained from the db call
+					
+					-- Logging framework implementation
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					IF (LogPayload) THEN
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time DB Exception payload...', 'xml', rEnv);
+					END IF;
+--					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					SET OutputRoot.XMLNSC = NULL;
+					SET OutputRoot.BLOB.BLOB = bPayload;
+
+				ELSE
+					-- prepare the final output response Success response
+					CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+					CREATE FIELD rOut.ns5:Success;
+					SET rOut.ns5:ExpiryTime = rEnv.Temp.DbResponse.TIMERELEASE;
+					-- Logging framework implementation
+					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					IF (LogPayload) THEN
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Success response payload...', 'xml', rEnv);
+					END IF;
+--					SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					SET OutputRoot.XMLNSC = NULL;
+					SET OutputRoot.BLOB.BLOB = bPayload;
+
+				END IF;
+			END IF;
+		END IF;
+
+	ELSE
+		--create agency not active response
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+		CREATE FIELD rOut.ns5:Success;
+		SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '12805';
+		SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Agency Not Active';
+		SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+		-- Logging framework implementation
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Agency not active payload...', 'xml', rEnv);
+		END IF;
+	END IF;
+
+
+ELSE
+	-- Agency not Found
+	CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+
+	CREATE FIELD rOut.ns5:Success;
+	SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Code = '12805';
+	SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)ShortText = 'Agency Not Found';
+	SET rOut.ns5:Warnings.ns5:Warning.(XMLNSC.Attribute)Type = '3';
+	SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+	IF (LogPayload) THEN
+	CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Agency not found payload...', 'xml', rEnv);
+	END IF;
+END CASE;
+
+END;
+END MODULE;
+
+
+
+
+CREATE PROCEDURE GetExpireTime(INOUT rEnv REFERENCE)
+BEGIN
+	DECLARE Session CHARACTER;
+	IF EXISTS(rEnv.XMLNSC.QUID[]) THEN
+		SET Session = 'SESSION.'||rEnv.XMLNSC.QUID;
+		SET rEnv.Temp.DbResponse[] = PASSTHRU('select to_char(RL.TIMERELEASE,''dd/mm/yyyy hh24:mi:ss'') AS TIMERELEASE from res_lock rl  where rl.LOCK_NAME = ?' VALUES(Session));
+		
+	END IF;
+END;

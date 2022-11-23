@@ -1,0 +1,57 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE SetGuestInfo_MangeClientsResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') IDENTITY ManageClientsResp;
+		SET rEnv.ManageClientsResp = InputRoot.XMLNSC.ManageClients_OUT;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveBooking_LogOutReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLogOut REFERENCE TO OutputRoot;
+		DECLARE rIn REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveBookingRQ;
+		-- Do not logout when ReturnTempState is true
+		IF COALESCE(UPPER(rIn.*:ReturnTempState), 'FALSE') = 'TRUE' THEN
+			RETURN FALSE;
+		ELSE			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.Logout_IN AS rLogOut;
+			SET rLogOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET rLogOut.MsgHeader.SessionGUID = Environment.Variables.SessionGUID;		
+			RETURN TRUE;
+		END IF;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE CruiseRetrieveBooking_DBSearchResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE LASTCHILD OF rEnv.DBSearchResponse;
+		SET rEnv.DBSearchResponse = rIn.Cabins;
+		
+--		-- Construct Request for CabinLookup Service.
+--		CREATE FIELD OutputRoot.XMLNSC.CabinLookupCategoryInfo.CabinLookupReq AS rOut;
+--		SET rOut.CabinNumbers.Cabins = rIn.Cabins.Cabin.CabinNumber;
+--		SET rOut.ShipCode = rIn.Cabins.Cabin.ShipCode;
+--		SET rOut.ExternalSystemName = 'NCLWEBC';
+		
+		RETURN FALSE;
+	END;
+
+END MODULE;

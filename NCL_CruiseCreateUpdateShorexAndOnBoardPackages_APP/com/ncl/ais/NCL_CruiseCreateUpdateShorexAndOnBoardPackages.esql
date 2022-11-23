@@ -1,0 +1,159 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_CREATE_UPDATE_SHOREX_PACKAGES_RESP';
+DECLARE LogPayload EXTERNAL BOOLEAN;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateShorexAndOnBoardPackages_SaveMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*[1];
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+
+		-- Send info to Callable Flow
+		IF EXISTS(InputRoot.XMLNSC.*:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ[]) 
+		THEN		
+			SET OutputLocalEnvironment.CallableFlow.State = 'STATEFUL';
+		ELSE
+			SET OutputLocalEnvironment.CallableFlow.State = 'STATELESS';
+		END IF;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.InputMessage = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.InputMessage.(XMLNSC.NamespaceDecl)xmlns = NULL;
+		
+		SET rEnv.Temp.InputMessageName = SUBSTRING(FIELDNAME(InputRoot.XMLNSC.*[1]) BEFORE 'RQ');
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateShorexAndOnBoardPackages request message', 'xml', rEnv);
+		END IF;
+		
+		-- copy entire message to specific service
+		SET OutputRoot = InputRoot;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateShorexAndOnBoardPackages_CreateResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		-- create response message
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		
+		SET OutputRoot.MQRFH2.usr.Endpoint = InputLocalEnvironment.RFH2.EndPoint;
+		
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		SET OutputRoot.XMLNSC.*[1].(XMLNSC.Attribute)Endpoint = NULL;
+
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateShorexAndOnBoardPackages response message', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateShorexAndOnBoardPackages_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rOut REFERENCE TO OutputRoot;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		DECLARE outMsgName CHARACTER rEnv.Temp.InputMessageName || 'RS';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:{outMsgName} AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateShorexAndOnBoardPackages response message', 'xml', rEnv);
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateShorexAndOnBoardPackages_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		-- IF message has failed before going into the first compute node
+		IF NOT EXISTS(rEnv.Temp.Headers.MQMD[]) THEN
+			SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+			SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		
+			-- set reply-to-q if not set
+			IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+				SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+			END IF;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateShorexAndOnBoardPackages request message', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,100 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+
+/** Function to convert external code to versonix code **/
+CREATE FUNCTION FindVersonixCode(IN status CHARACTER, IN code CHARACTER) RETURNS CHARACTER 
+BEGIN
+		/*DECLARE queryString CHARACTER 'SELECT DETAILS.EXTERNAL_CODE, DETAILS.SW_CODE,DETAILS.DESCRIPTION,
+										DETAILS.EXTERNAL_XREF_DETAIL_ID, DETAILS.long_description, 
+										DETAILS.external_xref_id  FROM  SEA.EXTERNAL_XREF_DETAIL DETAILS 
+										INNER JOIN ( SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM 
+													SEA.EXTERNAL_XREF XREF INNER JOIN  SEA.EXTERNAL_NAMES NAMES ON  
+													XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where NAMES.EXTERNAL_NAME = ?) 
+														TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID 
+										WHERE TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.EXTERNAL_CODE = ?'; */
+		
+		DECLARE queryResult ROW;								
+        DECLARE queryString CHARACTER 'SELECT DETAILS.SW_CODE FROM SEA.EXTERNAL_XREF_DETAIL DETAILS 
+										INNER JOIN ( SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM 
+													SEA.EXTERNAL_XREF XREF INNER JOIN  SEA.EXTERNAL_NAMES NAMES ON  
+													XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where NAMES.EXTERNAL_NAME = ?) 
+														TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID 
+										WHERE TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.EXTERNAL_CODE = ?';
+										   
+        SET queryResult = PASSTHRU(queryString VALUES(code, 'AM_STS', status));
+	
+		RETURN COALESCE(queryResult.SW_CODE, '');
+	
+END;
+
+/** Function to convert versonix code to external code**/
+CREATE FUNCTION FindExternalCode(IN status CHARACTER, IN code CHARACTER) RETURNS CHARACTER 
+BEGIN		
+		DECLARE queryResult ROW;
+        DECLARE queryString CHARACTER 'SELECT DETAILS.EXTERNAL_CODE FROM  SEA.EXTERNAL_XREF_DETAIL DETAILS 
+										INNER JOIN ( SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM 
+													SEA.EXTERNAL_XREF XREF INNER JOIN  SEA.EXTERNAL_NAMES NAMES ON  
+													XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where NAMES.EXTERNAL_NAME = ?) 
+														TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID 
+										WHERE TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.SW_CODE = ?';
+        
+        SET queryResult = PASSTHRU(queryString VALUES(code, 'AM_STS', status));
+        
+		RETURN COALESCE(queryResult.EXTERNAL_CODE, '');	
+END;
+
+/** Function to convert external status to versonix status **/
+CREATE FUNCTION FindVersonixStatus(IN status CHARACTER, IN code CHARACTER) RETURNS CHARACTER BEGIN
+	
+		DECLARE queryResult ROW;
+        DECLARE queryString CHARACTER 'SELECT DETAILS.SW_CODE FROM  SEA.EXTERNAL_XREF_DETAIL DETAILS 
+        		INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF 
+        					INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID 
+        						Where NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON 
+        						DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE 
+        						TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.EXTERNAL_CODE = ?';
+										
+        SET queryResult = PASSTHRU(queryString VALUES(code, 'STS', status));
+
+		RETURN COALESCE (queryResult.SW_CODE, '');
+	
+END;
+
+/** Function to convert Versonix status to external status **/
+CREATE FUNCTION FindExternalStatus(IN status CHARACTER, IN code CHARACTER) RETURNS CHARACTER 
+BEGIN	
+		DECLARE queryResult ROW;
+        DECLARE queryString CHARACTER 'SELECT DETAILS.EXTERNAL_CODE FROM  SEA.EXTERNAL_XREF_DETAIL DETAILS 
+        		INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF 
+        					INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID 
+        						Where NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON 
+        						DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE 
+        						TEMP_JOIN.EXTERNAL_TABLE=? AND DETAILS.SW_CODE = ?';										
+        
+        SET queryResult = PASSTHRU(queryString VALUES(code, 'STS', status));
+        
+		RETURN COALESCE(queryResult.EXTERNAL_CODE, '');	
+END;
+
+/** Procedure to extract the Guest ID given the LoyaltyMembership ID and Client ID.
+	The procedure also checks if the client ID for the specified combination has already been retrieved 
+	and stored in the Env previously. If yes, it uses that information and avoids executing the needless DB
+	query **/
+CREATE PROCEDURE FindGuestID(IN loyaltyID CHARACTER, IN clientID CHARACTER, INOUT guestID CHARACTER, INOUT rEnv REFERENCE) BEGIN
+	
+		DECLARE queryResult ROW;
+		
+		IF EXISTS(rEnv.GuestIDList.{loyaltyID}[]) 
+		THEN
+			SET guestID = rEnv.GuestIDList.{loyaltyID}.Guest;
+		ELSE				
+        	DECLARE queryString CHARACTER 'Select rg.guest_id from SEA.res_guest rg,
+										SEA.client c where rg.client_ID = c.client_ID and 
+				 						rg.client_id = ? and rg.res_id =? and rownum = 1';										
+        
+        	SET queryResult = PASSTHRU(queryString VALUES(loyaltyID,clientID));          	 
+        	SET guestID = COALESCE(queryResult.GUEST_ID,0);
+        	SET rEnv.GuestIDList.{loyaltyID}.Guest = guestID;        	
+		END IF;	
+END;
+

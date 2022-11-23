@@ -1,0 +1,287 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_MANAGE_CLIENT_WEARABLEINFO_RESP';
+DECLARE ExternalCodeType EXTERNAL CHARACTER 'AdvisoryCondition';
+DECLARE XC10CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10ConnectionConfig EXTERNAL CHARACTER '';
+DECLARE RETRIVAL_ERROR_CD EXTERNAL CHARACTER '';
+DECLARE UPSERT_ERROR_CD EXTERNAL CHARACTER '';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE bPayload BLOB;
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseManageClientWearableInfo_Upsert_WearableInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseManageClientWearableInfoRQ;
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		SET rEnv.BkingChnlCompCd = UPPER(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code));
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+											   COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+											   COALESCE(rIn.*:ResID, ''),'','',rEnv);
+
+		IF (LogPayLoad) THEN
+			--creating IIB Log Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Manage Client Wearable Info Request', 'xml', rEnv);
+		END IF;
+
+		DECLARE LINKED_CLIENT_ID INTEGER;
+		DECLARE ADDRESS_LINE1_TXT,ADDRESS_LINE2_TXT,ADDRESS_LINE3_TXT,CITY_CD,STATE_CD,ZIP_CD,COUNTRY_CD,CABIN_NBR,CLIENT_ID,SAIL_ID,RES_ID,VOYAGE_CD CHARACTER;
+		DECLARE IS_ADDR_DIFF_THAN_OCI_ADDR_CD CHARACTER 'Y';
+
+		SET CLIENT_ID 			= rIn.*:ClientInfo.*:Client.*:ID;
+		SET RES_ID 				= rIn.*:ResID ;
+		SET SAIL_ID				= rIn.*:SailID;
+		SET VOYAGE_CD 			= rIn.*:VoyageID;
+		SET CABIN_NBR			= rIn.*:CabinNumber;
+		SET ADDRESS_LINE1_TXT 	= rIn.*:ClientInfo.*:Client.*:AddressLine1;
+		SET ADDRESS_LINE2_TXT 	= rIn.*:ClientInfo.*:Client.*:AddressLine2;
+		SET ADDRESS_LINE3_TXT	= rIn.*:ClientInfo.*:Client.*:AddressLine3;
+		SET CITY_CD 			= rIn.*:ClientInfo.*:Client.*:City;
+		SET STATE_CD 			= rIn.*:ClientInfo.*:Client.*:State;
+		SET ZIP_CD 				= rIn.*:ClientInfo.*:Client.*:ZIP;
+		SET COUNTRY_CD 			= rIn.*:ClientInfo.*:Client.*:Country;
+
+		IF UPPER(rIn.*:IsAddressDifferentThanOCIAddress) <> 'TRUE' THEN
+			SET IS_ADDR_DIFF_THAN_OCI_ADDR_CD = 'N';
+		END IF;
+
+		SET LINKED_CLIENT_ID = rIn.*:LinkedClientIDSharingSameAddress;
+		
+		IF NOT com.ncl.ais.utils.IsEmpty(CLIENT_ID) AND NOT com.ncl.ais.utils.IsEmpty(RES_ID) AND NOT com.ncl.ais.utils.IsEmpty(SAIL_ID) AND NOT com.ncl.ais.utils.IsEmpty(VOYAGE_CD) THEN
+			
+			DECLARE SQLQry CHARACTER;		
+			SET SQLQry = 'MERGE INTO NCL_CLIENT_WEARABLEINFO_TBL t USING DUAL ON (t.CLIENT_ID=? AND t.RES_ID =?)	
+						WHEN MATCHED THEN
+							UPDATE SET SAIL_ID =?,CABIN_NBR =?,ADDRESS_LINE1_TXT =?,ADDRESS_LINE2_TXT =?,ADDRESS_LINE3_TXT=?,CITY_CD=?,STATE_CD=?,ZIP_CD=?,
+							COUNTRY_CD=?,IS_ADDR_DIFF_THAN_OCI_ADDR_CD=?,LINKED_CLIENT_ID=?,VOYAGE_CD =? WHERE t.CLIENT_ID =? AND t.RES_ID =?								
+	     				WHEN NOT MATCHED THEN
+	     					INSERT (CLIENT_ID,RES_ID,SAIL_ID,VOYAGE_CD,CABIN_NBR,ADDRESS_LINE1_TXT,ADDRESS_LINE2_TXT,ADDRESS_LINE3_TXT,
+	     								CITY_CD,STATE_CD,ZIP_CD,COUNTRY_CD,IS_ADDR_DIFF_THAN_OCI_ADDR_CD,LINKED_CLIENT_ID)
+	     								VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+	     								
+	        PASSTHRU(SQLQry,CLIENT_ID,RES_ID,SAIL_ID,CABIN_NBR,ADDRESS_LINE1_TXT,ADDRESS_LINE2_TXT,ADDRESS_LINE3_TXT,CITY_CD,STATE_CD,ZIP_CD,COUNTRY_CD,IS_ADDR_DIFF_THAN_OCI_ADDR_CD,LINKED_CLIENT_ID,VOYAGE_CD,CLIENT_ID,RES_ID,
+	             							CLIENT_ID,RES_ID,SAIL_ID,VOYAGE_CD,CABIN_NBR,ADDRESS_LINE1_TXT,ADDRESS_LINE2_TXT,ADDRESS_LINE3_TXT,CITY_CD,STATE_CD,
+	             							      ZIP_CD,COUNTRY_CD,IS_ADDR_DIFF_THAN_OCI_ADDR_CD,LINKED_CLIENT_ID);      
+			PASSTHRU('COMMIT');
+	
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseManageClientWearableInfoRS AS rOut;
+			-- call the procedure to copy attributes
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE FIELD rOut.Success;
+						
+		ELSE 
+			DECLARE cExternalCodeInfo,cErrorMsg CHARACTER ;
+			
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.BkingChnlCompCd || '#' || ExternalCodeType,UPSERT_ERROR_CD,XC10CacheMap,XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = rEnv.BkingChnlCompCd;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+			END IF;	
+				
+			SET cErrorMsg = SUBSTRING(SUBSTRING(COALESCE(cExternalCodeInfo, '') AFTER '#1#') BEFORE '#2#');
+			
+			--Create Response Message
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseManageClientWearableInfoRS AS rOut;
+			-- call the procedure to copy attributes
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			
+			SET rOut.ns:Warnings.ns:Warning 							= COALESCE(cErrorMsg,'Cannot insert client record');
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code 		= UPSERT_ERROR_CD;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(SUBSTRING(cErrorMsg FROM 1 FOR 64),'Unable to insert wearable info for this record');
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type 		= '3'; 	
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseManageClientWearableInfo_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseManageClientWearableInfoRQ;
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+		
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseManageClientWearableInfoRS;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Manage Client Wearable Info request message', 'xml', rEnv);
+			END IF ;
+		END IF;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			---call logging Procedure
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception ', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		    END IF;
+			---Build Response for RuntimeError
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseManageClientWearableInfoRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Warnings.ns:Warning = cErrorText;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System backend error , please try again later';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		END IF;
+	RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClientWearableInfo_RetrieveWearableInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rOutRef REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveClientWearableInfoRQ;
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		SET rEnv.BkingChnlCompCd = UPPER(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code));
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		-- add metadata to log event		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ResID, ''),'','',rEnv);
+		
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Retrieve Client WearableInfo Request', 'xml', rEnv);
+		END IF;	
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.MQMD 		 = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		
+		DECLARE CLIENT_ID CHARACTER;
+		DECLARE RES_ID INTEGER;
+	
+		SET CLIENT_ID 	= CAST(rIn.*:ClientID AS CHARACTER);
+		SET RES_ID 		= rIn.*:ResID;
+		
+		IF NOT com.ncl.ais.utils.IsEmpty(CLIENT_ID) THEN
+			SET rEnv.Temp.Result[]= SELECT * FROM Database.NCL_CLIENT_WEARABLEINFO_TBL AS A where A.RES_ID  = RES_ID AND A.CLIENT_ID = CLIENT_ID;
+		ELSE
+			SET rEnv.Temp.Result[]= SELECT * FROM Database.NCL_CLIENT_WEARABLEINFO_TBL AS A where A.RES_ID  = RES_ID;		
+		END IF;
+			
+		IF EXISTS(rEnv.Temp.Result[]) THEN
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseRetrieveClientWearableInfoRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+			CREATE FIELD rOut.Success;
+			
+			DECLARE rDBResult REFERENCE TO rEnv.Temp.Result;
+			SET rOut.ResID 		= rDBResult.RES_ID;
+			SET rOut.SailID		= rDBResult.SAIL_ID;					
+			SET rOut.VoyageID	= rDBResult.VOYAGE_CD;
+			SET rOut.CabinNumber= CAST(rDBResult.CABIN_NBR AS INTEGER);
+						
+			FOR outRef AS rEnv.Temp.Result[] DO 
+				CREATE LASTCHILD OF rOut.ClientInfo AS rOutRef NAME 'Client' ;				
+				SET rOutRef.ID 				= outRef.CLIENT_ID;
+				SET rOutRef.AddressLine1 	= outRef.ADDRESS_LINE1_TXT;
+				SET rOutRef.AddressLine2 	= outRef.ADDRESS_LINE2_TXT;
+				SET rOutRef.AddressLine3 	= outRef.ADDRESS_LINE3_TXT;
+				SET rOutRef.City 			= outRef.CITY_CD;
+				SET rOutRef.State 			= outRef.STATE_CD;
+				SET rOutRef.Zip 			= outRef.ZIP_CD;
+				SET rOutRef.Country 		= outRef.COUNTRY_CD; 
+			END FOR;
+			-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+		ELSE
+			DECLARE cExternalCodeInfo,cErrorMsg CHARACTER ;
+			
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.BkingChnlCompCd || '#' || ExternalCodeType, RETRIVAL_ERROR_CD, XC10CacheMap, XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = rEnv.BkingChnlCompCd;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+			END IF;
+				
+			SET cErrorMsg = SUBSTRING(SUBSTRING(COALESCE(cExternalCodeInfo, '') AFTER '#1#') BEFORE '#2#');
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveClientWearableInfoRS AS rOut;
+			
+			SET rOut.ns:Warnings.ns:Warning 							= COALESCE(cErrorMsg,'No record found');
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code 		= RETRIVAL_ERROR_CD;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(SUBSTRING(cErrorMsg FROM 1 FOR 64),'No record found for given input values');
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type 		= '3'; 	
+			
+		END IF;	 
+		
+		IF (LogPayLoad) THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			-- Adding PayLoad Event
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Retrieve Client WearableInfo Request', 'xml', rEnv);
+		END IF;	
+		RETURN TRUE;
+	END;
+END MODULE;

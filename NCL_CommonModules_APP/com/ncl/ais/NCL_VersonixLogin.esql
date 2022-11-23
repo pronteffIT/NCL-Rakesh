@@ -1,0 +1,194 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_VersonixLogin_LoginRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:LoginRequest;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE cChannel CHARACTER rIn.*:source.*:BookingChannel.*:CompanyName.Code;
+		DECLARE cUserinfo, cCacheVal CHARACTER '';
+		DECLARE cErrorMsg CHARACTER 'System error from back end. Please try again later';
+		--DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		--SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:source.*:RequestorID.ID, COALESCE(rIn.*:source.PseudoCityCode, '')),
+												cChannel,
+												'',
+												'',
+												'',
+											 	rEnv);
+		
+		
+		SET rEnv.Temp.source = rIn.*:source;
+
+		-- continue handler to continue with cache errors
+		BEGIN
+			DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN END;
+		END;
+		
+		-- lookup username and pwd from cache using channel
+		SET cUserinfo = GetUserInfoFromCache(cChannel, UserMap, CacheConfigService);
+		
+		IF COALESCE(cUserinfo, '') = '' OR STARTSWITH(cUserinfo, 'ERROR') THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UserInfo lookup from cache failed ...' || cUserinfo, rEnv);
+			
+			PROPAGATE TO LABEL 'GET_USERINFO';
+			
+			SET cUserinfo = ExtractUserInfo(cChannel, rEnv);
+
+			IF COALESCE(cUserinfo, ',') <> ',' THEN
+				SET cCacheVal = SaveUserInfoFromCache(cChannel, cUserinfo, '-1', UserMap, CacheConfigService);
+				
+				--PROPAGATE TO LABEL 'TRIGGER_CACHELOAD';
+			END IF;
+		ELSE
+			-- audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UserInfo lookup from cache successful ...' || cUserinfo, rEnv);			
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking VX login service ...', rEnv);
+
+		IF COALESCE(cUserinfo, ',') = ',' THEN
+			SET OutputRoot.XMLNSC.LoginResponse.loginError.(XMLNSC.Attribute)Code = '12805';
+			SET OutputRoot.XMLNSC.LoginResponse.loginError.(XMLNSC.Attribute)ShortText = LEFT(cErrorMsg, 64);
+			SET OutputRoot.XMLNSC.LoginResponse.loginError.(XMLNSC.Attribute)Type = '3';
+			SET OutputRoot.XMLNSC.LoginResponse.loginError = 'Specified channel not on file';
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			-- added for api version
+			SET OutputRoot.XMLNSC.Login_IN.Version = com.ncl.ais.utils.GetVersonixAPIVersion();				
+			SET OutputRoot.XMLNSC.Login_IN.UserInfo.Internal.Username = COALESCE(rIn.*:Username, SUBSTRING(cUserinfo BEFORE ','));
+			SET OutputRoot.XMLNSC.Login_IN.UserInfo.Internal.Password = SUBSTRING(cUserinfo AFTER ',');
+					
+			RETURN TRUE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+
+	CREATE FUNCTION ExtractUserInfo(IN cChannel CHARACTER, INOUT rEnv REFERENCE) RETURNS CHARACTER
+	BEGIN
+		DECLARE cUserInfo CHARACTER '';
+		
+		SET rEnv.Temp.UserInfo[] = SELECT U.UserName, U.Password FROM rEnv.Temp.VXUserList.User[] AS U WHERE U.Channel = cChannel;
+
+		SET cUserInfo = COALESCE(rEnv.Temp.UserInfo.UserName, '') || ',' || COALESCE(rEnv.Temp.UserInfo.Password, '');		
+		
+		RETURN cUserInfo;
+	END;
+
+	CREATE PROCEDURE SaveUserInfoFromCache(IN cChannel CHARACTER, IN cUserInfo CHARACTER, IN cacheExpiry CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+	CREATE PROCEDURE GetUserInfoFromCache(IN cChannel CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_VersonixLogin_SaveUserInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		SET rEnv.Temp.VXUserList = InputRoot.XMLNSC.VXUserList;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Lookup userInfo from file ...', rEnv);
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_VersonixLogin_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.LoginResponse;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		CREATE FIELD OutputRoot.XMLNSC.LoginResponse AS rResp;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		SET rResp.runtimeError.(XMLNSC.Attribute)Code = '9999';
+		SET rResp.runtimeError.(XMLNSC.Attribute)ShortText = RIGHT(cErrorText, 64);
+		SET rResp.runtimeError.(XMLNSC.Attribute)Type = '3';
+		SET rResp.runtimeError = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_VersonixLogin_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rLogin REFERENCE TO InputRoot.XMLNSC.Login_OUT;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.LoginResponse;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cRequestorId CHARACTER COALESCE(rEnv.Temp.*:source.*:RequestorID.ID, '0');
+		DECLARE cPCC CHARACTER COALESCE(rEnv.Temp.*:source.PseudoCityCode, '');
+		DECLARE cSystemName CHARACTER COALESCE(rEnv.Temp.*:source.*:BookingChannel.*:CompanyName.Code, 'SABRE');
+		DECLARE cQuery CHARACTER '';
+		
+		CREATE FIELD OutputRoot.XMLNSC.LoginResponse AS rResp;
+		
+		IF EXISTS(rLogin.Errors.Error.ErrorMessage[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Login failure, service returned error ...', rEnv);
+
+			-- create warming response
+			SET rResp.loginError.(XMLNSC.Attribute)Code = rLogin.Errors.Error.ErrorCode;
+			SET rResp.loginError.(XMLNSC.Attribute)ShortText = rLogin.Errors.Error.ErrorMessage;
+			SET rResp.loginError.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Login successful ...', rEnv);
+			
+			SET rResp.sessionGUID = rLogin.MsgHeader.SessionGUID;
+			SET rResp.InactivityTimeout = rLogin.SessionInfo.TimeOut.Inactivity;
+			SET rResp.Total = rLogin.SessionInfo.TimeOut.Total;
+			SET rResp.endpoint =  COALESCE(InputRoot.HTTPResponseHeader."x-upstream", '');
+		END IF;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_VersonixLogin_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

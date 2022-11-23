@@ -1,0 +1,45 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		SET OutputRoot = InputRoot;
+		
+		-- send the response to queue
+		PROPAGATE;
+		
+		-- call API to logout from session
+		IF EXISTS(rEnv.SessionId[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion(); 
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionId;
+			
+			PROPAGATE TO LABEL 'LOGOUT'; 
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.EndPoint;
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;

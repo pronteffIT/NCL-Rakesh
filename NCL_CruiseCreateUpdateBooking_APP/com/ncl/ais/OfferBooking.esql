@@ -1,0 +1,220 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE OfferBooking_PrepareUpdateBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rResp,rResInfo,rResponse,rClient REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.createUpdateClientResponse.Response;
+		--CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		--CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY UpdateBooking_IN;
+
+		-- Backup the client IDs received from ManageClients
+		CREATE FIELD rEnv.ClientIds;
+		FOR rClients AS rIn.clients[]
+		DO
+			DECLARE cGuestRef CHARACTER CAST(rClients.guestRef AS CHARACTER);
+			CREATE LASTCHILD OF rEnv.ClientIds AS rClient NAME cGuestRef;
+			SET rClient = rClients.clientId;
+		END FOR;
+
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'OutMsg';
+		CREATE FIELD rEnv.Temp.OutMsg.UpdateBooking AS rResponse;
+		 
+		CALL CrtUpdateBookingReqWithoutResId(rEnv,rEnvInMsg,rIn,rResponse,rOutRoot);
+		
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY UpdateBooking_IN;
+		SET rResp = rResponse;			
+		
+		DETACH rEnv.Temp.OutMsg;
+				
+		-- Log the request payload
+		--SET bPayload = OutputRoot.XMLNSC;
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'UpdateBooking without resID request message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling UpdateBooking without resID in OfferBooking subflow...', rEnv);
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE OfferBooking_LoadBookingRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rResp,rLdBkng REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+
+		DECLARE bFatalError BOOLEAN FALSE;
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'
+			THEN
+				SET bFatalError = TRUE;
+			END IF;
+			
+			MOVE rError NEXTSIBLING;
+		END WHILE;
+		
+		--IF rIn.Errors.Error.ErrorSeverity = 'E' OR rIn.Errors.Error.ErrorSeverity = 'F' OR rIn.Errors.Error.ErrorSeverity = 'OPERATION'
+		IF bFatalError = TRUE
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'UpdateBooking API Returned Errors ...', rEnv);
+			CALL CopyEntireMessage();
+			
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		
+		-- TODO Overwrite?
+		SET rEnv.ResID = rIn.ResShell.ResHeader.ResID;
+		SET rEnv.Temp.UpdateBkg.UpdateBooking_OUT = rIn;
+		--AND rIn.ResShell.ResShipRequests.ResShipRequest.Inventory.Result = 'GTY'
+		IF rIn.ResShell.ResHeader.ResStatus='RQ' 
+		THEN
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rLdBkng;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rLdBkng);
+--		    SET rLdBkng.MsgHeader.Version = VersonixAPIVersion;
+--			SET rLdBkng.MsgHeader.SessionGUID = rEnv.sessionID;
+			SET rLdBkng.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			
+			SET rLdBkng.StateKey = rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code || '_' ||
+															COALESCE(rSource.(XMLNSC.Attribute)PseudoCityCode || '_', '') ||
+															COALESCE(rSource.*:RequestorID.(XMLNSC.Attribute)ID || '_', '') ||
+															COALESCE(rEnvInMsg.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID || '_', '') ||
+															COALESCE(rEnvInMsg.*:SailingInfo.*:SelectedCategory.*:SelectedCabin.(XMLNSC.Attribute)CabinNumber, '');
+						
+			-- Log the request payload
+			--SET bPayload = OutputRoot.XMLNSC;
+			--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'LoadBooking request message', 'xml', rEnv);
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking LoadBooking API in OfferBooking subflow...', rEnv);
+		
+			RETURN TRUE;			
+		END IF;
+		
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE OfferBooking_UpdateRQToOF
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rResponse REFERENCE TO Environment.Variables;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC;
+		DECLARE rEnvInMsg REFERENCE TO rEnvIn.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		
+		DECLARE bPayload BLOB;
+		
+		IF EXISTS(rIn.Errors.Error.ErrorMessage[])
+		THEN
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		
+			-- Update Booking from RQ to OF
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY UpdateBooking_IN;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.sessionID;			
+			SET rOut.ResShell.ResHeader = rEnv.Temp.UpdateBkg.UpdateBooking_OUT.ResShell.ResHeader;
+			-- Overwrite ResStatus to OF
+			SET rOut.ResShell.ResHeader.ResStatus = 'OF';	
+			
+			RETURN TRUE;			
+		END IF;
+
+		-- Duplicate Booking Error Message      
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY sc:NCL_CruiseCreateUpdateBookingRS;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rEnvIn, rOut);
+	
+		SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'Booking used by another session';
+		SET rOut.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+	
+		IF(LogPayLoad) THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateBooking response message', 'xml', rEnv);
+		END IF;
+		
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+		RETURN FALSE;			
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE OfferBooking_CheckResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rResponse REFERENCE TO Environment.Variables;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC;
+		DECLARE rEnvInMsg REFERENCE TO rEnvIn.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+		
+		CALL CopyEntireMessage();
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF rError.ErrorSeverity = 'E' OR rError.ErrorSeverity = 'F' OR rError.ErrorSeverity = 'OPERATION'
+			THEN
+				SET bFatalError = TRUE;
+			END IF;		
+			MOVE rError NEXTSIBLING;
+		END WHILE;		
+		
+		
+		--IF rIn.Errors.Error.ErrorSeverity = 'E' OR rIn.Errors.Error.ErrorSeverity = 'F' OR rIn.Errors.Error.ErrorSeverity = 'OPERATION'
+		IF bFatalError = TRUE
+		THEN
+			--CALL CopyEntireMessage();
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		
+		IF EXISTS(rInResInfo.GuestDetails.GuestDetail[])
+		THEN		
+			RETURN TRUE;
+		END IF;
+			
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

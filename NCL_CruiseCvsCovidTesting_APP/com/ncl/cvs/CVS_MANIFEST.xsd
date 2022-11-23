@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions" xmlns:recSepFieldsFmt="http://www.ibm.com/dfdl/RecordSeparatedFieldFormat">
+    <xsd:import namespace="http://www.ibm.com/dfdl/RecordSeparatedFieldFormat" schemaLocation="../../../IBMdefined/RecordSeparatedFieldFormat.xsd"/>
+    <xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format encoding="UTF-8" escapeSchemeRef="recSepFieldsFmt:RecordEscapeScheme" occursCountKind="implicit" ref="recSepFieldsFmt:RecordSeparatedFieldsFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+
+	<xsd:element dfdl:encoding="UTF-8" ibmSchExtn:docRoot="true" name="CVS_MANIFEST">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="%NL;%WSP*;" dfdl:separatorSuppressionPolicy="anyEmpty">
+				<xsd:element name="header">
+					<xsd:complexType>
+						<xsd:sequence dfdl:ignoreCase="yes" dfdl:separator="%#124;" dfdl:separatorSuppressionPolicy="anyEmpty">
+							<xsd:element default="COMPANY_CODE" ibmDfdlExtn:sampleValue="COMPANY_CODE" name="COMPANY_CODE" type="xsd:string"/>
+							<xsd:element default="CLIENT_CO_NAME" ibmDfdlExtn:sampleValue="CLIENT_CO_NAME" name="CLIENT_CO_NAME" type="xsd:string"/>
+							<xsd:element default="PATIENT_INDICATOR" ibmDfdlExtn:sampleValue="PATIENT_INDICATOR" name="PATIENT_INDICATOR" type="xsd:string"/>
+                            <xsd:element default="REF_ID" ibmDfdlExtn:sampleValue="REF_ID" name="REF_ID" type="xsd:string"/>
+                            <xsd:element default="PATIENT_FNAME" ibmDfdlExtn:sampleValue="PATIENT_FNAME" name="PATIENT_FNAME" type="xsd:string"/>
+                            <xsd:element default="PATIENT_LNAME" ibmDfdlExtn:sampleValue="PATIENT_LNAME" name="PATIENT_LNAME" type="xsd:string"/>
+                            <xsd:element default="PATIENT_DOB" ibmDfdlExtn:sampleValue="PATIENT_DOB" name="PATIENT_DOB" type="xsd:string"/>
+                            <xsd:element default="PATIENT_ZIPCODE" ibmDfdlExtn:sampleValue="PATIENT_ZIPCODE" name="PATIENT_ZIPCODE" type="xsd:string"/>
+                            <xsd:element default="COVID_PATIENT_AUTH" ibmDfdlExtn:sampleValue="COVID_PATIENT_AUTH" name="COVID_PATIENT_AUTH" type="xsd:string"/>
+                            <xsd:element default="OFFER_PRETRAVEL_TESTING" ibmDfdlExtn:sampleValue="OFFER_PRETRAVEL_TESTING" name="OFFER_PRETRAVEL_TESTING" type="xsd:string"/>
+                            <xsd:element default="OFFER_EMBARK_TESTING" ibmDfdlExtn:sampleValue="OFFER_EMBARK_TESTING" name="OFFER_EMBARK_TESTING" type="xsd:string"/>
+                            <xsd:element default="OFFER_DEBARK_TESTING" ibmDfdlExtn:sampleValue="OFFER_DEBARK_TESTING" name="OFFER_DEBARK_TESTING" type="xsd:string"/>
+                            <xsd:element default="PRETRAVEL_LEAD_TIME" ibmDfdlExtn:sampleValue="PRETRAVEL_LEAD_TIME" name="PRETRAVEL_LEAD_TIME" type="xsd:string"/>
+                            <xsd:element default="SAIL_DATE" ibmDfdlExtn:sampleValue="SAIL_DATE" name="SAIL_DATE" type="xsd:string"/>
+                            <xsd:element default="RETURN_DATE" ibmDfdlExtn:sampleValue="RETURN_DATE" name="RETURN_DATE" type="xsd:string"/>
+                            <xsd:element default="SHIP_BRAND" ibmDfdlExtn:sampleValue="SHIP_BRAND" name="SHIP_BRAND" type="xsd:string"/>
+                            <xsd:element default="SHIP_NAME" ibmDfdlExtn:sampleValue="SHIP_NAME" name="SHIP_NAME" type="xsd:string"/>
+                            <xsd:element default="EMBARK_PORT_NAME" ibmDfdlExtn:sampleValue="EMBARK_PORT_NAME" name="EMBARK_PORT_NAME" type="xsd:string"/>
+                            <xsd:element default="EMBARK_TERMINAL" ibmDfdlExtn:sampleValue="EMBARK_TERMINAL" name="EMBARK_TERMINAL" type="xsd:string"/>
+                            <xsd:element default="EMBARK_ARRIVAL_TIME_START" ibmDfdlExtn:sampleValue="EMBARK_ARRIVAL_TIME_START" name="EMBARK_ARRIVAL_TIME_START" type="xsd:string"/>
+                            <xsd:element default="EMBARK_ARRIVAL_TIME_END" ibmDfdlExtn:sampleValue="EMBARK_ARRIVAL_TIME_END" name="EMBARK_ARRIVAL_TIME_END" type="xsd:string"/>
+                            <xsd:element default="DEBARK_PORT_NAME" ibmDfdlExtn:sampleValue="DEBARK_PORT_NAME" name="DEBARK_PORT_NAME" type="xsd:string"/>
+                            <xsd:element default="DEBARK_TERMINAL" ibmDfdlExtn:sampleValue="DEBARK_TERMINAL" name="DEBARK_TERMINAL" type="xsd:string"/>
+                            <xsd:element default="GROUP" ibmDfdlExtn:sampleValue="GROUP" name="GROUP" type="xsd:string"/>
+                            <xsd:element default="SUBGROUP" ibmDfdlExtn:sampleValue="SUBGROUP" name="SUBGROUP" type="xsd:string"/>
+                                                    </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+				<xsd:element maxOccurs="unbounded" name="record">
+					<xsd:complexType>
+						<xsd:sequence dfdl:separator="%#124;" dfdl:separatorSuppressionPolicy="never">
+							<xsd:element default="" ibmDfdlExtn:sampleValue="619446" name="COMPANY_CODE" type="xsd:string"/>
+							<xsd:element default="Norwegian Cruise Line Holdings Ltd" ibmDfdlExtn:sampleValue="Norwegian Cruise Line Holdings Ltd" name="CLIENT_CO_NAME" type="xsd:string"/>
+							<xsd:element default="PASSENGER" ibmDfdlExtn:sampleValue="PASSENGER" name="PATIENT_INDICATOR" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="ABC-123456789" name="REF_ID" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="FNAME" name="PATIENT_FNAME" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="LNAME" name="PATIENT_LNAME" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="" minOccurs="0" name="PATIENT_DOB" nillable="true" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="" minOccurs="0" name="PATIENT_ZIPCODE" nillable="true" type="xsd:string"/>
+                            <xsd:element default="N" ibmDfdlExtn:sampleValue="Y" name="COVID_PATIENT_AUTH" type="xsd:string"/>
+                            <xsd:element default="N" ibmDfdlExtn:sampleValue="N" name="OFFER_PRETRAVEL_TESTING" type="xsd:string"/>
+                            <xsd:element default="Y" ibmDfdlExtn:sampleValue="Y" name="OFFER_EMBARK_TESTING" type="xsd:string"/>
+                            <xsd:element default="N" ibmDfdlExtn:sampleValue="N" name="OFFER_DEBARK_TESTING" type="xsd:string"/>
+                            <xsd:element default="5" dfdl:textNumberPattern="#0" ibmDfdlExtn:sampleValue="4" name="PRETRAVEL_LEAD_TIME" type="xsd:nonNegativeInteger"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="20210901" name="SAIL_DATE" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="20210908" name="RETURN_DATE" type="xsd:string"/>
+                            <xsd:element default="NCL" ibmDfdlExtn:sampleValue="NCL" name="SHIP_BRAND" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="Norwegian Gem" name="SHIP_NAME" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="Miami" name="EMBARK_PORT_NAME" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="Terminal G" minOccurs="0" name="EMBARK_TERMINAL" nillable="true" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="202105141100" minOccurs="0" name="EMBARK_ARRIVAL_TIME_START" nillable="true" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="202105141100" minOccurs="0" name="EMBARK_ARRIVAL_TIME_END" nillable="true" type="xsd:string"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="Miami" name="DEBARK_PORT_NAME" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="Terminal B" minOccurs="0" name="DEBARK_TERMINAL" nillable="true" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="" minOccurs="0" name="GROUP" nillable="true" type="xsd:string"/>
+                            <xsd:element default="" dfdl:nilKind="literalValue" dfdl:nilValue="%WSP*;" dfdl:useNilForDefault="no" ibmDfdlExtn:sampleValue="" minOccurs="0" name="SUBGROUP" nillable="true" type="xsd:string"/>
+                                                    </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+
+</xsd:schema>

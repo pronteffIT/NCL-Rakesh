@@ -1,0 +1,88 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ToEmail EXTERNAL CHARACTER '';
+DECLARE FromEmail EXTERNAL CHARACTER '';
+DECLARE ShipDetails EXTERNAL CHARACTER'';
+
+CREATE COMPUTE MODULE NCL_PlusGradeSailing_RetriveSailings
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rOut, rSailRcrd, outSailHdr REFERENCE TO OutputRoot;
+		DECLARE Rundate CHARACTER CAST(CURRENT_DATE AS CHARACTER FORMAT 'yyyyMMdd');
+		DECLARE CR CHAR CAST(CAST(X'0A' AS BLOB) AS CHAR );
+		DECLARE LF CHAR CAST(CAST(X'0D' AS BLOB) AS CHAR );
+		DECLARE CRLF CHAR CR||LF;
+		-- Calling store proc To get Sailings
+		CALL GetSailings(Rundate,rEnv.Temp.p_Cursor[]);
+
+		CREATE LASTCHILD OF rOut DOMAIN('DFDL') NAME 'DFDL';
+		MOVE rOut TO OutputRoot.DFDL;
+		-- Build the CSV header
+		CREATE LASTCHILD OF rOut.Sailings AS outSailHdr NAME 'header';
+		SET outSailHdr.SAIL_ID ='SAIL_ID';
+		SET outSailHdr.SHIP_CODE ='SHIP_CODE';
+		SET outSailHdr.SAIL_DATE_FROM ='SAIL_DATE_FROM';
+		SET outSailHdr.SAIL_DATE_TO ='SAIL_DATE_TO';
+		SET outSailHdr.SAIL_DAYS ='SAIL_DAYS';
+		SET outSailHdr.PORT_FROM ='PORT_FROM';
+		SET outSailHdr.PORT_TO ='PORT_TO';
+		SET outSailHdr.DEP_TIME = 'DEP_TIME';
+		SET outSailHdr.DEP_TIME_UTC_OFFSET = 'DEP_TIME_UTC_OFFSET';
+		SET outSailHdr.DESCRIPTION ='DESCRIPTION';
+		
+		-- Creating a record for each Sailing info
+		FOR inSailings AS rEnv.Temp.p_Cursor[] DO
+			CREATE LASTCHILD OF rOut.Sailings AS rSailRcrd NAME 'record';
+			SET rSailRcrd.SAIL_ID =COALESCE(inSailings.SAIL_ID, '');
+			SET rSailRcrd.SHIP_CODE = GetSailCode(ShipDetails,inSailings.SHIP_CODE,inSailings.SAIL_DATE_FROM);--COALESCE(inSailings.SHIP_CODE, '');
+			SET rSailRcrd.SAIL_DATE_FROM =COALESCE(inSailings.SAIL_DATE_FROM, '');	
+			SET rSailRcrd.SAIL_DATE_TO =COALESCE(inSailings.SAIL_DATE_TO, '');
+			SET rSailRcrd.SAIL_DAYS =COALESCE(inSailings.SAIL_DAYS, '');
+			SET rSailRcrd.PORT_FROM =COALESCE(inSailings.PORT_FROM, '');
+			SET rSailRcrd.PORT_TO =COALESCE(inSailings.PORT_TO, '');
+			SET rSailRcrd.DEP_TIME = COALESCE(inSailings.DEP_TIME, '00:00'); 
+			SET rSailRcrd.DEP_TIME_UTC_OFFSET = COALESCE(CAST( CAST(inSailings.DEP_TIME_UTC_OFFSET AS INTEGER) AS CHARACTER), '0');						
+			SET rSailRcrd.DESCRIPTION = COALESCE(TRIM(inSailings.DESCRIPTION),'');
+			--COALESCE(REPLACE(REPLACE(REPLACE(inSailings.DESCRIPTION, CHAR(13),' '), CHAR(10),' '), CHAR(9),' '),'');
+		END FOR;
+		
+		SET rEnv.FTPFileName = 'plusgrade-cruise-schedule-NCL-'||Rundate||'.csv';
+		SET OutputLocalEnvironment.Destination.File.Name = rEnv.FTPFileName;
+	
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE GetSailings (IN p_extract_date CHARACTER )
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_PLUS_GET_SAILINGS";
+	
+
+
+CREATE FUNCTION GetSailCode (IN ShipDetails CHARACTER,IN ShipCode CHARACTER,IN SailDateFrom CHARACTER) RETURNS CHARACTER
+BEGIN
+
+	DECLARE SailCode,TempChar CHARACTER;
+	DECLARE DbSailDateFrom,InSailFromDate DATE;
+	DECLARE Pos INTEGER 0;
+	
+	SET Pos = POSITION(ShipCode IN ShipDetails);
+	X : WHILE Pos >0 DO  
+  		
+  		SET TempChar = SUBSTRING(SUBSTRING(ShipDetails FROM Pos) BEFORE '#');
+		SET DbSailDateFrom = CAST(SailDateFrom AS DATE FORMAT 'yyyy-MM-dd');
+		SET InSailFromDate = CAST(SUBSTRING(SUBSTRING(TempChar AFTER ':')BEFORE ':') AS DATE FORMAT 'MM-dd-yyyy');
+		
+		IF ShipCode = SUBSTRING(TempChar BEFORE ':') AND DbSailDateFrom >= InSailFromDate THEN
+			SET SailCode = SUBSTRING(TempChar FROM POSITION(':' IN TempChar REPEAT 2)+1);
+			RETURN SailCode;
+		END IF;
+		SET Pos = POSITION(ShipCode IN ShipDetails FROM Pos+1);
+  	END WHILE X;
+	RETURN ShipCode;
+END;
+
+END MODULE;

@@ -1,0 +1,90 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE GTToIIBFrom_Email EXTERNAL CHARACTER '';
+DECLARE GTToIIBFailure_Email EXTERNAL CHARACTER '';
+DECLARE GTToIIBSuccess_Email EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_ReadGTreasuryFile_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET rEnv.Temp.ErrorEmailSubject = 'IIB Error in AccToPs';
+		
+		SET OutputRoot = InputRoot;
+		PROPAGATE TO TERMINAL 'out1' delete none;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_ReadGTreasuryFile_SendFailureEmail
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+				
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+			
+			SET rEmail.EmailSubject = 'Error: Unable to read GTreasury file';
+			SET rEmail.EmailContent = 'Error: Unable to read GTreasury file, please verify file is valid xml and well formatted';
+			SET rEmail.EmailAddress.FromAddress = GTToIIBFrom_Email;
+			SET rEmail.EmailAddress.ToAddress = GTToIIBFailure_Email;
+		
+			-- add audit trail
+			--CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Sending failure email ...', rEnv);
+			
+			-- make the transaction as error
+			--CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+			
+			-- saving the error text in original message
+			--SET rEnv.Temp.OrgMsg.MQRFH2.usr.ErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			--SET rEnv.Temp.Status = 'ERROR';
+			 
+			--DELETE FIELD rEnv.ErrorSummary;
+			
+			--PROPAGATE;
+			
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_ReadGTreasuryFile_SendSuccessEmail
+	CREATE FUNCTION Main() RETURNS BOOLEAN 
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Sending success email ...', rEnv);
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+		
+		SET rEmail.EmailSubject = 'Success: GTreasury File has been read by IIB successfully';
+		SET rEmail.EmailContent = 'GTreasury File has been read by IIB successfully'; 		 
+		SET rEmail.EmailAddress.FromAddress = GTToIIBFrom_Email;
+		SET rEmail.EmailAddress.ToAddress = GTToIIBSuccess_Email; 
+		
+		RETURN TRUE;
+	END;
+END MODULE;

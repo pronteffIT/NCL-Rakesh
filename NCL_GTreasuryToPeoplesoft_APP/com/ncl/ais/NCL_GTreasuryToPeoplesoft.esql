@@ -1,0 +1,246 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE IIBToSAPFrom_Email EXTERNAL CHARACTER '';
+DECLARE IIBToSAPSuccess_Email EXTERNAL CHARACTER '';
+DECLARE IIBToSAPFailure_Email EXTERNAL CHARACTER '';
+DECLARE SOAPAction EXTERNAL CHARACTER '';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+
+CREATE COMPUTE MODULE NCL_GTreasuryToPeoplesoft_Map
+CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN 
+	DECLARE index INTEGER 1;
+ 	DECLARE vchar CHARACTER 'CHAR';
+ 	
+ 	-- Set SOAP Action 
+ 	SET OutputRoot.HTTPRequestHeader.SOAPAction = SOAPAction;
+		
+    -- Declaring NAMESPACE 
+ 	DECLARE soapenv NAMESPACE 'http://schemas.xmlsoap.org/soap/envelope/';
+ 	DECLARE ncl NAMESPACE 'http://xmlns.oracle.com/Enterprise/Tools/schemas/NCL_GTR_ACCTG_TRANS.V1';
+ 	
+ 	SET OutputRoot.XMLNSC.soapenv:Envelope.(XMLNSC.NamespaceDecl)xmlns:soapenv = soapenv;
+ 	SET OutputRoot.XMLNSC.soapenv:Envelope.(XMLNSC.NamespaceDecl)xmlns:ncl = ncl;
+  
+	 	
+	-- Declaring Input & Output Reff
+	DECLARE inRef REFERENCE TO  InputRoot.XMLNSC.GLPostings.GLTransaction[index];
+ 	CREATE FIELD OutputRoot.XMLNSC.soapenv:Envelope.soapenv:Body.ncl:NCL_GTR_ACCTG_TRANS;
+	DECLARE outRef REFERENCE TO OutputRoot.XMLNSC.soapenv:Envelope.soapenv:Body.ncl:NCL_GTR_ACCTG_TRANS;
+	DECLARE transIds CHARACTER '';
+	
+	-- Checking IF condition for empty Transactions
+	 IF NOT EXISTS(InputRoot.XMLNSC.GLPostings.*[]) THEN
+	 	
+	 	-- Declaring an Email Notification for Empty GLTransactions
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+			SET rEnv.NoTransactions = true; 
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;   
+	  ELSE 
+	 		WHILE LASTMOVE(inRef) DO 
+	 			CREATE FIELD outRef.ncl:MsgData; 
+	   			DECLARE outTrans REFERENCE TO outRef.ncl:MsgData;
+		   		SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.(XMLNSC.Attribute)class ='R';
+				 
+				 --BUSINESS_UNIT 
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:BUSINESS_UNIT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:BUSINESS_UNIT = COALESCE(inRef.Deal.BUSINESS_UNIT_GL,''); 
+				 
+				 --TRANSACTION_ID 
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:TRANSACTION_ID.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:TRANSACTION_ID = COALESCE(inRef.TRANSACTION_ID,'');
+				 
+				 --TRANSACTION_LN
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:TRANSACTION_LN.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:TRANSACTION_LN = COALESCE(inRef.TRANSACTION_LINE,'');
+				 
+				 --LEDGER_GROUP 
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LEDGER_GROUP.(XMLNSC.Attribute)IsChanged= 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LEDGER_GROUP = COALESCE(inRef.GL.LEDGER_GROUP,'') ; 
+				 
+				 -- LEDGER - Ledger
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LEDGER.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LEDGER = COALESCE(inRef.GL.LEDGER,'');
+				 
+				 --ACCOUNTING_DT - Accounting Date
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:ACCOUNTING_DT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:ACCOUNTING_DT = COALESCE(inRef.ACCOUNTING_DT,'');
+				 
+				 --APPL_JRNL_ID - Journal Template
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:APPL_JRNL_ID.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:APPL_JRNL_ID = COALESCE(inRef.APPL_JRNL_ID,'');
+				 
+				 --BUSINESS_UNIT_GL - GL Business Unit
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:BUSINESS_UNIT_GL.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:BUSINESS_UNIT_GL = COALESCE(inRef.Deal.BUSINESS_UNIT_GL,'');  
+				 
+				 --ACCOUNT - Account
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:ACCOUNT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:ACCOUNT = COALESCE(inRef.ACCOUNT,'');
+				 
+				 --DEPTID – Department
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:DEPTID.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:DEPTID = COALESCE(inRef.GLAccount.DEPTID,'');
+				 
+				 --OPERATING_UNIT - Operating Unit
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:OPERATING_UNIT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:OPERATING_UNIT = COALESCE(inRef.OPERATING_UNIT,'');
+				 
+				 --PRODUCT - Product
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:PRODUCT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:PRODUCT = COALESCE(inRef.Narrative,'');
+				 
+				 --CHARTFIELD2 - NCL Project
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:CHARTFIELD2.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:CHARTFIELD2 = COALESCE(inRef.Deal.CHARTFIELD2,'');
+				 
+				 --CURRENCY_CD - Currency Code
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:CURRENCY_CD.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:CURRENCY_CD = COALESCE(inRef.CURRENCY_CD,'');
+				
+				 --FOREIGN_CURRENCY - Foreign Currency Code
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:FOREIGN_CURRENCY.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:FOREIGN_CURRENCY = COALESCE(inRef.FOREIGN_CURRENCY,'');
+				 
+				 --RT_TYPE - Foreign Currency Code
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:RT_TYPE.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:RT_TYPE = COALESCE(inRef.CRRNT,'CRRNT');
+				
+				 --RATE_MULT - Rate Multiplier
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:RATE_MULT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:RATE_MULT = SUBSTRING(CAST(CAST(COALESCE(TRIM(inRef.MONETARY_AMOUNT),'0.00') AS DECIMAL)  / CAST(COALESCE(TRIM(inRef.FOREIGN_AMOUNT),'0.00') AS DECIMAL) AS CHARACTER) FROM 1 FOR 4 );
+				 
+				 --MONETARY_AMOUNT - Monetary Amount (USD)
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:MONETARY_AMOUNT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:MONETARY_AMOUNT = COALESCE(TRIM(inRef.MONETARY_AMOUNT),0.00);   
+				 
+				 --FOREIGN_AMOUNT - Foreign Amount (Local)
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:FOREIGN_AMOUNT.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:FOREIGN_AMOUNT = COALESCE(inRef.FOREIGN_AMOUNT,'');
+				 
+				 --MOVEMENT_FLAG - Movement Flag
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:MOVEMENT_FLAG.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:MOVEMENT_FLAG = COALESCE(inRef.MOVEMENT_FLAG,'N'); 
+				 
+				 --JRNL_LN_REF - Journal Line Reference
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:JRNL_LN_REF.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:JRNL_LN_REF = COALESCE(inRef.JRNL_LN_REF ,'');
+				 
+				 --LINE_DESCR - Journal Line Description
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LINE_DESCR.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LINE_DESCR = SUBSTRING(COALESCE(inRef.LINE_DESCR,'') FROM 1 FOR 30);
+				 
+				 --GL_DISTRIB_STATUS - Distribution Status
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:GL_DISTRIB_STATUS.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:GL_DISTRIB_STATUS = COALESCE(inRef.GL_DISTRIB_STATUS,'N'); 
+				 
+				 --NCL_LINE_DESCB - Journal Line Description 2
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:NCL_LINE_DESCB.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:NCL_LINE_DESCB = SUBSTRING(COALESCE(inRef.NCL_LINE_DESCB,'') FROM 1 FOR 30) ;
+				 
+				 --LAST_UPDATE_DTTM
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LAST_UPDATE_DTTM.(XMLNSC.Attribute)IsChanged = 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:NCL_GTR_AE_LN.ncl:LAST_UPDATE_DTTM =  CAST(CAST(CURRENT_DATE AS CHARACTER FORMAT 'yyyy-MM-dd') AS CHARACTER) || '-00.00.00.00' ;
+				 
+				 -- PSCAMA 
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.(XMLNSC.Attribute)class ='R';
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.LANGUAGE_CD	= 'ENG';
+				 
+				 --AUDIT_ACTN 
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.AUDIT_ACTN	= 'A';
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.BASE_LANGUAGE_CD	= 'ENG';
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.MSG_SEQ_FLG	= 'Y';
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.PROCESS_INSTANCE = '0';
+				 SET outTrans.ncl:Transaction[index].ncl:PSCAMA.MSG_SEQ_FLG	= 'Y';
+				 --SET outTrans.ncl:Transaction[index].ncl:PSCAMA.PUBLISH_RULE_ID	= 'XYZ';
+				 --SET outTrans.ncl:Transaction[index].ncl:PSCAMA.MSGNODENAME	= 'XYZ';
+				 
+				 SET index = index + 1;
+				  
+				 MOVE inRef NEXTSIBLING;
+	 		END WHILE;
+	END IF; 
+	
+	RETURN TRUE;
+END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_GTreasuryToPeoplesoft_Exception
+CREATE FUNCTION Main() RETURNS BOOLEAN
+BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET rEnv.Temp.ErrorEmailSubject = 'IIB Error in AccToPs';
+		
+		SET OutputRoot = InputRoot;
+		PROPAGATE TO TERMINAL 'out1' delete none;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+-- TO DO GTreasury@ncl.com,Treasury: GTreasury@ncl.com
+--Accounting: GTreasuryAccounting@ncl.com (just requested, should take about a week before it is working)
+CREATE COMPUTE MODULE NCL_GTreasuryToPeoplesoft_SuccessEmailReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Sending success email ...', rEnv);
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+		
+		SET rEmail.EmailSubject = 'Success: IIB has been invoked Peoplesoft webservice successfully';
+		SET rEmail.EmailContent = 'IIB has been invoked Peoplesoft webservcie successfully.'; 		 
+		SET rEmail.EmailAddress.FromAddress = IIBToSAPFrom_Email;
+		SET rEmail.EmailAddress.ToAddress = IIBToSAPSuccess_Email;
+
+		SET rEnv.Temp.Status = 'SUCCESS';
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+-- Sending a Failure Email notification 
+	CREATE COMPUTE MODULE NCL_GTreasuryToPeoplesoft_SendFailureEmail
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+				
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+		
+		IF NOT CONTAINS(rEnv.ErrorSummary.ErrorText, 'SOCKET') THEN
+			SET rEmail.EmailSubject = 'Error: Failed to map field(s) in IIB' ;
+			SET rEmail.EmailContent = 'IIB mapping error, ' || rEnv.ErrorSummary.ErrorText;
+		ELSE
+			SET rEmail.EmailSubject = 'Error: Failed to invoke Peoplesoft Webservice' ;
+			SET rEmail.EmailContent = 'Failed to invoke Peoplesoft Webservice, ' || rEnv.ErrorSummary.ErrorText;	
+		END IF; 
+		
+		SET rEmail.EmailAddress.FromAddress = IIBToSAPFrom_Email;
+		SET rEmail.EmailAddress.ToAddress = IIBToSAPFailure_Email;
+		
+		RETURN TRUE; 
+		
+	END;
+END MODULE;

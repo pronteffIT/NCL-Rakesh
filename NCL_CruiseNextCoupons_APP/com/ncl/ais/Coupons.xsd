@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:csv="http://www.ibm.com/dfdl/CommaSeparatedFormat" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+	<xsd:import namespace="http://www.ibm.com/dfdl/CommaSeparatedFormat" schemaLocation="../../../IBMdefined/CommaSeparatedFormat.xsd"/>
+	<xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format documentFinalTerminatorCanBeMissing="yes" encoding="{$dfdl:encoding}" escapeSchemeRef="csv:CSVEscapeScheme" ref="csv:CommaSeparatedFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+	<xsd:element ibmSchExtn:docRoot="true" name="Coupons">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="">
+				<xsd:element dfdl:terminator="%CR;%LF;%WSP*;" name="header">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value1" name="COUPON_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value2" name="VALID_FROM" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value3" name="VALID_TO" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value4" name="AMOUNT" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value5" name="AMOUNT_LEFT" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value6" name="IS_ACTIVE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value7" name="COMMENTS" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value8" name="COUPON_CLASS" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value9" name="OFFICE_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value10" name="RES_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value11" name="GEN_LINK_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value12" name="CLIENT_TYPE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value13" name="CLIENT_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value14" name="IS_USED" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value15" name="TEMP_RES_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value16" name="PAP_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value17" name="GRANTED_TO_CLIENT_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value18" name="CURRENCY_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value19" name="FREQUENT_PGM_POINTS" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value20" name="REASON_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value21" name="EFFECTIVE_FROM" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value22" name="EFFECTIVE_TO" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value23" name="FIRST_NAME" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value24" name="LAST_NAME" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value25" name="EMAIL" type="xsd:string"/>
+                            						<xsd:element ibmDfdlExtn:sampleValue="head_value26" name="AGENT_FNAME" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value27" name="AGENT_LNAME" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+				<xsd:element dfdl:occursCountKind="implicit" dfdl:terminator="%CR;%LF;%WSP*;" maxOccurs="unbounded" minOccurs="0" name="record">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element ibmDfdlExtn:sampleValue="value1" name="COUPON_ID" type="xsd:string"/>
+							<xsd:element name="VALID_FROM" type="xsd:date"/>
+							<xsd:element name="VALID_TO" type="xsd:date"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value4" name="AMOUNT" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value5" name="AMOUNT_LEFT" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value6" name="IS_ACTIVE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value7" name="COMMENTS" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value8" name="COUPON_CLASS" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value9" name="OFFICE_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value10" name="RES_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value11" name="GEN_LINK_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value12" name="CLIENT_TYPE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value13" name="CLIENT_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value14" name="IS_USED" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value15" name="TEMP_RES_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value16" name="PAP_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value17" name="GRANTED_TO_CLIENT_ID" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value18" name="CURRENCY_CODE" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value19" name="FREQUENT_PGM_POINTS" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value20" name="REASON_CODE" type="xsd:string"/>
+							<xsd:element name="EFFECTIVE_FROM" type="xsd:date"/>
+							<xsd:element name="EFFECTIVE_TO" type="xsd:date"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value23" name="FIRST_NAME" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value24" name="LAST_NAME" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="value25" name="EMAIL" type="xsd:string"/>							
+                            						<xsd:element ibmDfdlExtn:sampleValue="value26" name="AGENT_FNAME" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value27" name="AGENT_LNAME" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+</xsd:schema>

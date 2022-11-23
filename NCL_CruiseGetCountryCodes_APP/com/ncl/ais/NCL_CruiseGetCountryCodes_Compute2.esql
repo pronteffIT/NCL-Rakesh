@@ -1,0 +1,76 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetCountryCodes_Compute2
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutCountry,rOutCountries REFERENCE TO Environment.Variables;
+		DECLARE rInCountryCode REFERENCE TO rEnv.InpReq;
+		DECLARE rInCountryResp REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		
+		IF EXISTS(rInCountryResp.ErInCountryCoderrors.Error[]) THEN
+			---Generate warnings
+			SET OutputRoot.XMLNSC.Body.Errors.Error = rInCountryResp.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetCountryCodesRS';
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			PROPAGATE TO TERMINAL 'out';
+		ELSEIF EXISTS(InputRoot.Exception.RecoverableException[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseGetCountryCodesRS AS rOutCountry;
+		
+			DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+			--CALL getExceptionDetails(rEnv, InputExceptionList);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, InputExceptionList);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			-- copy input attributes to outputroot
+
+			CALL com.ncl.ais.utils.CopyAttributes(rInCountryCode,rOutCountry);
+			SET rOutCountry.ns4:Errors.ns4:Error = cErrorText;
+			SET rOutCountry.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOutCountry.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Type = '3';
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE ---- This will check for the Errors from GetCountryCodes response If exists the it will pass to generate warnings subflow otherwise
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseGetCountryCodesRS AS rOutCountry;
+			
+			CALL com.ncl.ais.utils.CopyAttributes(rInCountryCode,rOutCountry);
+			CREATE FIELD rOutCountry.ns4:Success;
+			CREATE FIELD rOutCountry.ns4:Countries;
+
+			FOR inRefCountries AS InputRoot.XMLNSC.*:DbSearch_OUT.Countries.Country[] DO
+				CREATE LASTCHILD OF rOutCountry.ns4:Countries AS rOutCountries NAMESPACE ns4 NAME 'Country';
+				SET rOutCountries.CountryCode = inRefCountries.*:CountryCode;
+				SET rOutCountries.CountryName = inRefCountries.*:CountryName;
+				SET rOutCountries.PostalCodeProvided = inRefCountries.*:PostalCodeProvided;
+				SET rOutCountries.PostalCodeComplete = inRefCountries.*:PostalCodeComplete;
+				SET rOutCountries.CountryISOID = inRefCountries.*:CountryISOID;
+				SET rOutCountries.IntlCode = inRefCountries.*:IntlCode;
+	
+			END FOR;
+			
+		    DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		    SET OutputRoot.XMLNSC =null ;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+
+			PROPAGATE TO TERMINAL 'out1';
+			--------- Prepare log out request
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint; 
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+			DECLARE RefOutLogOut REFERENCE TO OutputRoot.XMLNSC;
+			IF rEnv.SessionGUID IS NOT NULL THEN
+				SET RefOutLogOut.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				SET RefOutLogOut.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			END IF;
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		END IF;
+	
+		RETURN TRUE;
+	END;
+
+
+END MODULE;
+
+

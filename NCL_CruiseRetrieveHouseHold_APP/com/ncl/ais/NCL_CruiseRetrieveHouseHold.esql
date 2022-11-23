@@ -1,0 +1,247 @@
+
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE VersonixAPIVersion EXTERNAL CHARACTER '1.0';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER 3000;
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVE_HOUSEHOLD_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveHouseHold_LoadRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveHouseHoldRQ;
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseRetrieveHouseHoldRQ = rIn;	
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+		'','',rEnv);
+
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveHouseHold Request', 'xml', rEnv);
+		END IF;		
+		-- create verify agency request
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Verify Agency ...', rEnv);
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api request', 'xml', rEnv);
+		END IF;		
+
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveHouseHold_ValidateAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rRetrvClient,rRetrvClientResp,rOutWarnings REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrieveHouseHoldRQ;
+		DECLARE rVAIn,rClient REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;		
+
+
+		IF EXISTS(rVAIn.*:agencyID[]) THEN
+
+			SET rEnv.Endpoint = COALESCE(rVAIn.endpoint, '');
+			SET rEnv.SessionGUID = rVAIn.sessionGUID;
+			SET rEnv.AgencyID = rVAIn.*:agencyID;
+			-- SET rEnv.OfficeCode = rVAIn.*:officeCode;
+
+			SET rEnv.Clients.CLIENT_ID[]= SELECT ITEM C.CLIENT_ID FROM Database.CLIENT AS C WHERE C.HOUSEHOLD_ID = rOrgMsg.*:HouseholdID AND C.IS_ACTIVE = 'Y';	
+			
+			IF NOT EXISTS(rEnv.Clients.CLIENT_ID[]) THEN
+	
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveHouseHoldRS;
+				-- Copy root level attributes from environment
+				CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg, rOut);
+				CREATE LASTCHILD OF rOut AS rOutWarnings IDENTITY ns:Warnings;
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Code = '9917';
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'No Clients Found';
+				SET rOutWarnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				
+				PROPAGATE TO TERMINAL 'out1';
+				
+				RETURN FALSE;
+			END IF;
+			
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'RetrvClientRespArray' ;				
+			FOR rClient AS rEnv.Clients.CLIENT_ID[] DO
+
+				CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseRetrieveClientRQ AS rRetrvClient;
+				SET rRetrvClient.POS = rOrgMsg.*:POS;
+				SET rRetrvClient.LoyaltyInfo.(XMLNSC.Attribute)MembershipID = FIELDVALUE(rClient);				
+				SET rRetrvClient.ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID = FIELDVALUE(rClient);
+
+				PROPAGATE TO LABEL 'RetrieveClient';
+			END FOR;
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseRetrieveHouseHoldRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg, rOut);
+			CREATE FIELD rOut.ns:Success;
+
+			FOR rRetrvResp AS rEnv.RetrvClientRespArray.XMLNSC[] DO				
+				CREATE LASTCHILD OF rOut.ns:Clients AS rClient DOMAIN 'XMLNSC' NAMESPACE ns NAME 'Client' ;
+				SET rClient=rRetrvResp;
+				SET rClient.(XMLNSC.Attribute)LoyaltyMembershipID = rRetrvResp.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+				DELETE FIELD rClient.*:Success;
+				IF EXISTS(rClient.*:Warnings.*:Warning[]) THEN
+					DECLARE warnings REFERENCE TO rClient.*:Warnings;
+					DETACH warnings;
+					ATTACH warnings TO rOut AS LASTCHILD;
+				END IF;
+			END FOR;
+
+			IF NOT EXISTS(rEnv.RetrvClientRespArray.XMLNSC[]) OR EXISTS(rEnv.RetrvClientRespArray.FailureResp[]) THEN
+				SET rOut.ns:Warnings=rEnv.RetrvClientRespArray.FailureResp.*:Warnings;
+				DELETE FIELD rOut.ns:Success;
+			END IF;
+			
+		ELSE
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY NCL_CruiseRetrieveHouseHoldRS;
+			-- Copy root level attributes from environment
+			CALL com.ncl.ais.utils.CopyAttributes (rOrgMsg, rOut);
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Or Warning returned From Verify Agency...', rEnv);
+			
+		-- Construct The Error Response from Verify Agecncy Response	
+			IF EXISTS(rVAIn.agencyNotFound[]) OR EXISTS(rVAIn.loginError[]) THEN
+
+				IF EXISTS(rVAIn.agencyNotFound[]) THEN
+
+					SET rOut.ns:Warnings.ns:Warning = rVAIn.agencyNotFound;
+				ELSE
+					SET rOut.ns:Warnings.ns:Warning = rVAIn.loginError;
+				END IF;
+
+			ELSEIF EXISTS(rVAIn.runtimeError[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verify agency failed ...', rEnv);
+
+				SET rOut.ns:Errors.ns:Error = rVAIn.runtimeError;
+
+			END IF;
+			
+		END IF;
+		PROPAGATE TO TERMINAL 'out1';
+		
+		IF LENGTH(COALESCE(rEnv.SessionGUID,'')) > 0 THEN
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+
+			RETURN TRUE;
+		
+		END IF;
+		
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveHouseHold_SaveClientInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rClient,rOut REFERENCE TO Environment.Variables;
+		DECLARE rInMsg REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveClientRS;
+		DECLARE rInRet REFERENCE TO rEnv.RetrvClientRespArray;
+		
+		DECLARE cClient CHARACTER;
+		IF LASTMOVE(rInMsg) THEN			
+			SET cClient = rInMsg.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+			CREATE LASTCHILD OF rInRet AS rOut DOMAIN 'XMLNSC' NAME 'XMLNSC';			
+			SET rOut =  rInMsg;		
+		END IF;
+		
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveHouseHold_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveHouseHoldRQ;
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseRetrieveHouseHoldRS;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Retrive HouseHold request message', 'xml', rEnv);
+			END IF ;
+	END IF;
+
+	IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+		THEN
+		SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+	END IF;
+
+	IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+		---call logging Procedure
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception ', rEnv);
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		---Build Response for RuntimeError
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseRetrieveHouseHoldRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System backend error , please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	RETURN TRUE;
+
+END;
+
+END MODULE;
+

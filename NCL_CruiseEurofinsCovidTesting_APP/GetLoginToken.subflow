@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmWSRequest.msgnode="ComIbmWSRequest.msgnode" xmlns:NCL_CruiseNewRelicEvent_LIB_LogNewRelicEventSync.subflow="NCL_CruiseNewRelicEvent_LIB/LogNewRelicEventSync.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="GetLoginToken.subflow" nsPrefix="GetLoginToken.subflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1" useDefaults="true" udpSupport="true">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EUROFINS_USERNAME" name="EUROFINS_USERNAME" defaultValueLiteral="nclh_api">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EUROFINS_PASSWORD" name="EUROFINS_PASSWORD" defaultValueLiteral="WGuPDQLkX4NEp9Cm">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="GetLoginToken" bundleName="GetLoginToken" pluginId="NCL_CruiseEurofinsCovidTesting_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseEurofinsCovidTesting_APP/icons/full/obj16/GetLoginToken.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseEurofinsCovidTesting_APP/icons/full/obj30/GetLoginToken.gif"/>
+    <composition>
+      <nodes xmi:type="eflow:FCMSource" xmi:id="InTerminal.Input" location="16,100">
+        <translation xmi:type="utility:TranslatableString" key="InTerminal.Input" bundleName="GetLoginToken" pluginId="NCL_CruiseEurofinsCovidTesting_APP"/>
+      </nodes>
+      <nodes xmi:type="eflow:FCMSink" xmi:id="OutTerminal.Output" location="458,98">
+        <translation xmi:type="utility:TranslatableString" key="OutTerminal.Output" bundleName="GetLoginToken" pluginId="NCL_CruiseEurofinsCovidTesting_APP"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="87,100" computeExpression="esql://routine/com.ncl.ais.eurofins#TrustOne_Login.Main" computeMode="all">
+        <translation xmi:type="utility:ConstantString" string="LoginTrustOne"/>
+      </nodes>
+      <nodes xmi:type="ComIbmWSRequest.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="168,58" URLSpecifier="https://test.trustoneapp.com/api/v1/org/user/login" timeoutForServer="60" httpVersion="1.1" protocol="TLSv1.2" allowedCiphers="SSL_ECDHE_RSA_WITH_AES_128_GCM_SHA256,SSL_ECDHE_RSA_WITH_AES_128_CBC_SHA256,SSL_ECDHE_RSA_WITH_AES_128_CBC_SHA" messageDomainProperty="JSON">
+        <translation xmi:type="utility:ConstantString" string="Login"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="313,24" computeExpression="esql://routine/com.ncl.ais.eurofins#TrustOne_SaveJwtToken.Main" computeMode="all">
+        <translation xmi:type="utility:ConstantString" string="SaveJwtToken"/>
+      </nodes>
+      <nodes xmi:type="NCL_CruiseNewRelicEvent_LIB_LogNewRelicEventSync.subflow:FCMComposite_1" xmi:id="FCMComposite_1_4" location="381,201">
+        <translation xmi:type="utility:ConstantString" string="LogNewRelicEventSync"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_5" location="248,129" computeExpression="esql://routine/com.ncl.ais.eurofins#UpdateRegStatus_HandleExceptionAndError.Main">
+        <translation xmi:type="utility:ConstantString" string="HandleExceptionAndError"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_1" sourceNode="InTerminal.Input" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="OutTerminal.Output" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.error" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EUROFINS_USERNAME">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.EUROFINS_USERNAME" bundleName="GetLoginToken" pluginId="NCL_CruiseEurofinsCovidTesting_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EUROFINS_PASSWORD">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.EUROFINS_PASSWORD" bundleName="GetLoginToken" pluginId="NCL_CruiseEurofinsCovidTesting_APP"/>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

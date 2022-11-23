@@ -1,0 +1,16 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+DECLARE EUROFINS_USERNAME EXTERNAL CHARACTER '';
+DECLARE EUROFINS_PASSWORD EXTERNAL CHARACTER '';
+CREATE COMPUTE MODULE TrustOne_Login
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rOut REFERENCE TO OutputRoot;
+		SET OutputLocalEnvironment.Destination.HTTP.QueryString.login = EUROFINS_USERNAME;
+		SET OutputLocalEnvironment.Destination.HTTP.QueryString.password = EUROFINS_PASSWORD;
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'application/x-www-form-urlencoded';	
+		
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

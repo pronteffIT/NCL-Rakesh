@@ -1,0 +1,531 @@
+
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_ACC_BATCH_UPDATE_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE ExtCodeShared SHARED ROW;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAccountingBatchUpdate
+* MODULE NAME : LogIn
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/2/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_LogIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv , rlogIn REFERENCE TO Environment.Variables;
+		DECLARE res REFERENCE TO rEnv.Reservation;
+		DECLARE rTrans REFERENCE TO rEnv.Transaction;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InputReq';
+		SET rEnv.TempHeader.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.TempHeader.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.TempHeader.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.TempHeader.MQMD.Format = MQFMT_STRING;
+
+		SET rEnv.InputReq = InputRoot.XMLNSC.*:NCL_CruiseAccountingBatchUpdateRQ;
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.InputReq.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		'','', '',rEnv);
+		--add input payload to logging
+		
+		IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AccountingBatchUpdate input request message', 'xml', rEnv);
+		END IF;
+		SET rEnv.Temp.BatchAmonunt = ROUND(CAST(rEnv.InputReq.*:BatchHeader.*:BatchAmount AS DECIMAL), 2);
+		SET rEnv.TransactionAmount = 0;
+		FOR source AS rEnv.InputReq.*:Transactions.*:Transaction[] DO
+			CREATE LASTCHILD OF rEnv.Transactions AS rTrans NAME 'Transaction';
+			SET rTrans.TransID = source.*:TransID;
+			SET rTrans.SrcEntity.AgencyID =CAST(source.*:AgencyID AS INTEGER) ;
+			SET rTrans.DestEntity.ResID = source.*:DestinationEntity.*:ResID;
+			SET rTrans.DestEntity.AmenityID = source.*:DestinationEntity.*:AmenityID;
+			SET rTrans.Amount =source.*:Amount;
+			SET rTrans.TransType = 'PMNT';
+			SET rTrans.ExternalIdent =source.*:ExternalIdentifier;
+			SET rTrans.Comments =source.*:Comments;
+			SET rEnv.TransactionAmount = ROUND(CAST(rEnv.TransactionAmount AS DECIMAL) + CAST(source.*:Amount AS DECIMAL) , 2);
+			CREATE LASTCHILD OF rEnv.Reservation AS res NAME 'resId' ;
+			SET res.resIds = source.*:DestinationEntity.*:ResID;
+		END FOR;
+		SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;
+		IF rEnv.Temp.BatchAmonunt <> rEnv.TransactionAmount THEN
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rEnv.InputReq ,rOut);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '13445';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Batch Amount and Transaction Amount do not match';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSEIF EXISTS(rEnv.Reservation.resId.resIds[]) THEN
+			FOR source AS rEnv.Reservation.resId[] DO
+				SET rEnv.resIds = source.resIds;
+				SET rEnv.reseader = PASSTHRU('SELECT distinct a.OFFICE_CODE FROM res_header a WHERE a.res_id =?',rEnv.resIds);
+			END FOR;
+		/*  IF NOT EXISTS( rEnv.InputReq.*:OfficeCode[]) OR UPPER(rEnv.InputReq.*:OfficeCode) ='NCL BRAZIL' THEN
+				IF rEnv.reseader.OFFICE_CODE = 'NCL BRAZIL' THEN
+					CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyRequest AS rlogIn;
+					SET rlogIn.source.AgentSine = rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)AgentSine;
+					SET rlogIn.source.PseudoCityCode = rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+					SET rlogIn.source.RequestorID.ID = rEnv.InputReq.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+					SET rlogIn.source.RequestorID.CompanyName = rEnv.InputReq.*:POS.*:Source.*:RequestorID.*:CompanyName;
+					SET rlogIn.source.BookingChannel.CompanyName.Code = UPPER(rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+					RETURN TRUE;
+	
+				ELSE
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+					CALL com.ncl.ais.utils.CopyAttributes(rEnv.InputReq ,rOut);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '88999';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Office code of all the Reservations must be NCL Brazil ';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+				END IF; 
+			ELSE
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes(rEnv.InputReq ,rOut);
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '88999';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Office code of all the Reservations must be NCL Brazil ';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF; */
+		ELSE
+
+		END IF;
+		SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rEnv.InputReq.*:POS.*:Source;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAccountingBatchUpdate
+* MODULE NAME : UpdateAccBatch
+* Description : This module is used to build request for UpdateAccBatch.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/2/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_UpdateAccBatch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv ,warn ,Error REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.InputReq;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS;
+		DECLARE rUpdate REFERENCE TO OutputRoot.XMLNSC.UpdateAccBatch_IN;
+
+		SET rEnv.SessionId = rAgency.sessionGUID;
+		SET rEnv.Endpoint = COALESCE(rAgency.endpoint,''); 
+
+		IF EXISTS(rAgency.loginError.(XMLNSC.Attribute)Code[])
+			OR EXISTS(rAgency.agencyNotFound.(XMLNSC.Attribute)Code[] ) OR EXISTS(rAgency.runtimeError[]) THEN
+			-- If error exist from the callable invoke then send to Generic warning
+			SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+
+			IF EXISTS(rAgency.loginError.(XMLNSC.Attribute)Code[])OR EXISTS(rAgency.agencyNotFound.(XMLNSC.Attribute)Code[]) THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging Error ...', rEnv);
+				SET rOut.ns:Warnings.ns:Warning = rAgency.loginError;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(rAgency.agencyNotFound.(XMLNSC.Attribute)Code,rAgency.loginError.(XMLNSC.Attribute)Code);
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(rAgency.agencyNotFound.(XMLNSC.Attribute)ShortText,rAgency.loginError.(XMLNSC.Attribute)ShortText);
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+			IF EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)Code[]) THEN
+				SET rOut.ns:Warnings.ns:Warning = rAgency.runtimeError;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.runtimeError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)DocURL =rAgency.runtimeError.(XMLNSC.Attribute)DocURL;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Language = rAgency.runtimeError.(XMLNSC.Attribute)Language;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)RecordID =rAgency.runtimeError.(XMLNSC.Attribute)RecordID;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.runtimeError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Status =rAgency.runtimeError.(XMLNSC.Attribute)Status ;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Tag = rAgency.runtimeError.(XMLNSC.Attribute)Tag;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)NodeList = rAgency.runtimeError.(XMLNSC.Attribute)NodeList;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = rAgency.runtimeError.(XMLNSC.Attribute)Type;
+			END IF;
+			CREATE FIELD rOut.ns:Errors AS Error;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			
+			IF UPPER(ref.*:PostBatch) = 'TRUE' THEN
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				CREATE FIELD OutputRoot.XMLNSC.UpdateAccBatch_IN AS rUpdate;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rUpdate);
+				SET rUpdate.AllowDeleteTransactions = 'N';
+				SET rUpdate.AccBatch.BatchHeader.BatchID = CAST(ref.*:BatchHeader.*:BatchID AS INTEGER);
+				SET rUpdate.AccBatch.BatchHeader.IsActive = ref.*:BatchHeader.*:IsActive;
+				SET rUpdate.AccBatch.BatchHeader.Comments =ref.*:BatchHeader.*:Comments;
+			ELSE
+				
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				CREATE FIELD OutputRoot.XMLNSC.UpdateAccBatch_IN AS rUpdate;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rUpdate);
+	--			SET rUpdate.MsgHeader.Version = VersonixAPIVersion;
+	--			SET rUpdate.MsgHeader.SessionGUID = rEnv.SessionId;
+				SET rUpdate.AllowDeleteTransactions = 'Y';
+				SET rUpdate.AccBatch.BatchHeader.BatchID = CAST(ref.*:BatchHeader.*:BatchID AS INTEGER);
+				SET rUpdate.AccBatch.BatchHeader.IsActive = ref.*:BatchHeader.*:IsActive;
+				SET rUpdate.AccBatch.BatchHeader.FormOfTrans=ref.*:BatchHeader.*:FormOfTrans;
+				SET rUpdate.AccBatch.BatchHeader.BatchAmount= CAST(ref.*:BatchHeader.*:BatchAmount AS DECIMAL);
+				SET rUpdate.AccBatch.BatchHeader.TransAmount =CAST(ref.*:BatchHeader.*:TransAmount AS DECIMAL);
+				SET rUpdate.AccBatch.BatchHeader.Currency =ref.*:BatchHeader.*:Currency;
+				SET rUpdate.AccBatch.BatchHeader.Comments =ref.*:BatchHeader.*:Comments;
+				SET rUpdate.AccBatch.BatchHeader.SourceCode=ref.*:BatchHeader.*:SourceCode;
+				SET rUpdate.AccBatch.Transactions = rEnv.Transactions;
+				
+			END IF;
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAccountingBatchUpdate
+* MODULE NAME : Response
+* Description : This module is used to build Response.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/2/2018 Prolifics Initial version * 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rInTransactions REFERENCE TO Environment.Variables;
+		DECLARE rInreq REFERENCE TO rEnv.InputReq;
+		DECLARE rUpdate REFERENCE TO InputRoot.XMLNSC.UpdateAccBatch_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS;
+		DECLARE rTrans REFERENCE TO rOut.ns:Transactions;
+		DECLARE rdate TIMESTAMP;
+		SET rEnv.BookChannel.CompanyCode = rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		
+		IF EXISTS(rUpdate.Errors.Error.ErrorMessage[]) THEN
+			
+			SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;		
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rInreq,rOut);
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Occur on invoking UpdateAccBatch ...', rEnv);
+			CALL com.ncl.ais.utils.getAdvisoryCode(rUpdate.Errors.Error.ErrorCode,rEnv.BookChannel.CompanyCode,rEnv);
+			
+			SET rOut.ns:Warnings.ns:Warning = rUpdate.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(rEnv.Temp.FinalResp.EXTERNAL_CODE,'12228');
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(rEnv.Temp.FinalResp.DESCRIPTION,'System error from backend Try Later');
+			
+			IF rUpdate.Errors.Error.*:ErrorSeverity = 'W' OR rUpdate.Errors.Error.*:ErrorSeverity = 'I' THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+			ELSE
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+			
+			CREATE FIELD rOut.ns:Transactions;
+			RETURN TRUE;
+		ELSE
+			
+			DECLARE rpymntOption REFERENCE TO rEnv.InputReq.*:BatchHeader.*:PaymentCard;
+			
+			IF rEnv.InputReq.*:BatchHeader.*:PostPayment = 'true' AND FIELDVALUE(rpymntOption.*:PaymentCard.(XMLNSC.Attribute)CardNumber) IS NOT NULL THEN
+									
+				DECLARE cardCode CHARACTER rpymntOption.*:PaymentCard.(XMLNSC.Attribute)CardCode;
+				
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE FIELD OutputRoot.XMLNSC.PostCCBatch_IN AS rOut;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rOut);
+--				SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--				SET rOut.MsgHeader.SessionGUID = rEnv.SessionId;
+				CREATE FIELD rOut.MsgHeader.CallerInfo.UserInfo.Internal;
+				SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.BookChannel.CompanyCode;
+			--	SET rOut.Options.ReturnState = 'Y';
+				SET rOut.BatchID = rUpdate.AccBatch.BatchHeader.BatchID;
+				
+				SET rOut.CCData.CCNumber = CAST(FIELDVALUE(rpymntOption.*:PaymentCard.(XMLNSC.Attribute)CardNumber) AS INTEGER);
+				SET rOut.CCData.CCType = getSWCode(COALESCE(rEnv.BookChannel.CompanyCode,'NCLWEBC'),cardCode); --rpymntOption.PaymentCard.(XMLNSC.Attribute)CardType;
+				SET rOut.CCData.ExpDate = CAST(CAST('01'||rpymntOption.*:PaymentCard.(XMLNSC.Attribute)ExpireDate AS DATE FORMAT 'ddMMyy') AS CHARACTER FORMAT 'yyyy-MM');
+				SET rOut.CCData.NameOnCard = rpymntOption.*:CardHolderName;
+				SET rOut.CCData.ControlNumber = FIELDVALUE(rpymntOption.*:PaymentCard.(XMLNSC.Attribute)SeriesCode);
+				
+				PROPAGATE TO LABEL 'POSTCCBATCH';
+				
+				-- Check for the Errors Recived from PostCCBatch api call
+				--EXISTS(rEnv.PostCCBatchResp.*:Errors.*:Error[]) 
+				IF rEnv.PostCCBatchResp.*:Errors.*:Error.*:ErrorSeverity = 'E' THEN
+					
+					DECLARE rError REFERENCE TO rEnv.PostCCBatchResp.*:Errors.*:Error;
+					SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;		
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+					CALL com.ncl.ais.utils.CopyAttributes(rInreq,rOut);
+					
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Occured  on invoking PostCCBatch ...', rEnv);
+					CALL com.ncl.ais.utils.getAdvisoryCode(rError.ErrorCode,rEnv.BookChannel.CompanyCode,rEnv);
+					SET rOut.ns:Warnings.ns:Warning = rError.ErrorMessage;
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(rEnv.Temp.FinalResp.EXTERNAL_CODE,'12228');
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(rEnv.Temp.FinalResp.DESCRIPTION,'System error from backend Try Later');
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+					
+					RETURN TRUE;
+				END IF;	
+			END IF;
+			
+			SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;		
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rInreq,rOut);
+			
+			IF rUpdate.AccBatch.BatchHeader.IsActive = 'Y' THEN
+				SET rEnv.IsActive = 'true';
+			ELSE
+				SET rEnv.IsActive = 'false';
+			END IF;
+			CREATE LASTCHILD OF rOut NAMESPACE ns NAME 'Success';
+		--	CREATE LASTCHILD OF rOut NAMESPACE ns NAME 'Warnings';
+			SET rOut.ns:BatchHeader.ns:BatchID = rUpdate.AccBatch.BatchHeader.BatchID;
+			SET rOut.ns:BatchHeader.ns:IsActive = rEnv.IsActive ;
+			SET rOut.ns:BatchHeader.ns:FormOfTrans = rUpdate.AccBatch.BatchHeader.FormOfTrans;
+			SET rOut.ns:BatchHeader.ns:BatchAmount = rUpdate.AccBatch.BatchHeader.BatchAmount;
+			SET rOut.ns:BatchHeader.ns:TransAmount = rUpdate.AccBatch.BatchHeader.TransAmount;
+			SET rOut.ns:BatchHeader.ns:Currency = rUpdate.AccBatch.BatchHeader.Currency;
+			SET rOut.ns:BatchHeader.ns:Comments = rUpdate.AccBatch.BatchHeader.Comments;
+			SET rOut.ns:BatchHeader.ns:SourceCode = rUpdate.AccBatch.BatchHeader.SourceCode;
+			
+			IF EXISTS(rEnv.PostCCBatchResp.*:AccBatch.*:Transactions.*:Transaction[]) THEN
+				MOVE rInTransactions TO rEnv.PostCCBatchResp.*:AccBatch;
+			ELSE
+				MOVE rInTransactions TO rUpdate.*:AccBatch;
+			END IF;
+			FOR source AS rInTransactions.*:Transactions.*:Transaction[] DO
+				CREATE LASTCHILD OF rOut.ns:Transactions AS rTrans NAMESPACE ns NAME 'Transaction';
+				SET rTrans.ns:TransID = source.TransID ;
+				SET rTrans.ns:AgencyID =source.SrcEntity.AgencyID;
+				SET rTrans.ns:DestinationEntity.ns:ResID =source.DestEntity.ResID;
+				SET rTrans.ns:DestinationEntity.ns:AmenityID=source.DestEntity.AmenityID;
+				SET rTrans.ns:Status =source.Status;
+				SET rTrans.ns:Currency=source.Currency;
+				SET rTrans.ns:Amount=source.Amount;
+				SET rTrans.ns:Timestamp= CAST(CAST(source.Timestamp AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z');
+				SET rTrans.ns:ExternalIdentifier = COALESCE(source.ExternalIdent ,'');
+				SET rTrans.ns:Comments =source.Comments;
+			END FOR;
+			
+			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF(LogPayLoad) THEN
+				----SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AccountingBatch Update response message', 'xml', rEnv);
+			END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END IF;
+	RETURN FALSE;
+END;
+
+
+CREATE PROCEDURE getSWCode(IN systemName CHARACTER,IN cardCode CHARACTER) RETURNS CHARACTER 
+BEGIN 
+	DECLARE ccQuery,ExternalCd CHARACTER; 
+	SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+	IF com.ncl.ais.utils.IsEmpty(ExternalCd) THEN 
+		SET ccQuery = 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+									DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+									INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+									INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+									TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=''CreditCard'' AND DETAILS.EXTERNAL_CODE = ?'; 
+	
+		SET ExtCodeShared.Rows[] = PASSTHRU(ccQuery,systemName,cardCode); 
+		SET ExternalCd = THE(SELECT ITEM A.SW_CODE FROM ExtCodeShared.Rows[] AS A WHERE A.EXTERNAL_CODE= cardCode); 
+	END IF; 
+RETURN ExternalCd; 
+END;
+
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAccountingBatchUpdate
+* MODULE NAME : LogOut
+* Description : This module is used for invoking LogOut.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/2/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.Logout_IN;
+
+		SET OutputRoot = InputRoot;
+		-- send the response to queue
+		PROPAGATE;
+		-- call API to logout from session
+		IF EXISTS(rEnv.SessionId[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.Logout_IN AS rOut;
+            SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();  
+			SET rOut.MsgHeader.SessionGUID = rEnv.SessionId;
+
+			PROPAGATE TO LABEL 'LOGOUT';
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAccountingBatchUpdate
+* MODULE NAME : RuntimeError
+* Description : This module is used to buid response for RuntimeError.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/2/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_RuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.InputReq;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAccountingBatchUpdateRS AS rOut;
+		DECLARE cErrorText CHARACTER;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code= '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error try Again Later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAccountingBatchUpdate
+* MODULE NAME : ExceptionHandler
+* Description : This module is used to handle Exception.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/2/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AccBatchUpdate Invalid request message', 'xml', rEnv);
+		END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.TempHeader.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAccountingBatchUpdate_PostCCBatch_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') IDENTITY PostCCBatchResp;
+		SET rEnv.PostCCBatchResp = InputRoot.XMLNSC.PostCCBatch_OUT;
+	
+		RETURN TRUE;
+	END;
+
+END MODULE;

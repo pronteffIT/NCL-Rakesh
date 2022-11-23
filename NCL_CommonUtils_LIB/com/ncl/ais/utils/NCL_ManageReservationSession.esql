@@ -1,0 +1,43 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+-- procedure to check session validity
+CREATE PROCEDURE CheckSessionValidity(IN sessionId CHARACTER) RETURNS BOOLEAN
+BEGIN
+	DECLARE cQuery CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'SELECT TIMERELEASE FROM RES_LOCK WHERE LOCK_NAME = ? AND TIMERELEASE > SYSDATE';
+	
+	SET DB.Result[] = PASSTHRU(cQuery VALUES('SESSION.' || sessionId));
+	
+	IF EXISTS(DB.Result[]) THEN
+		RETURN TRUE;
+	END IF;
+	
+	RETURN FALSE;
+END;
+
+-- procedure to cleanup session
+CREATE PROCEDURE CleanupInvalidSession(IN sessionId CHARACTER)
+BEGIN
+	DECLARE cQueryResLock, cQuerySessionLock CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQueryResLock = 'DELETE FROM RES_LOCK WHERE EXTERNAL_ID  LIKE ? AND ( USERNAME = ''NCLBGEGDS'' OR USERNAME = ''BIZLOGICGDS'' ) AND ' ||
+					'NOT EXISTS (SELECT 1 FROM RES_LOCK WHERE LOCK_NAME = ? AND ( USERNAME = ''NCLBGEGDS'' OR  USERNAME = ''BIZLOGICGDS''  )AND TIMERELEASE > SYSDATE )';
+	SET cQuerySessionLock = 'DELETE FROM RES_LOCK WHERE LOCK_NAME = ?  AND ( USERNAME = ''NCLBGEGDS'' OR USERNAME = ''BIZLOGICGDS'' ) AND TIMERELEASE < SYSDATE';
+	
+	SET DB.Result[] = PASSTHRU(cQueryResLock VALUES('%' || sessionId, 'SESSION.' || sessionId));
+	SET DB.Result[] = PASSTHRU(cQuerySessionLock VALUES('SESSION.' || sessionId));
+END;
+
+-- procedure to delete reservation lock
+CREATE PROCEDURE DeleteResLock(IN sessionId CHARACTER, IN resId CHARACTER, IN channel CHARACTER)
+BEGIN
+	DECLARE cQuery CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'DELETE FROM RES_LOCK WHERE LOCK_NAME = ? AND TABLE_REC_ID = ? AND EXTERNAL_ID = ?';
+	
+	SET DB.Result[] = PASSTHRU(cQuery VALUES('RES.' || resId, resId, resId || '.' || sessionId));
+END;

@@ -1,0 +1,280 @@
+BROKER SCHEMA com.ncl.ais
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseRetrieveAgent
+ * MODULE NAME       :     AgencyCheck
+ * Description       :     This module is used for retrieving the agency details and route to the respective path.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgent_AgencyCheck
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE rOut REFERENCE TO rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS; 
+		CREATE FIELD rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ AS rIn;
+		DECLARE AgentInfo REFERENCE TO rOut;
+		CREATE FIELD rOut AS AgentInfo;
+		-- Check if the previous call to proc was paged or paging
+		CASE
+			
+		WHEN LENGTH(rEnv.XMLNSC.*:NCL_CruiseRetrieveAgentRQ.*:SortBy) > 0 THEN
+				-- continue the flow
+				-- populate the response obtained from the stored proc
+				IF rEnv.p_totalcount = 0 THEN
+					SET OutputRoot.MQMD = rEnv.MQMD;				
+					CALL WarningResp(rIn,rOut);			
+					SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+
+				ELSE
+					-- continue to call the stored proc 3 for agency details
+					DECLARE Test DECIMAL CAST(rEnv.Temp.p_Cursor[1].AGENCY_ID AS DECIMAL);
+					CALL GetAgencyDetails(Test,rEnv.Temp.AgencyDetails[]);
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent DB stored procedure call for retrieving agency details', rEnv);
+					-- If value of the rEnv.Temp.AgencyDetails[] is not equal to 1 then dont decrypt otherwise decrypt and send final result
+					IF CARDINALITY(rEnv.Temp.p_Cursor[]) <> 1 THEN
+						-- dont decrypt and send the response directly
+						SET rOut.(XMLNSC.Attribute)MoreDataEchoToken = rEnv.p_totalcount; 
+						SET rOut.(XMLNSC.Attribute)MoreIndicator = 'false';
+						SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;
+						SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+						CREATE FIELD rOut.ns8:Success;
+						--IMPLEMENT THE AGENT INFO HERE
+						FOR source AS rEnv.Temp.p_Cursor[] DO
+							CREATE LASTCHILD OF rOut AS AgentInfo NAMESPACE ns8 NAME 'AgentInfo';
+							SET AgentInfo.(XMLNSC.Attribute)AgentLocation = COALESCE(source.AGENT_LOCATION,'');
+							IF source.WEB_CANACCESAGENCYDATA = 'Y' THEN
+								SET AgentInfo.(XMLNSC.Attribute)SecurityLevel = 'SUPERVISOR';
+							ELSE
+								SET AgentInfo.(XMLNSC.Attribute)SecurityLevel = 'AGENT';
+							END IF;
+							SET AgentInfo.ns8:PersonName.ns8:NamePrefix = source.TITLE;
+							SET AgentInfo.ns8:PersonName.ns8:GivenName = source.FIRST_NAME;
+							SET AgentInfo.ns8:PersonName.ns8:MiddleName = source.MIDDLE_NAME;
+							SET AgentInfo.ns8:PersonName.ns8:Surname = source.LAST_NAME;
+							SET AgentInfo.ns8:Telephone.(XMLNSC.Attribute)PhoneNumber = COALESCE(source.PHONE_NUMBER,'');
+
+							IF LENGTH(source.ADDRESS_LINE1) > 0 THEN
+							SET AgentInfo.ns8:Address.ns8:AddressLine[1] = source.ADDRESS_LINE1;
+							SET AgentInfo.ns8:Address.ns8:AddressLine[2] = source.ADDRESS_LINE2;
+							SET AgentInfo.ns8:Address.ns8:CityName = source.ADDRESS_CITY;
+							SET AgentInfo.ns8:Address.ns8:PostalCode = source.ZIP;
+							SET AgentInfo.ns8:Address.ns8:StateProv = source.STATE_CODE;
+							SET AgentInfo.ns8:Address.ns8:StateProv.(XMLNSC.Attribute)StateCode = source.STATE_CODE;
+							SET AgentInfo.ns8:Address.ns8:CountryName.(XMLNSC.Attribute)Code = source.COUNTRY_CODE;
+
+							END IF;
+
+							SET AgentInfo.ns8:Email = source.EMAIL;
+							SET AgentInfo.ns8:EmployeeInfo = source.EXTRA1;
+							SET AgentInfo.ns8:EmployeeInfo.(XMLNSC.Attribute)EmployeeId = source.AGENT_ID;
+							SET AgentInfo.ns8:RestrictAccess  = source.WEB_CANACCESAGENCYDATA;
+							--SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)Password = source.WEB_PASSWORD;
+							SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)UserLoginName = COALESCE(source.WEB_LOGIN_NAME,'');
+							SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)UserType = 'AGENT';
+							SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)WebLastLogin = source.WEB_LAST_LOGIN;
+
+							 
+						END FOR;
+						
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)ISOCurrency = COALESCE(rEnv.Temp.AgencyDetails[1].DEFAULT_CURRENCY,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)AgencyType = COALESCE(rEnv.Temp.AgencyDetails[1].AGENCY_TYPE,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)ARCNumber = COALESCE(rEnv.Temp.AgencyDetails[1].ARC_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)BlacklistedAgency = 'False';
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)CLIANumber = COALESCE(rEnv.Temp.AgencyDetails[1].CLIA_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)CompanyType = COALESCE(rEnv.Temp.AgencyDetails[1].TAXPAYER_TYPE,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)IATANumber = COALESCE(rEnv.Temp.AgencyDetails[1].IATA_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)IdentificationNumber = COALESCE(rEnv.Temp.AgencyDetails[1].TAXPAYER_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)LegalName = COALESCE(rEnv.Temp.AgencyDetails[1].AGENCY_NAME,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)OfficeCode = COALESCE(rEnv.Temp.AgencyDetails[1].OFFICE_CODE,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)Website = COALESCE(rEnv.Temp.AgencyDetails[1].WEB_ADDRESS,'');
+						SET rOut.ns8:AgencyInfo.ns8:RequestorID.(XMLNSC.Attribute)ID = rEnv.Temp.AgencyDetails[1].AGENCY_ID;
+						SET rOut.ns8:AgencyInfo.ns8:RequestorID.ns8:CompanyName = rEnv.Temp.AgencyDetails[1].AGENCY_NAME;
+						SET rOut.ns8:AgencyInfo.ns8:Telephone.(XMLNSC.Attribute)PhoneNumber = rEnv.Temp.AgencyDetails[1].PHONE_NUMBER;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:AddressLine = rEnv.Temp.AgencyDetails[1].ADDRESS_LINE1;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:CityName = rEnv.Temp.AgencyDetails[1].ADDRESS_CITY;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:PostalCode = rEnv.Temp.AgencyDetails[1].ZIP;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:StateProv.(XMLNSC.Attribute)StateCode = rEnv.Temp.AgencyDetails[1].STATE_CODE;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:CountryName.(XMLNSC.Attribute)Code = rEnv.Temp.AgencyDetails[1].ADD_COUNTRY_CODE;
+						SET rOut.ns8:AgencyInfo.ns8:Email = rEnv.Temp.AgencyDetails[1].EMAIL_ADDRESS;
+						SET rOut.ns8:AgencyInfo.ns8:DSMName.ns8:GivenName = rEnv.Temp.AgencyDetails[1].DSM_FIRST;
+						SET rOut.ns8:AgencyInfo.ns8:DSMName.ns8:Surname = rEnv.Temp.AgencyDetails[1].DSM_LAST;
+						SET rOut.ns8:AgencyInfo.ns8:LanguageCode = rEnv.Temp.AgencyDetails.EXTRA1;
+						
+						SET OutputRoot.MQMD = rEnv.MQMD;
+						SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+						DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+						IF (LogPayload) THEN
+						CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Retrieve agent module Success response payload...', 'xml', rEnv);
+						END IF;
+						SET OutputRoot.XMLNSC = NULL;
+						SET OutputRoot.BLOB.BLOB = bPayload;		
+						PROPAGATE TO TERMINAL 'out1';
+						RETURN FALSE;
+					ELSE
+						-- Implement the Logic for the Decrypt service path
+
+						/*DECLARE rSoapIn REFERENCE TO OutputRoot.SOAP.Body.vx:processEncryptDecryptRequest.vx:Encrypt_Decrypt;
+						CREATE FIELD OutputRoot.SOAP.Body.vx:processEncryptDecryptRequest.vx:Encrypt_Decrypt AS rSoapIn;		
+						SET rSoapIn.vx:Action = 'DECRYPT';
+						CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent calling EncryptDecrypt service', rEnv);*/
+						
+						--PROPAGATE TO TERMINAL 'out';
+						RETURN TRUE;
+					END IF;	
+					
+				END IF;
+				
+			
+		ELSE
+			
+				-- continue the flow
+				-- populate the response obtained from the stored proc
+				-- ask this about the casting
+				-- TEST THIS THOROUGHLY IN UT
+				SET rEnv.p_totalcount = COALESCE(CAST(CAST(rEnv.p_last_agent_id AS INTEGER) AS CHARACTER), '0');
+				
+				IF rEnv.p_totalcount = '0' THEN
+					SET OutputRoot.MQMD = rEnv.MQMD;
+					CALL WarningResp(rIn,rOut);					
+					SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+				ELSE
+					-- continue to call the stored proc 3 for agency details
+					DECLARE Test DECIMAL CAST(rEnv.Temp.p_Cursor[1].AGENCY_ID AS DECIMAL);
+					CALL GetAgencyDetails(Test,rEnv.Temp.AgencyDetails[]);
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent DB stored procedure call for retrieving agency details', rEnv);
+				-- If value of the rEnv.Temp.AgencyDetails[] is not equal to 1 then dont decrypt otherwise decrypt and send final result
+					IF CARDINALITY(rEnv.Temp.p_Cursor[]) <> 1 THEN
+						-- dont decrypt and send the response directly
+						SET rOut.(XMLNSC.Attribute)MoreDataEchoToken = rEnv.p_totalcount; 
+						SET rOut.(XMLNSC.Attribute)MoreIndicator = 'false';
+						SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;
+						SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+						CREATE FIELD rOut.ns8:Success;
+						--SET rOut.ns8:AgentInfo.(XMLNSC.Attribute)AgentLocation
+						--IMPLEMENT THE AGENT INFO HERE
+						FOR source AS rEnv.Temp.p_Cursor[] DO
+							CREATE LASTCHILD OF rOut AS AgentInfo NAMESPACE ns8 NAME 'AgentInfo';
+							SET AgentInfo.(XMLNSC.Attribute)AgentLocation = COALESCE(source.AGENT_LOCATION,'');
+							IF source.WEB_CANACCESAGENCYDATA = 'Y' THEN
+								SET AgentInfo.(XMLNSC.Attribute)SecurityLevel = 'SUPERVISOR';
+							ELSE
+								SET AgentInfo.(XMLNSC.Attribute)SecurityLevel = 'AGENT';
+							END IF;
+							SET AgentInfo.ns8:PersonName.ns8:NamePrefix = source.TITLE;
+							SET AgentInfo.ns8:PersonName.ns8:GivenName = source.FIRST_NAME;
+							SET AgentInfo.ns8:PersonName.ns8:MiddleName = source.MIDDLE_NAME;
+							SET AgentInfo.ns8:PersonName.ns8:Surname = source.LAST_NAME;
+							SET AgentInfo.ns8:Telephone.(XMLNSC.Attribute)PhoneNumber = COALESCE(source.PHONE_NUMBER,'');
+
+							IF LENGTH(source.ADDRESS_LINE1) > 0 THEN
+								SET AgentInfo.ns8:Address.ns8:AddressLine[1] = source.ADDRESS_LINE1;
+								SET AgentInfo.ns8:Address.ns8:AddressLine[2] = source.ADDRESS_LINE2;
+								SET AgentInfo.ns8:Address.ns8:CityName = source.ADDRESS_CITY;
+								SET AgentInfo.ns8:Address.ns8:PostalCode = source.ZIP;
+								SET AgentInfo.ns8:Address.ns8:StateProv = source.STATE_CODE;
+								SET AgentInfo.ns8:Address.ns8:StateProv.(XMLNSC.Attribute)StateCode = source.STATE_CODE;
+								SET AgentInfo.ns8:Address.ns8:CountryName.(XMLNSC.Attribute)Code = source.COUNTRY_CODE;
+
+							END IF;
+
+							SET AgentInfo.ns8:Email = source.EMAIL;
+							SET AgentInfo.ns8:EmployeeInfo = source.EXTRA1;
+							SET AgentInfo.ns8:EmployeeInfo.(XMLNSC.Attribute)EmployeeId = source.AGENT_ID;
+							SET AgentInfo.ns8:RestrictAccess  = source.WEB_CANACCESAGENCYDATA;
+							--SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)Password = source.WEB_PASSWORD;
+							SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)UserLoginName = COALESCE(source.WEB_LOGIN_NAME,'');
+							SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)UserType = 'AGENT';
+							SET AgentInfo.ns8:UserLogin.(XMLNSC.Attribute)WebLastLogin = source.WEB_LAST_LOGIN;
+							 
+						END FOR;
+						
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)ISOCurrency = COALESCE(rEnv.Temp.AgencyDetails[1].DEFAULT_CURRENCY,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)AgencyType = COALESCE(rEnv.Temp.AgencyDetails[1].AGENCY_TYPE,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)ARCNumber = COALESCE(rEnv.Temp.AgencyDetails[1].ARC_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)BlacklistedAgency = 'False';
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)CLIANumber = COALESCE(rEnv.Temp.AgencyDetails[1].CLIA_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)CompanyType = COALESCE(rEnv.Temp.AgencyDetails[1].TAXPAYER_TYPE,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)IATANumber = COALESCE(rEnv.Temp.AgencyDetails[1].IATA_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)IdentificationNumber = COALESCE(rEnv.Temp.AgencyDetails[1].TAXPAYER_NUMBER,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)LegalName = COALESCE(rEnv.Temp.AgencyDetails[1].AGENCY_NAME,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)OfficeCode = COALESCE(rEnv.Temp.AgencyDetails[1].OFFICE_CODE,'');
+						SET rOut.ns8:AgencyInfo.(XMLNSC.Attribute)Website = COALESCE(rEnv.Temp.AgencyDetails[1].WEB_ADDRESS,'');
+						SET rOut.ns8:AgencyInfo.ns8:RequestorID.(XMLNSC.Attribute)ID = rEnv.Temp.AgencyDetails[1].AGENCY_ID;
+						SET rOut.ns8:AgencyInfo.ns8:RequestorID.ns8:CompanyName = rEnv.Temp.AgencyDetails[1].AGENCY_NAME;
+						SET rOut.ns8:AgencyInfo.ns8:Telephone.(XMLNSC.Attribute)PhoneNumber = rEnv.Temp.AgencyDetails[1].PHONE_NUMBER;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:AddressLine = rEnv.Temp.AgencyDetails[1].ADDRESS_LINE1;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:CityName = rEnv.Temp.AgencyDetails[1].ADDRESS_CITY;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:PostalCode = rEnv.Temp.AgencyDetails[1].ZIP;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:StateProv.(XMLNSC.Attribute)StateCode = rEnv.Temp.AgencyDetails[1].STATE_CODE;
+						SET rOut.ns8:AgencyInfo.ns8:Address.ns8:CountryName.(XMLNSC.Attribute)Code = rEnv.Temp.AgencyDetails[1].ADD_COUNTRY_CODE;
+						SET rOut.ns8:AgencyInfo.ns8:Email = rEnv.Temp.AgencyDetails[1].EMAIL_ADDRESS;
+						SET rOut.ns8:AgencyInfo.ns8:DSMName.ns8:GivenName = rEnv.Temp.AgencyDetails[1].DSM_FIRST;
+						SET rOut.ns8:AgencyInfo.ns8:DSMName.ns8:Surname = rEnv.Temp.AgencyDetails[1].DSM_LAST;
+						SET rOut.ns8:AgencyInfo.ns8:LanguageCode = rEnv.Temp.AgencyDetails.EXTRA1;
+						
+						SET OutputRoot.MQMD = rEnv.MQMD;
+						SET OutputRoot.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS = rEnv.XMLNSC.ns8:NCL_CruiseRetrieveAgentRS;
+						DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+						IF (LogPayload) THEN
+						CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Retrieve agent module Success response payload...', 'xml', rEnv);
+						END IF;
+						SET OutputRoot.XMLNSC = NULL;
+						SET OutputRoot.BLOB.BLOB = bPayload;		
+						PROPAGATE TO TERMINAL 'out1';
+						RETURN FALSE;
+						
+					ELSE
+						-- Implement the Logic for the Decrypt service path
+						/*DECLARE rSoapIn REFERENCE TO OutputRoot.SOAP.Body.vx:processEncryptDecryptRequest.vx:Encrypt_Decrypt;
+						CREATE FIELD OutputRoot.SOAP.Body.vx:processEncryptDecryptRequest.vx:Encrypt_Decrypt AS rSoapIn;		
+						SET rSoapIn.vx:Action = 'DECRYPT';
+						SET rSoapIn.vx:EncryptString = rEnv.Temp.p_Cursor[1].WEB_PASSWORD;
+						CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Retrieve agent calling EncryptDecrypt service', rEnv);*/
+						
+						RETURN TRUE;
+					END IF;	
+				
+				END IF;
+			
+		END CASE;
+
+	END;
+
+
+	CREATE PROCEDURE GetAgencyDetails (INOUT p_agencyId DECIMAL)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.Ncl_WEsb_Get_Agy_for_agtreq";
+
+	CREATE PROCEDURE WarningResp (IN rIn REFERENCE, INOUT rOut REFERENCE )
+	BEGIN
+		SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier;
+		CREATE FIELD rOut.ns8:Success;
+		SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '9920';
+		SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'Agent not found';										
+	END;
+
+END MODULE;

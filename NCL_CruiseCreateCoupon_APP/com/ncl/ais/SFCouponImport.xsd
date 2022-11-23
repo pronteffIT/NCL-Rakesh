@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?><xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:csv="http://www.ibm.com/dfdl/CommaSeparatedFormat" xmlns:dfdl="http://www.ogf.org/dfdl/dfdl-1.0/" xmlns:fn="http://www.w3.org/2005/xpath-functions" xmlns:ibmDfdlExtn="http://www.ibm.com/dfdl/extensions" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+
+
+    <xsd:import namespace="http://www.ibm.com/dfdl/CommaSeparatedFormat" schemaLocation="../../../IBMdefined/CommaSeparatedFormat.xsd"/>
+    <xsd:annotation>
+		<xsd:appinfo source="http://www.ogf.org/dfdl/">
+			<dfdl:format documentFinalTerminatorCanBeMissing="yes" encoding="{$dfdl:encoding}" escapeSchemeRef="csv:CSVEscapeScheme" ref="csv:CommaSeparatedFormat"/>
+		</xsd:appinfo>
+	</xsd:annotation>
+
+	<xsd:element dfdl:terminator="%NL;" ibmSchExtn:docRoot="true" name="SFCouponImport">
+		<xsd:complexType>
+			<xsd:sequence dfdl:separator="">
+				<xsd:element dfdl:terminator="%NL;" name="header">
+					<xsd:complexType>
+						<xsd:sequence>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value1" name="valid_from" type="xsd:string"/>
+							<xsd:element ibmDfdlExtn:sampleValue="head_value2" name="valid_to" type="xsd:string"/>							
+							<xsd:element ibmDfdlExtn:sampleValue="head_value3" name="amount" type="xsd:string"/>							
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value4" name="amount_left" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value5" name="comments" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value6" name="coupon_class" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value7" name="entity_type" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value8" name="client" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value9" name="currency" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value10" name="effective_from" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value11" name="effective_to" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="head_value12" name="certificate" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>			
+				<xsd:element dfdl:occursCountKind="implicit" dfdl:terminator="%NL;" maxOccurs="unbounded" name="record">
+					<xsd:complexType>
+						<xsd:sequence> 
+							<xsd:element name="valid_from" type="xsd:date"/>
+							<xsd:element name="valid_to" type="xsd:date"/>
+							<xsd:element default="0" dfdl:textNumberPattern="#0.###" minOccurs="0" name="amount" type="xsd:decimal"/>
+                            <xsd:element default="0" dfdl:textNumberPattern="#0.###" minOccurs="0" name="amount_left" type="xsd:decimal"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="value5" minOccurs="0" name="comments" type="xsd:string"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value6" name="coupon_class" type="xsd:string"/>
+                            <xsd:element default="CLNT" ibmDfdlExtn:sampleValue="value7" minOccurs="0" name="entity_type" type="xsd:string"/>
+                            <xsd:element dfdl:textNumberPattern="#0" name="client" type="xsd:nonNegativeInteger"/>
+                            <xsd:element ibmDfdlExtn:sampleValue="value9" name="currency" type="xsd:string"/>
+                            <xsd:element name="effective_from" type="xsd:date"/>
+                            <xsd:element name="effective_to" type="xsd:date"/>
+                            <xsd:element default="" ibmDfdlExtn:sampleValue="value12" minOccurs="0" name="certificate" type="xsd:string"/>
+                        </xsd:sequence>
+					</xsd:complexType>
+				</xsd:element>				
+			</xsd:sequence>
+		</xsd:complexType>
+	</xsd:element>
+
+
+
+</xsd:schema>

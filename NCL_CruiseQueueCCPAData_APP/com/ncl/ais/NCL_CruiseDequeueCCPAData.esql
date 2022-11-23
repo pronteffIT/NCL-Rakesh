@@ -1,0 +1,177 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MQ_BATCH_SIZE EXTERNAL INTEGER 25;
+DECLARE POLICY_URI EXTERNAL CHARACTER '';
+DECLARE BASIC_AUTH EXTERNAL CHARACTER '';
+
+CREATE PROCEDURE GetWebadminPort() RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.GetBrokerInfo.readBrokerPort";
+
+CREATE PROCEDURE GetQueueDepth(IN hostName CHARACTER, IN port CHARACTER, IN channel CHARACTER, IN qm CHARACTER, IN queue CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "mq.InquireQueueDepth.getQueueDepth";
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_ReadMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseDequeueCCPADataRQ;
+		
+		DECLARE index INTEGER 1;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE batchSize INTEGER CAST(COALESCE(rIn.(XMLNSC.Attribute)MaxResponses, MQ_BATCH_SIZE) AS INTEGER);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		-- to save the client info retrieved from store queue
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Clients';
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		SET rEnv.Temp.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.InputMsg = rIn;
+		
+		IF TRIM(InputRoot.MQMD.ReplyToQ) = '' THEN
+			SET rEnv.Temp.MQMD.ReplyToQ = REPLY_Q;
+		END IF;
+		
+		SET rEnv.Temp.MQMD.Expiry = MSG_EXPIRY;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+											   COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+											   '', '', '', rEnv);
+		
+		-- output message
+		SET rEnv.NoMoreMessages = 'false';
+		
+		SET rEnv.Temp.READ_Q = STORE_Q;
+		
+		IF COALESCE(rIn.*:ReadBackupQ, '') = 'true' THEN
+			SET rEnv.Temp.READ_Q = ARCHIVE_Q;
+		END IF;
+		
+		WHILE rEnv.NoMoreMessages = 'false' AND index <= batchSize DO
+			SET OutputLocalEnvironment.MQ.GET.QueueName = rEnv.Temp.READ_Q;
+			PROPAGATE TO TERMINAL 'out1';
+			
+			SET index = index + 1;
+		END WHILE;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_SetFlag
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET Environment.Variables.NoMoreMessages = 'true';
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_SaveMsg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:CCPAData.*:Client;
+		DECLARE rCli REFERENCE TO Environment;
+		
+		CREATE LASTCHILD OF rEnv.Temp.Clients AS rCli NAMESPACE sc NAME 'Client';
+		SET rCli = rIn;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_CreateResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.InputMsg;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		SET rEnv.Temp.WebPort = GetWebadminPort();
+		
+		IF LENGTH(rEnv.Temp.WebPort) > 0 AND NOT STARTSWITH(rEnv.Temp.WebPort, 'ERROR') THEN
+			PROPAGATE TO LABEL 'GET_DEPTH';
+		END IF;
+		
+		-- output message
+		SET OutputRoot.MQMD = rEnv.Temp.MQMD;
+		
+		CREATE FIELD OutputRoot.XMLNSC.sc:NCL_CruiseDequeueCCPADataRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			
+			SET rOut.sc:Errors.sc:Error = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)Code= '12228';
+			SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)ShortText = 'System error try Again Later';
+			SET rOut.sc:Errors.sc:Error.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			CREATE FIELD rOut.sc:Success;
+			SET rOut.sc:Clients = rEnv.Temp.Clients;
+			SET rOut.sc:QDepth = rEnv.Temp.QueueDepth;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_SetUrl
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = 'http://localhost:' || Environment.Variables.Temp.WebPort || POLICY_URI;
+		
+		IF BASIC_AUTH <> '' THEN
+			SET OutputRoot.HTTPRequestHeader.Authorization = BASIC_AUTH;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_GetCurDepth
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rPolicy REFERENCE TO InputRoot.XMLNSC.policy.policyProperties.mqConnectionDetailsPolicy;
+		
+		IF LASTMOVE(rPolicy) THEN
+			SET Environment.Variables.Temp.QueueDepth = GetQueueDepth(rPolicy.queueManagerHostname,
+																	  rPolicy.listenerPortNumber,
+																	  rPolicy.channelName,
+																	  rPolicy.destinationQueueManagerName,
+																	  Environment.Variables.Temp.READ_Q);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseDequeueCCPAData_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

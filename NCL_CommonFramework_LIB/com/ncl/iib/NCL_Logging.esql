@@ -1,0 +1,170 @@
+BROKER SCHEMA com.ncl.iib
+
+DECLARE xsi NAMESPACE 'http://www.w3.org/2001/XMLSchema-instance';
+
+/* ------------------------------------------------------------------------------------
+ *  COMPANY           :     NCL
+ *  PROJECT           :     WESB-IIB Migration
+ *  SUBFLOW NAME      :     NCL_Logging.subflow
+ *  ESQL MODULE       :     Logging_CreateMetadataLog
+ * 	DESCRIPTION       :    	This subflow is used to construct GTM audit log message
+ 							and publish the audit log message by using messageflow 
+ 							monitoring.
+ *-------------------------------------------------------------------------------------    
+ * ******************        MODIFICATION HISTORY   ***********************************
+ * ------------------------------------------------------------------------------------
+ * VERSION  CRNUM   DATE(MM/DD/CCYY)   Author                       Comments
+ * 1.0              10/30/2017        Prolifics					Initial Creation
+ * -----------------------------------------------------------------------------------*/		
+CREATE COMPUTE MODULE Logging_CreateMetadataLog
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		RETURN TRUE;
+	END;	
+	CREATE FUNCTION Main2() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rOutRfh REFERENCE TO OutputLocalEnvironment;
+		DECLARE rOutTran REFERENCE TO OutputLocalEnvironment;
+		DECLARE rOutTrnSet REFERENCE TO OutputLocalEnvironment;
+		DECLARE rOutMetaDta REFERENCE TO OutputLocalEnvironment;
+		DECLARE rOutCall REFERENCE TO OutputLocalEnvironment;
+		DECLARE rOutClRest REFERENCE TO OutputLocalEnvironment;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE cStatusMsg CHARACTER 'success';
+		DECLARE cTs  CHARACTER;
+		DECLARE cTts CHARACTER CURRENT_GMTTIMESTAMP;
+		DECLARE cStartTimeStamp CHARACTER;
+		DECLARE cSTts CHARACTER;
+		
+		-- Change the status message to failed if status is failure
+		IF rLog.StatusCode <> 0 THEN
+			SET cStatusMsg = 'failed';
+		END IF;
+		
+		-- Check the transactionId
+		IF rLog.LocalTransactionId IS NULL THEN
+			SET rLog.LocalTransactionId = UUIDASCHAR;
+		END IF;
+		
+		SET cStartTimeStamp = CAST(rLog.FlowStartTime AS CHARACTER);
+		SET cSTts  = SUBSTRING (cStartTimeStamp FROM 15 FOR 10)||'T'|| SUBSTRING (cStartTimeStamp FROM 26 FOR 12 );		
+		SET cTs  = SUBSTRING (cTts FROM 15 FOR 10)||'T'|| SUBSTRING (cTts FROM 26 FOR 12 );  
+		
+		-- Construct GTM Message
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutTran NAME 'transaction';
+		
+		SET rOutTran.(XMLNSC.Attribute)ID = rLog.LocalTransactionId;
+		SET rOutTran.(XMLNSC.Attribute)version = '5.00';
+		SET rOutTran.(XMLNSC.Attribute)agentRole = 'callAgent';
+		SET rOutTran.(XMLNSC.NamespaceDecl)xmlns:xsi = xsi;
+		SET rOutTran.(XMLNSC.NamespaceDecl)xsi:noNamespaceSchemaLocation = 'TransferLog.xsd';
+
+		SET rOutTran.action.(XMLNSC.Attribute)time = cTs || 'Z';
+		SET rOutTran.action = 'completed';
+		
+		-- Agent Info
+		SET rOutTran.agent.(XMLNSC.Attribute)agent = SQL.BrokerName || '.' || UCASE(SQL.ExecutionGroupLabel) ; 
+		SET rOutTran.agent.(XMLNSC.Attribute)QMgr = SQL.QueueManagerName ;
+		SET rOutTran.agent.systemInfo.(XMLNSC.Attribute)name = SQL.BrokerName ;
+		SET rOutTran.agent.systemInfo.(XMLNSC.Attribute)version = SQL.BrokerVersion ;
+		SET rOutTran.agent.systemInfo.(XMLNSC.Attribute)architecture = SQL.Family ;
+		
+		-- Orginator Info 
+		SET rOutTran.originator.hostName = SQL.BrokerName;
+		SET rOutTran.originator.userID = LCASE(SQL.BrokerUserId) ;
+		
+		-- Status info
+		SET rOutTran.status.(XMLNSC.Attribute)resultCode = rLog.StatusCode;
+		SET rOutTran.status.supplement = rLog.ResponseMsg;
+		
+		-- TransferSet Info
+		CREATE LASTCHILD OF rOutTran AS rOutTrnSet NAME 'transferSet';
+		
+		SET rOutTrnSet.(XMLNSC.Attribute)bytesSent = rLog.MessageByteCount;
+		SET rOutTrnSet.(XMLNSC.Attribute)total = '1';
+		SET rOutTrnSet.(XMLNSC.Attribute)startTime = cSTts || 'Z';
+		
+		-- Create MetaData
+		FOR itrMetaDta AS rLog.MetaDataSet.MetaData[] DO
+			CREATE LASTCHILD OF rOutTrnSet.metaDataSet AS rOutMetaDta NAME 'metaData';
+
+			SET rOutMetaDta = itrMetaDta.Value;
+			SET rOutMetaDta.(XMLNSC.Attribute)key = itrMetaDta.Key;
+		END FOR;
+		
+		-- Call Info
+		CREATE LASTCHILD OF rOutTrnSet AS rOutCall NAME 'call';
+		SET rOutCall.command.(XMLNSC.Attribute)name  = SQL.MessageFlowLabel;
+		SET rOutCall.command.(XMLNSC.Attribute)successRC  = rLog.StatusCode;
+		SET rOutCall.command.(XMLNSC.Attribute)retryCount=  '0';
+		SET rOutCall.command.(XMLNSC.Attribute)retryWait=  '0';
+		SET rOutCall.command.(XMLNSC.Attribute)type  = 'WMB_Flow';
+		SET rOutCall.command.argument  = 'none';
+		
+		-- Call Result Info
+		CREATE LASTCHILD OF rOutCall AS rOutClRest NAME 'callResult';
+		SET rOutClRest.(XMLNSC.Attribute)outcome  = cStatusMsg;
+		SET rOutClRest.(XMLNSC.Attribute)retries  = '0';
+		SET rOutClRest.result.(XMLNSC.Attribute)outcome  = cStatusMsg;
+		SET rOutClRest.result.(XMLNSC.Attribute)returnCode  = rLog.StatusCode;
+		SET rOutClRest.result.(XMLNSC.Attribute)time  = cTs || 'Z';
+		
+		-- Create Exception or Result Message
+		FOR itrErrDta AS rLog.ErrorDetails.ErrorMessage[] DO
+			CREATE LASTCHILD OF rOutClRest.result.stdout NAME 'line' VALUE itrErrDta;
+		END FOR;
+		
+		IF EXISTS(rLog.ErrorDetails.ExceptionListDetails[]) THEN
+			CREATE LASTCHILD OF rOutClRest.result.stderr NAME 'line' VALUE rLog.ErrorDetails.ExceptionListDetails;
+		END IF;
+		
+		SET rOutTran.job.name = SQL.MessageFlowLabel;
+		
+		-- Capturing Statistics
+		SET rOutTran.statistics.actualStartTime = cSTts || 'Z'; 		
+		SET rOutTran.statistics.retryCount = '0';
+		SET rOutTran.statistics.numFileFailures = '0'; 
+		SET rOutTran.statistics.numFileWarnings = '0';
+		
+		-- added NEW
+		--SET rOutTrnSet.Events = rLog.Events;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  COMPANY           :     NCL
+ *  PROJECT           :     WESB-IIB Migration
+ *  SUBFLOW NAME      :     NCL_Logging.subflow
+ *  ESQL MODULE       :     Logging_CreatePayloadLog
+ * 	DESCRIPTION       :    	This ESQL File used to construct message payload log message and 
+ 							emit the monitoring events.
+ *-------------------------------------------------------------------------------------    
+ * ******************        MODIFICATION HISTORY   ***********************************
+ * ------------------------------------------------------------------------------------
+ * VERSION  CRNUM   DATE(MM/DD/CCYY)   Author                       Comments
+ * 1.0              10/30/2017        Prolifics					Initial Creation
+ * -----------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE Logging_CreatePayloadLog
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		RETURN TRUE;
+	END;	
+	CREATE FUNCTION Main2() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLog REFERENCE TO rEnv.GTM.LogEvent;
+		DECLARE rTranPload REFERENCE TO OutputLocalEnvironment;
+
+		--SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rTranPload NAME 'transactionPayload';
+		--CREATE LASTCHILD OF OutputRoot.XMLNSC.transaction.transferSet AS rTranPload NAME 'transactionPayload';
+		SET rTranPload.(XMLNSC.Attribute)ID 	= rLog.LocalTransactionId;
+		SET rTranPload.EventMessages 			= rLog.EventMessages;
+		
+		RETURN TRUE;
+	END;	
+END MODULE;

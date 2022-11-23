@@ -1,0 +1,228 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAmenityOrders_ProcessVAResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rIn, rResp, rEnvXmlNsc, rVXReq REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+
+		DECLARE bPayload BLOB;
+
+		CREATE LASTCHILD OF rEnv AS rEnvXmlNsc DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF rEnvXmlNsc AS rResp IDENTITY sc:NCL_CruiseRetrieveAmenityOrdersRS;
+
+		-- Copy root level attributes from environment
+		CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rResp);	
+		
+		IF EXISTS(rEnv.Temp.AgencyInfo[]) THEN
+			CREATE LASTCHILD OF rResp IDENTITY sc:Success;
+			SET rEnv.agencyID = rEnv.Temp.AgencyInfo.AGENCY_ID;
+		ELSEIF EXISTS(rEnv.Temp.AgencyInfoError[]) THEN
+			CALL com.ncl.ais.utils.MapVAErrorsToOTAErrors(rEnv.Temp.AgencyInfoError, rResp);
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+			SET OutputRoot.MQMD = Environment.MQMD;			
+
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+			SET OutputRoot.XMLNSC = rEnvXmlNsc;			
+
+			-- Log the response payload			
+			IF (LogPayLoad) THEN
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveAmenityOrders response message', 'xml', rEnv);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';			
+			
+			RETURN FALSE;
+		END IF;	
+		
+		-- Prepare the request message to call Versonix GetListOfAmenityOrders API
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+		
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rVXReq IDENTITY GetListOfAmenityOrders_IN;
+		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rVXReq);
+		SET rVXReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rEnvInMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+		DECLARE cResID CHARACTER SUBSTRING(FIELDVALUE(rEnvInMsg.*:ReservationID.(XMLNSC.Attribute)ID) FROM 1 FOR 1) ;
+		-- Strip off leading '-' if reservation ID is negative before numeric check
+		IF cResID = '-' THEN
+			SET cResID = SUBSTRING(FIELDVALUE(rEnvInMsg.*:ReservationID.(XMLNSC.Attribute)ID) FROM 2);
+		ELSE 
+			SET cResID = FIELDVALUE(rEnvInMsg.*:ReservationID.(XMLNSC.Attribute)ID);
+		END IF;
+		
+		IF NOT com.ncl.ais.utils.isNumeric(cResID) THEN
+			SET rVXReq.ResID = '0';
+		ELSE
+			SET rVXReq.ResID = FIELDVALUE(rEnvInMsg.*:ReservationID.(XMLNSC.Attribute)ID);	
+		END IF;	
+		
+		-- Log the request payload
+		--SET bPayload = OutputRoot.XMLNSC;
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'GetListOfAmenityOrders request message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking GetListOfAmenityOrders service ...', rEnv);
+					
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAmenityOrders_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CALL CopyMessageHeaders();
+		-- Set Message expiry to 1/10th of a second
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		DECLARE rEnv, rOutResp, rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE bPayload BLOB;
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		-- Check if the request has come from callable node or MQ
+		IF NOT EXISTS(rEnv.callableReq[]) 
+		THEN
+			-- This could've failed even before hitting the first compute node. So check if localenv variable exists			
+			IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[])
+			THEN
+				SET rEnv.callableReq = TRUE;
+			ELSE
+				SET rEnv.callableReq = FALSE;
+			END IF;
+		END IF;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE errorMsg CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Unknown Error in Request');	
+			
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;			
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+			--SET errorMsg = 'Invalid Request Message';
+
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Invalid CruiseRetrieveAmenityOrders request message', 'xml', rEnv);
+			END IF ;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB :' || errorMsg, rEnv);
+		END IF;		
+		
+		-- Send the error response and end flow
+		--CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseRetrieveAmenityOrdersRS;
+		
+		-- Copy root level attributes from environment if the exception occurred after Input Message was stored
+		IF EXISTS (rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ[])
+		THEN
+			DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rOutResp);
+		END IF;
+		
+		CREATE LASTCHILD OF rOutResp AS rOutErrors IDENTITY sc:Errors;
+		SET rOutErrors.sc:Error = errorMsg;
+		SET rOutErrors.sc:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutErrors.sc:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutErrors.sc:Error.(XMLNSC.Attribute)Type = 3;
+		
+		DELETE FIELD rEnv.ErrorSummary;
+		
+		-- Add response msg to log event
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEn
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL_CruiseRetrieveAmenityOrders response message', 'xml', rEnv);
+		END IF ;				
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+
+		/*IF rEnv.callableReq	
+		THEN
+			PROPAGATE TO LABEL 'CallableOut' DELETE NONE;
+		ELSE						
+			PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+		END IF; */
+		
+		-- Copy Exception List etc before sending it to error handler
+		CALL CopyEntireMessage(); 
+					
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAmenityOrders_RouteToDestination
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CALL CopyEntireMessage();
+		
+		IF rEnv.callableReq	
+		THEN
+			PROPAGATE TO LABEL 'CallableOut';
+		ELSE						
+			PROPAGATE TO LABEL 'MQOut';
+		END IF; 
+		
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAmenityOrders_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Temp.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+

@@ -1,0 +1,68 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ScanFrequency_Min EXTERNAL CHARACTER '';
+DECLARE ScanFrequency_Sec EXTERNAL CHARACTER '';
+DECLARE CacheMap EXTERNAL CHARACTER '';
+DECLARE CacheKey EXTERNAL CHARACTER '';
+DECLARE CacheExpiry_Sec EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE NCL_ReadHousholdAddress_ReadHousholdAddr
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE query, cacheVal, intvl CHARACTER '';
+		DECLARE DB ROW;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE curTime CHARACTER CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyy-MM-dd_HH:mm:ss');
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- get last batch processed time from cache
+		SET cacheVal = GetDataFromCache(CacheKey, CacheMap, '');
+		
+		IF STARTSWITH(cacheVal, 'ERROR') OR COALESCE(cacheVal, '') = '' THEN
+			SET intvl = ScanFrequency_Sec;
+		ELSE
+			SET intvl = CAST((CAST(curTime AS TIMESTAMP FORMAT 'yyyy-MM-dd_HH:mm:ss') - CAST(cacheVal AS TIMESTAMP FORMAT 'yyyy-MM-dd_HH:mm:ss')) SECOND AS INTEGER);
+		END IF;
+			
+		/*SET query = 'SELECT DISTINCT SOURCE_ID FROM VCS_LOG_RECORD L 
+						WHERE L.TABLE_NAME = ? 
+							AND L.MODIFIED_BY <> ?
+							AND L.DATE_MODIFIED > SYSDATE - INTERVAL ''' || ScanFrequency_Min || ''' MINUTE';*/
+							
+		SET query = 'SELECT DISTINCT SOURCE_ID FROM VCS_LOG_RECORD L 
+						WHERE L.TABLE_NAME = ? 
+							AND L.MODIFIED_BY <> ?
+							AND L.DATE_MODIFIED > SYSDATE - INTERVAL ''' || intvl || ''' SECOND';
+		
+		SET DB.Household.ID[] = PASSTHRU(query VALUES('HOUSEHOLD_ADDRESS', DataSourceUserId));
+
+		DECLARE cnt CHARACTER CAST(CARDINALITY(DB.Household.ID[]) AS CHARACTER);
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Scanned ' || cnt || ' household addresses ...', rEnv);
+		
+		FOR rId AS DB.Household.ID[] DO
+			SET OutputRoot.XMLNSC.HouseholdAddrId = rId.SOURCE_ID;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END FOR;
+
+		-- save last batch processed time in cache
+		SET cacheVal = SaveDataInCache(CacheKey, CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyy-MM-dd_HH:mm:ss'), CacheExpiry_Sec, CacheMap, '');
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE PROCEDURE SaveDataInCache(IN key CHARACTER, IN val CHARACTER, IN cacheExpiry CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+CREATE PROCEDURE GetDataFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	

@@ -1,0 +1,183 @@
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddContractAcceptances
+* MODULE NAME : Compute
+* Description : This module is used to Insert contract details into database.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_ADD_CNTRCT_ACEPTNS_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+CREATE COMPUTE MODULE NCL_CruiseAddContractAcceptances_DbInsertRecord
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNS.ns:NCL_CruiseAddContractAcceptancesRS;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+--		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InputReq';
+		SET rEnv.InputReq = InputRoot.XMLNSC.*:NCL_CruiseAddContractAcceptancesRQ;
+		
+		SET rEnv.TempHeader.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.TempHeader.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.TempHeader.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.TempHeader.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD = rEnv.TempHeader.MQMD;
+		
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.InputReq.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		'','','',rEnv);
+		---add payload to logging
+		
+		
+		IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'AddContractAcceptance request message', 'xml', rEnv);
+		END IF;
+	-----------Insert statement execution
+	PASSTHRU(' INSERT INTO contract_acceptances
+	(check_in_id, created_at, accepted_by_id, updated_at, id, ticket_contract_version_id, accepted_by_type, reservation_id, sail_id, sail_date)
+	SELECT ?, TO_DATE(?,''YYYY-MM-DD HH24:MI:SS'')
+	, ?, TO_DATE(?,''YYYY-MM-DD HH24:MI:SS''),contract_acceptances_seq.nextval, ?, ''User'', ?, ?, TO_DATE(?, ''YYYY-MM-DD HH24:MI:SS'')from dual',rEnv.InputReq.*:CheckInID,rEnv.InputReq.*:CreatedAt,rEnv.InputReq.*:AcceptedBy,rEnv.InputReq.*:UpdatedAt
+	,rEnv.InputReq.*:TicketContractVersionID,rEnv.InputReq.*:ReservationID, rEnv.InputReq.*:SaildID,rEnv.InputReq.*:SaildDate );
+	-------Whether Insert operation is successful
+	CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAddContractAcceptancesRS AS rOut;
+	CALL com.ncl.ais.utils.CopyAttributes(rEnv.InputReq,rOut);
+	CREATE FIELD rOut.ns:Success;
+	
+	IF SQLCODE = 0 THEN
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add contract Acceptances Response message', 'xml', rEnv);
+	END IF;
+	
+	SET OutputRoot.XMLNSC = NULL;
+	SET OutputRoot.BLOB.BLOB = bPayload;
+ELSE
+	SET rEnv.error = CAST( SQLNATIVEERROR AS CHARACTER);
+	IF SQLNATIVEERROR = 1 THEN
+		SET rOut.ns:Warnings.ns:Warning = SQLERRORTEXT || ', error code : '|| rEnv.error || ', error code: '|| rEnv.error ;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(SQLNATIVEERROR,'12228');
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Error inserting row';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	ELSE
+		SET rOut.ns:Warnings.ns:Warning = SQLERRORTEXT|| ', error code : '|| rEnv.error;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Error inserting row';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+END IF;
+RETURN TRUE;
+END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddContractAcceptances
+* MODULE NAME : ExceptionHandler
+* Description : This module is used handle exception.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddContractAcceptances_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AddContractAcceptances Invalid request message', 'xml', rEnv);
+			END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseAddContractAcceptances
+* MODULE NAME : Fault_handler
+* Description : This module is used to handle fault.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseAddContractAcceptances_Fault_handler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.InputReq;
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseAddContractAcceptancesRS;
+		DECLARE cErrorText CHARACTER 'System Backend Error Please Try again later';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseAddContractAcceptancesRS AS runTimeErr;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,runTimeErr);
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'Error inserting row';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		RETURN TRUE;
+	END;
+END MODULE;

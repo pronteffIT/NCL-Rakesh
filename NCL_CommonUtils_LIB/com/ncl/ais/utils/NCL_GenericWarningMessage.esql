@@ -1,0 +1,103 @@
+BROKER SCHEMA com.ncl.ais.utils
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE NCL_GenericWarningMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE FlowName,ErrorCode,CompanyNameCode,AdvisoryCode,AdvisoryDesc,cExternalCodeInfo CHARACTER;
+		
+		SET CompanyNameCode = InputRoot.XMLNSC.Body.Code;
+		SET FlowName = InputRoot.XMLNSC.Body.FlowName;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		CREATE FIELD OutputRoot.XMLNSC AS rOut;
+		-- Replace the RS with RQ to access the input request message
+		
+		DECLARE subFlowOut REFERENCE TO rOut;
+		CREATE LASTCHILD OF rOut AS subFlowOut NAMESPACE ns NAME FlowName ;
+
+		DECLARE rOutWarnings REFERENCE TO subFlowOut;
+		CREATE FIELD subFlowOut AS rOutWarnings;
+		SET FlowName =TRIM(TRAILING 'RS' FROM FlowName);
+		SET FlowName = FlowName || 'RQ';
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:{FlowName};
+		CREATE FIELD rEnv.XMLNSC.*:{FlowName} AS rIn;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOutWarnings);
+		--Set the attributes for the response message
+--		SET rOutWarnings.(XMLNSC.Attribute)AltLangID = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)AltLangID; 
+--		SET rOutWarnings.(XMLNSC.Attribute)EchoToken = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)EchoToken;
+--		SET rOutWarnings.(XMLNSC.Attribute)PrimaryLangID = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)PrimaryLangID;
+--		SET rOutWarnings.(XMLNSC.Attribute)RetransmissionIndicator = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)RetransmissionIndicator;
+--		SET rOutWarnings.(XMLNSC.Attribute)SequenceNmbr = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)SequenceNmbr;
+--		SET rOutWarnings.(XMLNSC.Attribute)Target = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)Target;
+--		SET rOutWarnings.(XMLNSC.Attribute)TimeStamp = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)TimeStamp;
+--		SET rOutWarnings.(XMLNSC.Attribute)TransactionIdentifier = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)TransactionIdentifier;
+--		SET rOutWarnings.(XMLNSC.Attribute)TransactionStatusCode = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)TransactionStatusCode;
+--		SET rOutWarnings.(XMLNSC.Attribute)Version = rEnv.XMLNSC.*:{InputReq}.(XMLNSC.Attribute)Version;
+		CREATE LASTCHILD OF subFlowOut AS rOutWarnings NAMESPACE ns NAME 'Warnings';
+		
+		DECLARE I INT 0;
+		FOR source AS InputRoot.XMLNSC.Body.Errors.Error[] DO
+			DECLARE rOutWarning REFERENCE TO rOutWarnings;
+			CREATE LASTCHILD OF rOutWarnings AS rOutWarning NAMESPACE ns NAME 'Warning';
+			SET I = I + 1;
+			-- call Procedure here for db lookup
+			IF EXISTS(InputRoot.XMLNSC.Body.Errors.Code[]) THEN
+				SET ErrorCode = InputRoot.XMLNSC.Body.Errors.Code;
+			ELSE
+				SET ErrorCode = source.ErrorCode;
+			END IF;
+
+			IF (ErrorCode) IS NOT NULL AND EXISTS(InputRoot.XMLNSC.Body.Code[]) THEN
+				-- Check the cache here first if the external code exists
+				 SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(CompanyNameCode || '#' || 'AdvisoryCondition', ErrorCode, 
+				 																	XC10CacheMap, XC10ConnectionConfig);
+				IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+					-- if the external code is not available in the cache, then make a DB call for lookup external code.
+					CALL getAdvisoryCode(ErrorCode,CompanyNameCode,rEnv);
+				ELSE
+					-- assign the retrieved values from cache to EXTERNAL_CODE and DESCRIPTION respectively. 
+					SET rEnv.Temp.FinalResp.EXTERNAL_CODE = SUBSTRING(cExternalCodeInfo BEFORE '#1#');
+					SET rEnv.Temp.FinalResp.DESCRIPTION = SUBSTRING(SUBSTRING(cExternalCodeInfo AFTER '#1#') BEFORE '#2#');
+				END IF;				
+
+				IF EXISTS(rEnv.Temp.FinalResp.EXTERNAL_CODE[]) AND EXISTS(rEnv.Temp.FinalResp.DESCRIPTION[]) THEN
+					SET AdvisoryCode = rEnv.Temp.FinalResp.EXTERNAL_CODE;
+					SET AdvisoryDesc = rEnv.Temp.FinalResp.DESCRIPTION;
+				ELSE
+					SET AdvisoryCode = '12228';
+					SET AdvisoryDesc = 'System error from backend Try Later';
+				END IF;
+			ELSE
+				SET AdvisoryCode = '12228';
+				SET AdvisoryDesc = 'System error from backend Try Later';
+			END IF;
+
+			IF EXISTS(InputRoot.XMLNSC.Body.Errors.value[]) THEN
+
+				SET rOutWarning = source.value;
+			ELSE
+				SET rOutWarning = source.ErrorMessage;
+			END IF;
+
+			SET rOutWarning.(XMLNSC.Attribute)Code = AdvisoryCode;
+			SET rOutWarning.(XMLNSC.Attribute)ShortText = AdvisoryDesc;
+
+			IF source.ErrorSeverity = 'W' OR source.ErrorSeverity = 'I' THEN
+				SET rOutWarning.(XMLNSC.Attribute)Type = '2';
+			ELSE
+				SET rOutWarning.(XMLNSC.Attribute)Type = '3';
+			END IF;
+
+		END FOR;
+		-- log the payload of the subflow
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Generic warning subflow output payload...', 'xml', rEnv);
+
+	END;
+
+END MODULE;

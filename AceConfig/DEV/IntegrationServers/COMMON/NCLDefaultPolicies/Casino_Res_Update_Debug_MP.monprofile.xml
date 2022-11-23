@@ -1,0 +1,94 @@
+<p:monitoringProfile p:version="2.0" xmlns:p="http://www.ibm.com/xmlns/prod/websphere/messagebroker/6.1.0.3/monitoring/profile" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ibm.com/xmlns/prod/websphere/messagebroker/6.1.0.3/monitoring/profile MonitoringProfile.xsd ">
+
+  <p:eventSource p:enabled="true" p:eventSourceAddress="UpsertRes.terminal.in">
+
+    <p:eventPointDataQuery>
+
+      <p:eventCorrelation>
+
+        <p:localTransactionId p:sourceOfId="automatic" />
+
+        <p:parentTransactionId p:sourceOfId="automatic" />
+
+        <p:globalTransactionId p:sourceOfId="automatic" />
+
+      </p:eventCorrelation>
+
+    </p:eventPointDataQuery>
+
+    <p:applicationDataQuery>
+
+      <p:complexContent>
+
+        <p:payloadQuery p:queryText="$Body" />
+
+      </p:complexContent>
+
+    </p:applicationDataQuery>
+
+    <p:bitstreamDataQuery p:bitstreamContent="body" p:encoding="base64Binary" />
+
+  </p:eventSource>
+
+  <p:eventSource p:enabled="true" p:eventSourceAddress="UpsertRes.FailureTerminal">
+
+    <p:eventPointDataQuery>
+
+      <p:eventCorrelation>
+
+        <p:localTransactionId p:sourceOfId="automatic" />
+
+        <p:parentTransactionId p:sourceOfId="automatic" />
+
+        <p:globalTransactionId p:sourceOfId="automatic" />
+
+      </p:eventCorrelation>
+
+    </p:eventPointDataQuery>
+
+    <p:applicationDataQuery>
+
+      <p:complexContent>
+
+        <p:payloadQuery p:queryText="$Body" />
+
+      </p:complexContent>
+
+    </p:applicationDataQuery>
+
+    <p:bitstreamDataQuery p:bitstreamContent="body" p:encoding="base64Binary" />
+
+  </p:eventSource>
+
+  <p:eventSource p:enabled="true" p:eventSourceAddress="UpsertRes.terminal.out">
+
+    <p:eventPointDataQuery>
+
+      <p:eventCorrelation>
+
+        <p:localTransactionId p:sourceOfId="automatic" />
+
+        <p:parentTransactionId p:sourceOfId="automatic" />
+
+        <p:globalTransactionId p:sourceOfId="automatic" />
+
+      </p:eventCorrelation>
+
+    </p:eventPointDataQuery>
+
+    <p:applicationDataQuery>
+
+      <p:complexContent>
+
+        <p:payloadQuery p:queryText="$Body" />
+
+      </p:complexContent>
+
+    </p:applicationDataQuery>
+
+    <p:bitstreamDataQuery p:bitstreamContent="body" p:encoding="base64Binary" />
+
+  </p:eventSource>
+
+</p:monitoringProfile>
+

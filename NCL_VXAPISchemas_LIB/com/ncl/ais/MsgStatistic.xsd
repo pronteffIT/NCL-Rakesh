@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<!--Types-->
+	<xs:simpleType name="ServerName">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1"/>
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ApplicationName">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1"/>
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FunctionName">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1"/>
+			<xs:maxLength value="50"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FunctionSubname">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:minLength value="1"/>
+			<xs:maxLength value="50"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="StatisticItem">
+		<xs:sequence>
+			<xs:element name="ServerName" type="ServerName">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ApplicationName" type="ApplicationName">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SummaryDatetime" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FunctionName" type="FunctionName">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FunctionSubname" type="FunctionSubname" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="StatCount" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="NowaitCount" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="QueueTime" type="xs:double">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ExecutionTime" type="xs:double">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<!--=============================================== Job Statistic-->
+	<xs:element name="WriteJobStatistic_IN">
+		<xs:annotation>
+			<xs:documentation>Saves job statistic.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="StatisticItems" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Enumerates each statistic item.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="StatisticItem" type="StatisticItem" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="WriteJobStatistic_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for WriteJobStatistic_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

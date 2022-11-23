@@ -1,0 +1,40 @@
+BROKER SCHEMA com.ncl.ais
+
+/** Common procedures for this service **/
+CREATE PROCEDURE CreateResponseFromAdvisoryCode(IN cExternalCodeInfo CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+												INOUT rOrgMsg REFERENCE, IN rLoadBook REFERENCE, INOUT rOut REFERENCE) 
+BEGIN
+	DECLARE cAdvCode, cErrorMsg, cExternalCode CHARACTER '';
+	
+	SET cExternalCode = cExternalCodeInfo;
+	
+	IF cExternalCode = '' THEN		
+		IF (cErrorCode = '' OR cChannel = '') THEN
+			SET cAdvCode = '12228';
+			SET cErrorMsg = 'System error from backend. Try Later';
+		ELSE
+			SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+		END IF;
+	END IF;
+
+	SET cErrorMsg = rLoadBook.Errors.Error.ErrorMessage;
+
+	IF cExternalCode <> '' THEN
+		SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+	END IF;
+		
+	CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+	
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = cAdvCode;
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);
+	
+	IF rLoadBook.Errors.Error.ErrorSeverity IN('W', 'I') THEN
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+	ELSE
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	
+	SET rOut.ns:Warnings.ns:Warning = FIELDVALUE(rLoadBook.Errors.Error.ErrorMessage);
+	SET rOut.ns:ReservationStatusChange.ns:ReservationId = rOrgMsg.*:ReservationId;
+END;

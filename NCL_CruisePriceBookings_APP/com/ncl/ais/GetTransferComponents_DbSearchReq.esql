@@ -1,0 +1,24 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE GetTransferComponents_DbSearchReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rGetPrimPackagesOut REFERENCE TO Environment.Variables;		
+		DECLARE rGetPackageReq REFERENCE TO OutputRoot.XMLNC.DbSearch_IN;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rGetPackageReq;		
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rGetPackageReq);
+		--Set default options
+		SET rGetPackageReq.Options.MaxRows =600;
+		SET rGetPackageReq.Options.FilterBySets ='Y';
+		SET rGetPackageReq.Options.CountOnly ='N';
+		SET rGetPackageReq.Options.ActiveOnly ='Y';
+		SET rGetPackageReq.Options.IncludeDisplayRanks ='N';
+		SET rGetPackageReq.Options.MaxDuration =180;
+		--Set the voyage Id				
+		SET rGetPackageReq.Packages.PackageID =rEnv.Temp.VoyageId;
+		RETURN TRUE;
+	END;
+
+END MODULE;

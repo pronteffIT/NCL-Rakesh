@@ -1,0 +1,441 @@
+BROKER SCHEMA com.ncl.ais
+
+
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE BatchSize EXTERNAL INT 3000;
+DECLARE BatchIntervalStr EXTERNAL CHAR '30';
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_StoreCategoryAvailInfo
+ * MODULE NAME       :     NCL_StoreCategoryAvailInfo_DBUpdate
+ * Description       :     This module takes the informations from input queue and stores into DB table
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_StoreCategoryAvailInfo_DBUpdate
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		--DECLARE collRef REFERENCE TO InputRoot.Collection.Req;
+		DECLARE encoding INT InputRoot.Properties.Encoding;
+		DECLARE CCSID INT InputRoot.Properties.CodedCharSetId;
+		DECLARE options INTEGER BITOR(FolderBitStream, 0,0);
+		DECLARE inCollRef REFERENCE TO InputRoot;
+		SET Environment.Batch = Environment.Batch+1;
+		SET Environment.CurrTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+		CREATE FIELD OutputRoot.XMLNSC;
+		CREATE LASTCHILD OF OutputRoot.XMLNSC DOMAIN 'XMLNSC' PARSE(InputRoot.BLOB.BLOB, encoding, CCSID, '','', '', options); 
+		DECLARE inRef, rEnv REFERENCE TO OutputRoot.XMLNSC.*:categoryAvailabilityRequestMessage;--InputRoot.XMLNSC.*:categoryAvailabilityRequestMessage;			
+		
+		SET Environment.Variables=NULL;
+		CREATE FIELD Environment.Variables AS rEnv;
+--				IF NOT(EXISTS(Environment.Variables[])) THEN
+--					CREATE FIELD Environment.Variables AS rEnv;
+--				ELSE
+--					MOVE rEnv TO Environment.Variables;
+--				END IF;		
+				
+				DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		SET rEnv.InReq=OutputRoot.XMLNSC;
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		DECLARE Requestor,BookingChannel,ReservationId,ClientId, FareCodes, Age, GuestCnt CHARACTER '';
+			
+		SET rEnv.Temp.ClientIDs.ID[] = SELECT ITEM (T.*:itemDescription.*:value) FROM inRef.*:sailingGroup.*:otherBookingQualifier[] AS T WHERE FIELDVALUE(T.*:partyQualifier)='5';
+		
+		FOR IDRef AS rEnv.Temp.ClientIDs.ID[] DO
+			IF COALESCE(NULLIF(FIELDVALUE(IDRef),''),'')<>'' THEN		
+				SET ClientId = ClientId||COALESCE(FIELDVALUE(IDRef),'')||',';
+			END IF;	
+		END FOR;
+		SET ClientId=COALESCE(TRIM(TRAILING ',' FROM ClientId),'');
+		
+		SET rEnv.Temp.FareCodes.ID[] = SELECT T.*:fareCode.*:fareCodeId.*:cruiseFareCode AS cruiseFareCode,
+												T.*:fareCode.*:fareCodeId.*:groupId AS groupId
+		                   						 FROM inRef.*:sailingGroup.*:fareGroup[] AS T;
+				
+		FOR fareCodeRef AS rEnv.Temp.FareCodes.ID[] DO
+			DECLARE fareCd CHAR COALESCE(NULLIF(FIELDVALUE(fareCodeRef.cruiseFareCode),''),NULLIF(FIELDVALUE(fareCodeRef.groupId),''),'');
+			IF fareCd <>'' THEN		
+				SET FareCodes = FareCodes||fareCd||',';
+			END IF;	
+		END FOR;
+		SET FareCodes=COALESCE(TRIM(TRAILING ',' FROM FareCodes),'');
+		
+		FOR uniDesRef AS inRef.*:numberOfUnitsDescription[] DO
+			SET rEnv.Temp.Ages.Age[] = SELECT ITEM(T.*:unitValue) FROM uniDesRef.*:nbrOfUnitsDetails[] AS T WHERE T.*:unitQualifier='AG';
+			FOR AgeRef AS rEnv.Temp.Ages.Age[] DO
+				IF COALESCE(NULLIF(FIELDVALUE(AgeRef),''),'')<>'' THEN		
+					SET Age = Age||COALESCE(FIELDVALUE(AgeRef),'')||',';
+				END IF;	
+			END FOR;
+		END FOR;
+		SET Age=COALESCE(TRIM(TRAILING ',' FROM Age),'');
+		
+		FOR uniDesRef AS inRef.*:numberOfUnitsDescription[] DO
+			SET rEnv.Temp.Guest.Cnt[] = SELECT ITEM(T.*:unitValue) FROM uniDesRef.*:nbrOfUnitsDetails[] AS T WHERE T.*:unitQualifier='NI';
+			FOR cntRef AS rEnv.Temp.Guest.Cnt[] DO
+				IF COALESCE(NULLIF(FIELDVALUE(cntRef),''),'')<>'' THEN		
+					SET GuestCnt = GuestCnt||COALESCE(FIELDVALUE(cntRef),'')||',';
+				END IF;	
+			END FOR;
+		END FOR;
+		SET GuestCnt=COALESCE(TRIM(TRAILING ',' FROM GuestCnt),'');
+		
+		
+		SET BookingChannel = COALESCE(FIELDVALUE(inRef.*:requestOriginator.*:originatorSystemFeatures.*:originatorName),'');
+		SET ReservationId = inRef.*:sailingGroup.*:sailingDescription.*:sailingId.*:cruiseVoyageNbr; -- reservation ID not present in this request.So, passing voyageID
+		
+		SET rEnv.Temp.PCC.AGENCY_ID='';
+		IF BookingChannel IN ('NCLWEBC','NCLWEBA','NCLPRICE') THEN
+			SET rEnv.Temp.PCC.AGENCY_ID=FIELDVALUE(inRef.*:requestOriginator.*:originatorDetail.*:agentOfficeId);
+		ELSE
+			SET rEnv.Temp.PCSQL = 'select AGENCY_ID from agency_external where pseudo_city_code = '''||COALESCE(FIELDVALUE(inRef.*:requestOriginator.*:originatorDetail.*:agentOfficeId),'')||'''';
+			SET rEnv.Temp.PCC = PASSTHRU(FIELDVALUE(rEnv.Temp.PCSQL));
+		END IF;		
+		
+		SET Requestor = FIELDVALUE(rEnv.Temp.PCC.AGENCY_ID);
+		
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,ReservationId,ClientId,'',rEnv);
+		IF (LogPayLoad) THEN			
+			DECLARE bPayload BLOB InputRoot.BLOB.BLOB; --ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Category Avail Request', 'xml', rEnv);
+		END IF;
+		
+		DECLARE RECORD_ID,TRANS_ID,CHANNEL_NAM,AGENCY_NBR,AGENCY_PCC_CD,REQUEST_LOCATOR_CD,COUNTRY_CD,CURRENCY_CD,GUEST_COUNT_QTY,AGE_YR_QTY,
+				SHIP_CD,PACKAGE_ID,SAILING_DURATION_DAY_QTY,MODE_TRANSPORT_CD,IS_BUNDLE_PRICE_CD,
+				GATEWAY_CITY_CD,FARE_CODES_TXT,LATITUDE_IDS_TXT,IS_PACKAGE_INCLUDED_CD,INCLUDED_PKG_CD,  SQLStmt CHAR;
+		DECLARE START_DAT DATE;
+		DECLARE CREATE_TS TIMESTAMP;		
+				
+			
+	--	SET RECORD_ID = SUBSTRING(CAST(CURRENT_TIMESTAMP AS CHAR FORMAT 'yyyyMMddHHmmSS') FROM 5)||CAST(CAST(RAND(3)*100 AS INTEGER) AS CHAR);
+		SET TRANS_ID = COALESCE(inRef.*:SessionId,cLocalTranId);
+		SET CHANNEL_NAM = COALESCE(inRef.*:requestOriginator.*:originatorSystemFeatures.*:originatorName,'');
+		SET AGENCY_NBR = COALESCE(FIELDVALUE(rEnv.Temp.PCC.AGENCY_ID),'');
+		SET AGENCY_PCC_CD = COALESCE(inRef.*:requestOriginator.*:originatorDetail.*:agentOfficeId,'');
+		SET REQUEST_LOCATOR_CD = COALESCE(inRef.*:requestOriginator.*:requestOrigin.*:requestLocation,'');
+		SET COUNTRY_CD = COALESCE(inRef.*:requestOriginator.*:originatorInfo.*:isoCountryCode,'');
+		SET CURRENCY_CD = COALESCE(inRef.*:sailingGroup.*:currencyInfo.*:currencyList.*:currencyIsoCode,'');
+		SET GUEST_COUNT_QTY = COALESCE(GuestCnt,'');
+		SET AGE_YR_QTY = COALESCE(Age,'');
+		SET SHIP_CD = COALESCE(inRef.*:sailingGroup.*:sailingDescription.*:providerDetails.*:shipCode,'');
+		SET PACKAGE_ID = COALESCE(inRef.*:sailingGroup.*:sailingDescription.*:sailingId.*:cruiseVoyageNbr,'');
+	--	SET START_DAT = 'TO_DATE('''||COALESCE(CAST(CAST(COALESCE(inRef.*:sailingGroup.*:sailingDescription.*:sailingDateTime.*:sailingDepartureDate,inRef.*:sailingGroup.*:sailingDescription.*:sailingDateTime.*:packageStartDate)  AS DATE FORMAT 'ddMMyyyy') AS CHAR FORMAT 'yyyy/MM/dd'),'')||''',''YYYY/MM/DD'')';		
+		SET START_DAT = CAST(COALESCE(inRef.*:sailingGroup.*:sailingDescription.*:sailingDateTime.*:sailingDepartureDate,inRef.*:sailingGroup.*:sailingDescription.*:sailingDateTime.*:packageStartDate)  AS DATE FORMAT 'ddMMyyyy');
+		SET SAILING_DURATION_DAY_QTY = COALESCE(inRef.*:sailingGroup.*:sailingDescription.*:sailingDateTime.*:packageDuration,inRef.*:sailingGroup.*:sailingDescription.*:sailingDateTime.*:sailingDuration,'');
+		SET MODE_TRANSPORT_CD = COALESCE(FIELDVALUE(inRef.*:sailingGroup.*:modeOfTransportation.*:transportationInfo.*:modeOfTransport),'C');
+		SET IS_BUNDLE_PRICE_CD = COALESCE(inRef.*:sailingGroup.*:modeOfTransportation.(XMLNSC.Attribute)bundlePrice,'');
+		SET GATEWAY_CITY_CD = COALESCE(inRef.*:sailingGroup.*:modeOfTransportation.*:transportationInfo.*:motCity,'');
+		SET FARE_CODES_TXT = COALESCE(FareCodes,'');
+		SET LATITUDE_IDS_TXT = COALESCE(ClientId,'');
+		SET IS_PACKAGE_INCLUDED_CD = COALESCE(inRef.*:sailingGroup.*:packageDescription.*:packageType,'');
+		SET INCLUDED_PKG_CD = COALESCE(inRef.*:sailingGroup.*:packageDescription.*:packageDetails.*:packageCode,'');
+	--	SET CREATE_TS = 'TO_TIMESTAMP ('''||CAST(CAST(InputRoot.Properties.CreationTime AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss.SSS') AS CHAR FORMAT 'dd-MMM-yy hh.mm.ss.SSSSSS a')||''', ''DD-MON-RR HH.MI.SSXFF AM'')';
+		--	TO_TIMESTAMP ('28-Nov-18 10.57.19.740000 PM', 'DD-MON-RR HH.MI.SSXFF AM')		
+		SET CREATE_TS = CAST(InputRoot.Properties.CreationTime AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss.SSS');
+		
+		
+	/*	SET SQLStmt = 'INSERT INTO NCLSEA.NCL_CAT_AVAIL_REV_DATA_TBL (TRANS_ID,CHANNEL_NAM,AGENCY_NBR,AGENCY_PCC_CD,REQUEST_LOCATOR_CD,COUNTRY_CD,
+		CURRENCY_CD,GUEST_COUNT_QTY, AGE_YR_QTY,SHIP_CD,PACKAGE_ID,START_DAT,SAILING_DURATION_DAY_QTY,MODE_TRANSPORT_CD,IS_BUNDLE_PRICE_CD,
+		GATEWAY_CITY_CD,FARE_CODES_TXT,LATITUDE_IDS_TXT,IS_PACKAGE_INCLUDED_CD,INCLUDED_PKG_CD,CREATE_TS)
+		VALUES ('''||TRANS_ID||''','''||CHANNEL_NAM||''','''||AGENCY_NBR||''','''||AGENCY_PCC_CD||''','''||REQUEST_LOCATOR_CD||''','''||COUNTRY_CD||''','''||CURRENCY_CD||''','''||GUEST_COUNT_QTY||''','''||AGE_YR_QTY
+		||''','''||SHIP_CD||''','''||PACKAGE_ID||''','||START_DAT||','''||SAILING_DURATION_DAY_QTY||''','''||MODE_TRANSPORT_CD||''','''||IS_BUNDLE_PRICE_CD||''','''||GATEWAY_CITY_CD||''','''||FARE_CODES_TXT
+		||''','''||LATITUDE_IDS_TXT||''','''||IS_PACKAGE_INCLUDED_CD||''','''||INCLUDED_PKG_CD||''','||CREATE_TS||')'; */
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Executing the Insert into NCLSEA.NCL_CAT_AVAIL_REV_DATA_TBL', rEnv);
+	--	SET rEnv.Temp.SQLStmt = SQLStmt;
+	
+		PASSTHRU('INSERT INTO NCLSEA.NCL_CAT_AVAIL_REV_DATA_TBL (TRANS_ID,CHANNEL_NAM,AGENCY_NBR,AGENCY_PCC_CD,REQUEST_LOCATOR_CD,COUNTRY_CD,
+		CURRENCY_CD,GUEST_COUNT_QTY, AGE_YR_QTY,SHIP_CD,PACKAGE_ID,START_DAT,SAILING_DURATION_DAY_QTY,MODE_TRANSPORT_CD,IS_BUNDLE_PRICE_CD,
+		GATEWAY_CITY_CD,FARE_CODES_TXT,LATITUDE_IDS_TXT,IS_PACKAGE_INCLUDED_CD,INCLUDED_PKG_CD,CREATE_TS)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', TRANS_ID,CHANNEL_NAM,AGENCY_NBR,AGENCY_PCC_CD,REQUEST_LOCATOR_CD
+		,COUNTRY_CD,CURRENCY_CD,GUEST_COUNT_QTY,AGE_YR_QTY
+		,SHIP_CD,PACKAGE_ID,START_DAT,SAILING_DURATION_DAY_QTY,MODE_TRANSPORT_CD,IS_BUNDLE_PRICE_CD
+		,GATEWAY_CITY_CD,FARE_CODES_TXT,LATITUDE_IDS_TXT,IS_PACKAGE_INCLUDED_CD,INCLUDED_PKG_CD,CREATE_TS);
+		
+	
+--		PASSTHRU(SQLStmt);
+		
+		SET rEnv.Temp.SQLCode = SQLCODE;
+		SET rEnv.Temp.SQLState = SQLSTATE;
+		SET rEnv.Temp.SQLNATIVEERROR = SQLNATIVEERROR;
+		SET rEnv.Temp.SQLERRORTEXT = SQLERRORTEXT;
+		IF SQLCODE<>0 THEN
+			CREATE LASTCHILD OF rEnv NAME 'ErrorSummary';
+			DECLARE rEnvError REFERENCE TO rEnv.ErrorSummary;
+			
+			SET rEnvError.LabelName = NodeLabel;
+			SET rEnvError.ExceptionType = 'SQL Exception';
+	    	SET rEnvError.ErrorCode = SQLCODE;
+			SET rEnvError.ErrorText	= 'SQL Error Text: '||SQLERRORTEXT||' SQL Native Error: '||CAST(SQLNATIVEERROR AS CHAR)||' SQL State: '||CAST(SQLSTATE AS CHAR);
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'SQL Error while inserting record', rEnv);	
+		END IF;	
+		
+		SET rEnv.Temp=NULL;
+		SET OutputRoot=NULL;
+		PROPAGATE TO TERMINAL 'out1';	
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_StoreCategoryAvailInfo
+ * MODULE NAME       :     NCL_StoreCategoryAvailInfo_Exception
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_StoreCategoryAvailInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB InputRoot.BLOB.BLOB;--ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CALL CopyMessageHeaders();
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+				--creating IIB Log Event
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Category Avail Request', 'xml', rEnv);
+			END IF;	
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);	
+		END IF;
+				
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_StoreCategoryAvailInfo
+ * MODULE NAME       :     NCL_StoreCategoryAvailInfo_CatchException
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_StoreCategoryAvailInfo_CatchException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET OutputRoot = InputRoot;
+			SET OutputExceptionList = InputExceptionList;
+			IF InputExceptionList.RecoverableException.Type='ComIbmMQGetNode' OR 
+				InputExceptionList.RecoverableException.RecoverableException.Type='ComIbmMQGetNode' THEN
+				SET Environment.ForcedExit=TRUE;
+			END IF;	
+			RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_StoreCategoryAvailInfo
+ * MODULE NAME       :     NCL_CategoryAvailInfo_ControlProcess
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CategoryAvailInfo_ControlProcess
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET OutputRoot=InputRoot;			
+			SET Environment.Batch=0;
+			PROPAGATE TO TERMINAL 'out2';
+			
+		--	DECLARE StartTime CHAR CAST(InputRoot.Properties.CreationTime + LOCAL_TIMEZONE AS CHAR FORMAT 'yyyy-MM-dd HH:mm:ss.SSSSSS');--CAST(CURRENT_TIMESTAMP AS CHAR);
+			SET Environment.StartTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+			SET Environment.CurrTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+			DECLARE BatchInterval INTERVAL CAST(BatchIntervalStr AS INTERVAL SECOND);
+		--	SET Environment.Batch=2;
+			SET Environment.ForcedExit=FALSE;
+			WHILE (NOT(Environment.ForcedExit)) AND (Environment.Batch < BatchSize) AND (( CAST(Environment.CurrTime AS TIMESTAMP) - CAST(Environment.StartTime AS TIMESTAMP)) SECOND < BatchInterval) DO
+
+				PROPAGATE TO TERMINAL 'out1';
+			END WHILE;	
+			RETURN TRUE;
+			
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_StoreCategoryAvailInfo
+ * MODULE NAME       :     NCL_StoreCategoryAvailInfo_CatchException
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_StoreCategoryAvailInfo_NoMsg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET Environment.CurrTime = CAST(CURRENT_TIMESTAMP AS CHAR);
+			RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_StoreCategoryAvailInfo
+ * MODULE NAME       :     NCL_StoreCategoryAvailInfo_CatchMQErrors
+ * Description       :     This module handles exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/15/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_StoreCategoryAvailInfo_CatchMQErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			SET OutputRoot = InputRoot;
+			SET OutputExceptionList = InputExceptionList;
+			SET Environment.ForcedExit=TRUE;
+			RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;

@@ -1,0 +1,2762 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:complexType name="GroupShell">
+		<xs:annotation>
+			<xs:documentation>Describes all information about the Group</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="GroupHeader" type="GroupHeader" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Delegates" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Delegate" type="ResShell" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ShipRequests" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ShipRequest" type="GroupShipRequest" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="InventoryItem" type="GroupShipAlloc" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="HotelRequests" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="HotelRequest" type="GroupHotelRequest" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="InventoryItem" type="GroupHotelAlloc" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="LandPackages" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="LandPackage" type="GroupLandPackage" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DiningRequests" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="DiningRequest" type="GroupDiningRequest" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="InventoryItem" type="GroupDiningAlloc" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="CarDeckRequests" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="CarDeckRequest" type="GroupCarDeckRequest" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="InventoryItem" type="GroupCarDeckAlloc" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ShipRoomRequests" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ShipRoomRequest" type="GroupShipRoomRequest" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="InventoryItem" type="GroupShipRoomAlloc" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Amenities" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Amenity" type="GroupAmenity" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AmenityPrices" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AmenityPrice" type="GroupAmenityPrice" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Charges" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Action" type="ResChargeableAction" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Invoice" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Contains Group level information only. Only items with IsManualAdj=Y can be added/updated/deleted.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="InvoiceItem" type="GroupInvoiceItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Commissions" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Only items with IsManualAdj=Y can be added/updated/deleted.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Commission" type="GroupCommissItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Transactions" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only. Contains external transactions.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Transaction" type="AccTransaction" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="PaymentSchedule" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Only items with IsAdjustment=Y can be added/updated/deleted.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="PayScheduleItem" type="GroupPaySchItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Promotions" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Promotion" type="GroupPromotion" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DynamicPackages" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="DynamicPackage" type="GroupDynamicPackages" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupHeader">
+		<xs:annotation>
+			<xs:documentation>Contains common data of the Group</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="GroupID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupName" type="GroupName" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupType" type="GroupType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Should be provided in UpdateGroup_IN when a new group is created </xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgencyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Refers to the Travel Agency record in Seaware database. The system determines Agency ID based on information provided in the Login message and then forces that value into all bookings created during this session. The only exception is for an 'Internal' login mode - applications using this mode must provide valid Agency ID as part of ResHeader elements.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgentID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Refers to the Travel Agent record in Seaware database. The system determines Agent ID based on information provided in the Login message and then forces that value into all bookings created during this session. The only exception is for an 'Internal' login mode - applications using this mode may provide valid Agency ID as part of ResHeader elements.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SecAgencyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SecAgentID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CompanyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CompanyAgentID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Currency of the Group. In current Seaware implementation currency is determined by the Travel Agency profile record in Seaware database and cannot be changed on individual Groups.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InitialDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Timestamp of creation of the Group</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupStatus" type="ResStatus" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AllowAutoProcessing" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="DistrFunds" type="Boolean" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ProcessFPR" type="Boolean" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="RefundClientMoney" type="Boolean" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="CancelDelegate" type="Boolean" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Language" type="LanguageCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupCoordinator" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="ClientID" type="RecordID">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Name" type="GrpCoordName">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SizeOverride" type="xs:positiveInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsContractRate" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsCharter" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Probability" type="xs:double" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ProbabilityAlloc" type="xs:double" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsProbabilityManual" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AllowUnbalance" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ProcessGTB" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DefaultInsurance" type="InsuranceType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ExpirationExtension" type="Count" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsPaySchManual" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsValid" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsUnbalanced" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Leaders" minOccurs="0" type="RecordIDList">
+				<xs:annotation>
+					<xs:documentation>List of Group Leaders's ClientIDs</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GuestCount" type="xs:nonNegativeInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ownership" type="OwnershipCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LastInvoice" type="ResInvoice" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Sail" type="SailRangeOptional" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only. Contains information from the group header.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SourceCode" type="SourceCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsOnTerms" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoiceTotals" type="InvoiceTotals" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!--Requests-->
+	<xs:complexType name="GroupShipRequest">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc. Must be set to update an existing request.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Sail" type="SailRange">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PackageID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BerthCategory" type="CabinCategoryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PriceCategory" type="CabinCategoryCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Occupancy" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ReserveType" type="CabinReserveType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MaxCabinOccupancy" type="Occupancy" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ChildOccupancy" type="Occupancy" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Gender" type="Gender" nillable="true" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AllotmentAgreementID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Specifies than allocation attempt should be done from the space reserved for allotment with specified agreement ID first. If there is no more inventory available for this allotment than space will be requested from common inventory.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupHotelRequest">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PackageID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Stay" type="DateRange">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="City" type="CityCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelCategory" type="HotelCategory">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelCode" type="HotelCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RoomCategory" type="HotelRoomCategory" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RoomType" type="HotelRoomType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestType" type="HotelReqType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Occupancy" type="Occupancy">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupLandPackage">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsShorex" type="Boolean">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PackageID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="VacationDates" type="DateTimeRange" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Occupancy" type="Occupancy">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupDiningRequest">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ship" type="ShipCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Restaurant" type="FacilityCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DiningKind" type="DiningKind">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Date" type="xs:date">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="StartTime" type="xs:time">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Duration" type="DurationMin" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Dining duration in minutes. If not set - defaults for
+						DiningKind are used.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PartySize" type="xs:positiveInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestMode" type="DiningReqMode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SittingCode" type="SittingCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AllowMultipleTables" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Attributes" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Requested attributes of the assigned dining table.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Attribute" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="AttrCode" type="DiningAttrCode"/>
+									<xs:element name="IsRequired" type="Boolean" default="N" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>IsRequired = 'Y' means that assigned table MUST HAVE this attribute, otherwise it is just NICE TO HAVE.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Menus" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Menu" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="MenuCode" type="MenuCode"/>
+									<xs:element name="Quantity" type="Quantity" minOccurs="0"/>
+									<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Notes" type="LongComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupCarDeckRequest">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc. Must be set to update an existing request.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="Quantity" default="1">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarMake" type="CarMake" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarModel" type="CarModel" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarYear" type="CarYear" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarOption" type="CarOption" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarPriceCategory" type="CarPriceCategory" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TrailerPriceCategory" type="CarPriceCategory" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LicensePlate" type="LicensePlate" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LicensePlateCountry" type="CountryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LicensePlateTrailer" type="LicensePlate" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LicensePlateTrailerCountry" type="CountryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarWidth" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarHeight" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarLength" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarClearance" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarWeight" type="CarWeight" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TrailerWidth" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TrailerHeight" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TrailerLength" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TrailerWeight" type="CarWeight" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SailLegs" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SailLeg" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="SeqN" type="SeqNumber" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+											<xs:documentation>Output only</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Sail" type="SailRange">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="EffectiveDate" type="xs:dateTime" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Normally populated by the system and contains timestamp when request was first added to the booking. Certain restrictions apply if external application tries to change this value.</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="AllotmentAgreementID" type="RecordID" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupShipRoomRequest">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ship" type="ShipCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FacilityType" type="FacilityType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LayoutCode" type="LayoutCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="StartDateTime" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Duration" type="DurationMin">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PartySize" type="xs:positiveInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ExtGuestCount" type="xs:positiveInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Notes" type="LongComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupDynamicPackages">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Name" type="DynPkgName">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Occupancy" type="Occupancy">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Components" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Ignored in input messages</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Component" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="SeqN" type="Count">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Source">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:choice>
+												<xs:element name="ShipReqSeqN" type="SeqNumber">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="LandPackageSeqN" type="SeqNumber">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="HotelReqSeqN" type="SeqNumber">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+											</xs:choice>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupAmenity">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Used for references from other components, invoice items, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EffectiveDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AddonCode" type="AddonCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="Quantity" default="1">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DateTimeRange" type="DateTimeRange" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsAuto" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PriceCode" type="AddonPriceCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PromoCode" type="PromotionCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DeliveryPlace" type="Code" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Addon Delivery Place Code (to specify a place where addon should be delivered). For example: CABIN, RESTAURANT, etc. Must be setup in SeaWare in advance.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LinkedRequests" type="GroupRequestLinkDescr" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+					<xs:documentation>Describes group components the amenity is linked to.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Notes" type="LongComment" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupAmenityPrice">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AddonCode" type="AddonCode"/>
+			<xs:element name="PriceCode" type="AddonPriceCode"/>
+			<xs:element name="Prices">
+				<xs:complexType>
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:sequence>
+						<xs:element name="Price" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Type" type="InvoiceItemType"/>
+									<xs:element name="SubType1" type="InvoiceItemSubType" minOccurs="0"/>
+									<xs:element name="SubType2" type="InvoiceItemSubType" minOccurs="0"/>
+									<xs:element name="SubType3" type="InvoiceItemSubType" minOccurs="0"/>
+									<xs:element name="Amount" type="Money"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!---->
+	<xs:complexType name="GroupInvoiceItem">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Source" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="ShipReqSeqN" type="SeqNumber">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="LandPackageSeqN" type="SeqNumber">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="HotelReqSeqN" type="SeqNumber">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ShipRoomReqSeqN" type="SeqNumber">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="DiningReqSeqN" type="SeqNumber">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="CarDeckRequest">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="CarDeckReqSeqN" type="SeqNumber">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="LegSeqN" type="SeqNumber">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="AmenitySeqN" type="SeqNumber">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Type" type="InvoiceItemType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SubType1" type="InvoiceItemSubType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SubType2" type="InvoiceItemSubType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SubType3" type="InvoiceItemSubType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupPrice" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TotalPrice" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="Count" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PromoCode" type="PromotionCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsManualAdj" type="Boolean" default="N" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - invoice item amount was manually adjusted.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CmsPercent" type="Percent" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Commission percent.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PriceArea" type="PriceArea" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PricePerUnit" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="10"/>
+						<xs:fractionDigits value="4"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="NofUnits" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="10"/>
+						<xs:fractionDigits value="3"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="TotalNofUnits" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:decimal">
+						<xs:totalDigits value="10"/>
+						<xs:fractionDigits value="3"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Percent" type="Percent" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupCommissItem">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Code" type="CommissionCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Type" type="CommissionCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SetupRef">
+				<xs:annotation>
+					<xs:documentation>Short reference to the setup, which was used to calculate this commission.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="50"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Amount" type="Money">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CmsFare" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Commissionable fare used for calculations.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CmsPercent" type="Percent" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoiceItemType" type="InvoiceItemType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Populated only if commission calculation was based on a single invoice item type.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PackageID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsManualAdj" type="Boolean" default="N">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - commission amount was manually adjusted.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoiceHdrID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Link to the invoice header</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ProductID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Link to the source product</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmountInHdrCurrency" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Amount in currency defined in the linked invoice header</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines ResID for delegates. </xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Source" type="SourceComponent" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines Source Component for delegates</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupPaySchItem">
+		<xs:all>
+			<xs:element name="DueType" type="DueType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DueDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:documentation>"Official" due date.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ExpirationDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Actual due date used by the system (may include a grace period). This element is populated only if session security settings permit that.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Amount" type="Money">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Activity">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Type" type="GroupActivityType" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Date" type="xs:dateTime" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="EffectiveDate" type="xs:dateTime" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Info" type="ShortComment" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="IsAdjustment" type="Boolean">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupPromotion">
+		<xs:all>
+			<xs:element name="DlgtRefs" type="GroupDelegateUsage" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SeqN" type="SeqNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used for references from other components, invoice items, etc. Must be set to update an existing request.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PromoCode" type="PromotionCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="Count">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LinkedRequests" type="GroupRequestLinkDescr" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Describes group components the promotion is linked to.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupDelegateUsage">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="UsageItem" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="ResID" type="RecordID">
+							<xs:annotation>
+								<xs:documentation>ResID of the Delegate</xs:documentation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Quantity" type="Count">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="GroupName">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="ShortComment"/>
+	</xs:simpleType>
+	<xs:simpleType name="GroupActivityType">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<!--Inventories-->
+	<xs:complexType name="GroupShipAlloc">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Result" type="InventoryResult">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Sail" type="SailRange">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BerthCategory" type="CabinCategoryCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PriceCategory" type="CabinCategoryCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Occupancy" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CabinChain" type="CabinChain" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Populated only if Result = 'OK'</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupHotelAlloc">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Result" type="InventoryResult">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Stay" type="DateRange">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="City" type="CityCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelCategory" type="HotelCategory">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelCode" type="HotelCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RoomCategory" type="HotelRoomCategory" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RoomType" type="HotelRoomType" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="HotelReqType"/>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Occupancy" type="Occupancy">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AssignedRoom" type="HotelRoomType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Populated only if Result = 'OK'</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelConfNumber" type="HotelConfNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Maybe populated only if Result = 'OK'</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupDiningAlloc">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Result" type="InventoryResult">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ship" type="ShipCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Restaurant" type="FacilityCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DiningKind" type="DiningKind">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Date" type="xs:date">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="StartTime" type="xs:time">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Duration" type="DurationMin">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PartySize" type="xs:positiveInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="WtlPartySize" type="xs:positiveInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestMode" type="DiningReqMode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Assignments" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used if Result = 'OK'</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AssignedTable" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="TableID" type="RecordID" minOccurs="0">
+										<xs:annotation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="SeatsTaken" type="Count" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Used only for RequestMode = 'SEAT'</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupCarDeckAlloc">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Result" type="InventoryResult">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="Quantity" default="1">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SailLeg" type="SailRange">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarWidth" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarHeight" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarLength" type="CarDimension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CarWeight" type="CarWeight" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupShipRoomAlloc">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Result" type="InventoryResult">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Quantity" type="Quantity" default="1">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ship" type="ShipCode">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FacilityType" type="FacilityType">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="StartDateTime" type="xs:dateTime">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Duration" type="DurationMin">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PartySize" type="xs:positiveInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="LayoutCode" type="LayoutCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AssignedRoom" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="FacilityCode" type="FacilityCode">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="RoomNumber" type="Count">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ResID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:simpleType name="GroupRequestLinkType">
+		<xs:annotation>
+			<xs:documentation>Used to define linked requests for amenities and promotions.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="NONE"/>
+			<xs:enumeration value="ANY"/>
+			<xs:enumeration value="AMENITY"/>
+			<xs:enumeration value="SHIP"/>
+			<xs:enumeration value="PACKAGE"/>
+			<xs:enumeration value="HOTEL"/>
+			<xs:enumeration value="CAR DECK"/>
+			<xs:enumeration value="SHIP DINING"/>
+			<xs:enumeration value="SHIP ROOM"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="GroupRequestLinkDescr">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Type" type="GroupRequestLinkType"/>
+			<xs:element name="RequestSeqN" type="SeqNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>To identify specific request.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Ship" type="ShipCode" minOccurs="0"/>
+			<xs:element name="CabinCategory" type="CabinCategoryCode" minOccurs="0"/>
+			<xs:element name="PackageType" type="PkgType" minOccurs="0"/>
+			<xs:element name="PackageID" type="RecordID" minOccurs="0"/>
+			<xs:element name="DepRefID" type="RecordID" minOccurs="0"/>
+			<xs:element name="ArrRefID" type="RecordID" minOccurs="0"/>
+			<xs:element name="PortFrom" type="PortCode" minOccurs="0"/>
+			<xs:element name="HotelCity" type="CityCode" minOccurs="0"/>
+			<xs:element name="HotelCategory" type="HotelCategory" minOccurs="0"/>
+			<xs:element name="HotelCode" type="HotelCode" minOccurs="0"/>
+			<xs:element name="FacilityType" type="FacilityType" minOccurs="0"/>
+			<xs:element name="FacilityCode" type="FacilityCode" minOccurs="0"/>
+			<xs:element name="AddonCode" type="AddonCode" minOccurs="0"/>
+			<xs:element name="Requests" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>List of all requests the record is linked to. Output only.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence minOccurs="1" maxOccurs="1">
+						<xs:choice minOccurs="0" maxOccurs="unbounded">
+							<xs:element name="ShipReqSeqN" type="SeqNumber"/>
+							<xs:element name="LandPackageSeqN" type="SeqNumber"/>
+							<xs:element name="HotelReqSeqN" type="SeqNumber"/>
+							<xs:element name="ShipRoomReqSeqN" type="SeqNumber"/>
+							<xs:element name="DiningReqSeqN" type="SeqNumber"/>
+							<xs:element name="CarDeckReqSeqN" type="SeqNumber"/>
+							<xs:element name="AmenitySeqN" type="SeqNumber"/>
+						</xs:choice>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

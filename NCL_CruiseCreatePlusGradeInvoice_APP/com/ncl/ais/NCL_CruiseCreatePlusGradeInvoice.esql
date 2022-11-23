@@ -1,0 +1,69 @@
+BROKER SCHEMA com.ncl.ais
+
+-- Declaring the UDPs and NameSpaces
+ DECLARE LogPayLoad 		EXTERNAL BOOLEAN FALSE;
+  
+CREATE COMPUTE MODULE NCL_CruiseCreatePlusGradeInvoice_GeSession
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut 	REFERENCE TO Environment.Variables;
+		DECLARE rIn 		REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreatePlusGradeInvoiceRQ;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET cLocalTranId 	= TRANSLATE(cLocalTranId, 'X''', '');
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Create PlusGrade Invoice Request', 'xml', rEnv);
+		END IF;	
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD 			= InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Format 	= MQFMT_STRING;
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseCreatePlusGradeInvoiceRQ = rIn;
+		
+		SET rEnv.TransactionID 		= FIELDVALUE(rIn.*:TransactionID);
+		SET rEnv.ReservationID 		= FIELDVALUE(rIn.*:ReservationID);
+		SET rEnv.BkingChnlCompCd 	= UPPER(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code));
+		SET rEnv.Amount 			= FIELDVALUE(rIn.*:PaymentAmount.(XMLNSC.Attribute)Amount);
+		
+		IF rIn.*:PaymentStatus 	= 'CC DECLINED' THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Declined message received', rEnv);
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+		ELSEIF rIn.*:PaymentStatus 	= 'CC QUEUE' THEN
+			-- query tx_status from database
+			SET rEnv.TxStatus 			= THE(SELECT ITEM tx.trans_status  FROM Database.acc_trans_Detail   AS tx WHERE tx.trans_id = rEnv.TransactionID);
+			
+			IF REPLACE(UPPER(rEnv.TxStatus),'')='CCQUEUE' THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Throwing back the request for retry - credit card transaction status is CC QUEUE', rEnv);
+				PROPAGATE TO TERMINAL 'out1';
+				THROW USER EXCEPTION MESSAGE 2951 VALUES('Throwing back the request for retry - credit card transaction status is CC QUEUE');
+			END IF;
+		END IF;
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling NCLSEA.NCL_PLUSGRADE_MANUAL_ADJ ...', rEnv);			
+		
+		DECLARE storedProcErr CHAR NULL;
+		
+		CALL NCL_PLUSGRADE_MANUAL_ADJ(CAST(TRIM(FIELDVALUE(rIn.*:ReservationID)) AS DECIMAL), CAST(TRIM(FIELDVALUE(rIn.*:PaymentAmount.(XMLNSC.Attribute)Amount)) AS DECIMAL),storedProcErr);
+		
+		IF COALESCE(NULLIF(storedProcErr,''),'')<>'' THEN 
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error calling stored procedure ''NCLSEA.NCL_PLUSGRADE_MANUAL_ADJ''  '||storedProcErr, rEnv);
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Call to stored procedure successful', rEnv);
+		END IF;		
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE PROCEDURE NCL_PLUSGRADE_MANUAL_ADJ(IN RES_ID DECIMAL, IN AMOUNT DECIMAL,OUT ERROR CHAR ) 
+	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_PLUSGRADE_MANUAL_ADJ";

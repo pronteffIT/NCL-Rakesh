@@ -1,0 +1,105 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVE_AMENITYORDERS_RESP';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER 3000;
+DECLARE CacheConfigService EXTERNAL CHARACTER '';
+DECLARE AgencyMap EXTERNAL CHARACTER '';
+
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_RetrieveAmenityOrders
+ * MODULE NAME       :     StoreRequest
+ * Description       :     This module retrieves Client details from Seaware database
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/10/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE StoreMessageAndVerifyAgency_StoreRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rInmsg, rEnvInMsg REFERENCE TO OutputLocalEnvironment;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveAmenityOrdersRQ;
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		-- Variables for Error Handler 
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		-- Check if the request has come from callable node or MQ
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[])
+		THEN
+			SET rEnv.callableReq = TRUE;
+			SET cLocalTranId = UUIDASCHAR;
+			SET rEnv.Temp.Endpoint = InputLocalEnvironment.CallableFlow.EndPoint ;
+	--		SET rEnv.sessionID = rIn.SessionId.SessionToken;
+			SET rEnv.agencyID = InputLocalEnvironment.CallableFlow.agencyID;
+		ELSE
+			SET rEnv.callableReq = FALSE;
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		END IF;		
+		
+		-- Add metadata to log event. 
+		CALL com.ncl.iib.log.CreateMetaData('ReservationID', CAST(rIn.*:ReservationID.(XMLNSC.Attribute)ID AS CHAR), 'Reservation ID', rEnv);
+				
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--add metadataset
+      CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												'',
+												'',
+											 	rEnv);
+		
+		--add payload
+		IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveAmenityOrders request message', 'xml', rEnv);
+		END IF;
+		-- Backup the MQMD details
+		SET Environment.MQMD = InputRoot.MQMD;
+		-- Set Message expiry to 1/10th of a second
+		SET Environment.MQMD.Expiry = MSG_EXPIRY;
+		SET Environment.MQMD.Format = MQFMT_STRING;		
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP	
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN				
+			SET Environment.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+			
+		/** Backup Input message in environment **/	
+		CREATE FIELD rEnv.InMsg AS rInmsg;		
+		
+		CREATE LASTCHILD OF rInmsg DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET rInmsg.XMLNSC = InputRoot.XMLNSC;
+		--CREATE LASTCHILD OF rInmsg.XMLNSC AS rEnvInMsg IDENTITY sc:NCL_CruiseRetrieveAmenityOrdersRQ;
+		--CALL com.ncl.ais.utils.CopyAttributes (rIn,rEnvInMsg);
+		
+		--SET rEnvInMsg = rIn;
+		IF EXISTS(rIn.*:SessionId.*:SessionToken[]) THEN
+			SET rEnv.sessionID = rIn.*:SessionId.*:SessionToken;
+			--PROPAGATE TO TERMINAL 'out1';
+			RETURN TRUE;
+		END IF;
+
+		-- audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Verifying agency ...', rEnv);
+		
+		DECLARE cRequestorId CHARACTER COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, '0');
+		DECLARE cPCC CHARACTER COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '');
+		DECLARE cSystemName CHARACTER COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'SABRE');
+		
+		CALL com.ncl.ais.utils.LookupAgencyInfo(cRequestorId, cPCC, cSystemName, AgencyMap, CacheConfigService, rEnv);
+		
+		RETURN TRUE;
+	END;
+END MODULE;

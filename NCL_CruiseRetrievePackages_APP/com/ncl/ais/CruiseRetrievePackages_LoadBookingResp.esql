@@ -1,0 +1,116 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE CruiseRetrievePackages_LoadBookingResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutResp,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE RefInReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrievePackagesRQ;
+		
+		IF (LogPayLoad) THEN
+				-- Add response msg to log event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'LoadBooking Response', 'xml', rEnv);
+		END IF;
+		
+		IF EXISTS(rIn.Errors.Error[] ) THEN
+			-- Error Recieved from LoadBooking
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Load booking returned errors ...', rEnv);
+			
+			DECLARE cErrorCode CHARACTER rIn.Errors.Error.ErrorCode;
+			DECLARE cExternalCodeInfo CHARACTER '';
+			
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(rEnv.BkingChnlCompCd || '#' || ExternalCodeType, cErrorCode, XC10CacheMap, XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = rEnv.BkingChnlCompCd;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+				
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS  rOut NAMESPACE ns NAME 'NCL_CruiseRetrievePackagesRS';
+					-- This Proc creates/copy the attributes for Root Element
+				CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOut);	
+															
+				CALL CreateResponseFromAdvisoryCode('', rEnv.BkingChnlCompCd, cErrorCode, ExternalCodeType, rIn, rOut);
+			ELSE
+				-- create response message
+				SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS  rOut NAMESPACE ns NAME 'NCL_CruiseRetrievePackagesRS';
+				
+					-- This Proc creates/copy the attributes for Root Element
+				CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOut);
+				
+				CALL CreateResponseFromAdvisoryCode(cExternalCodeInfo, rEnv.BkingChnlCompCd, cErrorCode, ExternalCodeType,rIn, rOut);
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			-- Success Recieved from LoadBooking	
+			CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'LoadBkingResp';
+			SET rEnv.Temp.LoadBkingResp = InputRoot.XMLNSC.LoadBooking_OUT;
+			IF com.ncl.ais.utils.IsEmpty(RefInReq.*:RetrieveAmenities[]) OR RefInReq.*:RetrieveAmenities = 'true' THEN
+				
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut NAMESPACE ns NAME 'NCL_CruiseRetrieveAmenityOrdersRQ' ;
+				CALL com.ncl.ais.utils.CopyAttributes (RefInReq,rOut);
+				SET rOut.ns:POS = RefInReq.*:POS;
+				SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = rIn.ResShell.ResHeader.ResID;
+				
+				IF EXISTS(rEnv.SessionGUID[]) THEN				
+					SET rOut.SessionId.SessionToken = rEnv.SessionGUID;
+					SET OutputLocalEnvironment.CallableFlow.EndPoint = rEnv.Temp.Endpoint;
+					SET OutputLocalEnvironment.CallableFlow.agencyID = rEnv.agencyID;
+				END IF; 
+					
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking RetriveAminityOrders service ...', rEnv);
+				-- Invoke RetriveAminityOrders	
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+			END IF;		
+		
+		RETURN TRUE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+	
+
+/** Common procedures for this service **/
+CREATE PROCEDURE CreateResponseFromAdvisoryCode(IN cExternalCodeInfo CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+												 IN rLoadBook REFERENCE, INOUT rOut REFERENCE) 
+BEGIN
+	DECLARE cAdvCode, cErrorMsg, cExternalCode CHARACTER ;
+	
+	SET cExternalCode = cExternalCodeInfo;
+	
+	IF com.ncl.ais.utils.IsEmpty(cExternalCode) THEN		
+		
+			SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+	END IF;
+
+	SET cErrorMsg = COALESCE(rLoadBook.Errors.Error.ErrorMessage , 'System error from backend. Try Later');
+
+	IF NOT com.ncl.ais.utils.IsEmpty(cExternalCode) THEN
+		SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+		SET cErrorMsg = SUBSTRING(SUBSTRING(cExternalCode AFTER '#1#') BEFORE '#2#');
+	END IF;
+	
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = COALESCE(cAdvCode,'12228');
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(cErrorMsg FROM 1 FOR 64);
+	
+	IF rLoadBook.Errors.Error.ErrorSeverity IN('W', 'I') THEN
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+	ELSE
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	
+	SET rOut.ns:Warnings.ns:Warning = FIELDVALUE(rLoadBook.Errors.Error.ErrorMessage);
+END;
+END MODULE;

@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" targetNamespace="http://versonix.com/api/definitions" xmlns:sch="http://versonix.com/api/schemas" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://versonix.com/api/definitions">
+  <wsdl:documentation>
+    <wsdl:appinfo source="WMQI_APPINFO">
+      <MRWSDLAppInfo imported="true">
+        <generatedXSD location="swApiWsdl_InlineSchema1.xsd"/>
+        <binding hasEncoding="false" imported="true" name="SwApiSoap11" originalBindingStyle="document"/>
+      </MRWSDLAppInfo>
+    </wsdl:appinfo>
+  </wsdl:documentation>
+  <wsdl:types>
+    
+          <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://versonix.com/api/schemas" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions" xmlns:vx="http://versonix.com/api/schemas">
+<xsd:include schemaLocation="swApiWsdl_InlineSchema1.xsd"/>
+    </xsd:schema>
+    </wsdl:types>
+  <wsdl:message name="processAmadeusRequest">
+    <wsdl:part element="sch:processAmadeusRequest" name="processAmadeusRequest"/>
+  </wsdl:message>
+  <wsdl:message name="processBookPackagesRequest">
+    <wsdl:part element="sch:processBookPackagesRequest" name="processBookPackagesRequest"/>
+  </wsdl:message>
+  <wsdl:message name="processEncryptDecryptResponse">
+    <wsdl:part element="sch:processEncryptDecryptResponse" name="processEncryptDecryptResponse"/>
+  </wsdl:message>
+  <wsdl:message name="processBookPackagesResponse">
+    <wsdl:part element="sch:processBookPackagesResponse" name="processBookPackagesResponse"/>
+  </wsdl:message>
+  <wsdl:message name="processPaymentResponse">
+    <wsdl:part element="sch:processPaymentResponse" name="processPaymentResponse"/>
+  </wsdl:message>
+  <wsdl:message name="processXmlApiResponse">
+    <wsdl:part element="sch:processXmlApiResponse" name="processXmlApiResponse"/>
+  </wsdl:message>
+  <wsdl:message name="processEncryptDecryptRequest">
+    <wsdl:part element="sch:processEncryptDecryptRequest" name="processEncryptDecryptRequest"/>
+  </wsdl:message>
+  <wsdl:message name="processAmadeusResponse">
+    <wsdl:part element="sch:processAmadeusResponse" name="processAmadeusResponse"/>
+  </wsdl:message>
+  <wsdl:message name="processXmlApiRequest">
+    <wsdl:part element="sch:processXmlApiRequest" name="processXmlApiRequest"/>
+  </wsdl:message>
+  <wsdl:message name="processPaymentRequest">
+    <wsdl:part element="sch:processPaymentRequest" name="processPaymentRequest"/>
+  </wsdl:message>
+  <wsdl:portType name="SwApi">
+    <wsdl:operation name="processAmadeus">
+      <wsdl:input message="tns:processAmadeusRequest" name="processAmadeusRequest"/>
+      <wsdl:output message="tns:processAmadeusResponse" name="processAmadeusResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="processPayment">
+      <wsdl:input message="tns:processPaymentRequest" name="processPaymentRequest"/>
+      <wsdl:output message="tns:processPaymentResponse" name="processPaymentResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="processEncryptDecrypt">
+      <wsdl:input message="tns:processEncryptDecryptRequest" name="processEncryptDecryptRequest"/>
+      <wsdl:output message="tns:processEncryptDecryptResponse" name="processEncryptDecryptResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="processBookPackages">
+      <wsdl:input message="tns:processBookPackagesRequest" name="processBookPackagesRequest"/>
+      <wsdl:output message="tns:processBookPackagesResponse" name="processBookPackagesResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="processXmlApi">
+      <wsdl:input message="tns:processXmlApiRequest" name="processXmlApiRequest"/>
+      <wsdl:output message="tns:processXmlApiResponse" name="processXmlApiResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="SwApiSoap11" type="tns:SwApi">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="processAmadeus">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="processAmadeusRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="processAmadeusResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="processPayment">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="processPaymentRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="processPaymentResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="processEncryptDecrypt">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="processEncryptDecryptRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="processEncryptDecryptResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="processBookPackages">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="processBookPackagesRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="processBookPackagesResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="processXmlApi">
+      <soap:operation soapAction=""/>
+      <wsdl:input name="processXmlApiRequest">
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output name="processXmlApiResponse">
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="SwApiService">
+    <wsdl:port binding="tns:SwApiSoap11" name="SwApiSoap11">
+      <soap:address location="http://167.118.103.171:20080/xmlapi-ws/processor/swApiService/service"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

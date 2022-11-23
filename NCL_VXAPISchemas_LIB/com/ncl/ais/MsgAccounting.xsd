@@ -1,0 +1,1709 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xhtml="http://www.w3.org/1999/xhtml" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:include schemaLocation="Agency.xsd"/>
+	<xs:include schemaLocation="Client.xsd"/>
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:include schemaLocation="GroupShell.xsd"/>
+	<xs:group name="CreditCardInfoOrRefNum">
+		<xs:choice>
+			<xs:element name="CCData" type="CreditCard" minOccurs="0"/>
+			<xs:element name="CCTransID" type="RecordID" minOccurs="0"/>
+		</xs:choice>
+	</xs:group>
+	<xs:simpleType name="TcType">
+		<xs:annotation>
+			<xs:documentation>User defineable tour credit type</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="15"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="TcCalcType">
+		<xs:annotation>
+			<xs:documentation>Tour Credit Header type</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="15"/>
+			<xs:enumeration value="COLLECTIONS"/>
+			<xs:enumeration value="FITS"/>
+			<xs:enumeration value="GROUP"/>
+			<xs:enumeration value="SAIL"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="TCDistrType">
+		<xs:annotation>
+			<xs:documentation>Tour Credit Distribution type</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="TRANSACTION"/>
+			<xs:enumeration value="COMMISSION"/>
+			<xs:enumeration value="DISCOUNT"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="TCShell">
+		<xs:annotation>
+			<xs:documentation>Tour Credit shell</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="TCHeader" type="TCHeader"/>
+			<xs:element name="CalcDetails" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="CalcDetail" type="TCCalcDetail" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Distributions" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Distribution" type="TCDistrDetail" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="TCHeader">
+		<xs:annotation>
+			<xs:documentation>Tour Credit Header</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="TCID" type="RecordID"/>
+			<xs:element name="TCType" type="TcType"/>
+			<xs:element name="CalcType" type="TcCalcType"/>
+			<xs:choice>
+				<xs:sequence>
+					<xs:annotation>
+						<xs:documentation>for Header Type = FITS or SAIL</xs:documentation>
+					</xs:annotation>
+					<xs:element name="AgencyID" type="RecordID"/>
+					<xs:element name="Sail" type="SailRange"/>
+					<xs:element name="CollectionID" type="RecordID" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Used in 040808 only</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="GroupID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>for Header Type = GROUP</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="IsValid" type="Boolean" minOccurs="0"/>
+			<xs:element name="Currency" type="CurrencyCode"/>
+			<xs:element name="QtyEarned" type="xs:double"/>
+			<xs:element name="QtyQualified" type="xs:double"/>
+			<xs:element name="QtyTC" type="xs:double"/>
+			<xs:element name="TCPrice" type="Money"/>
+			<xs:element name="TCPolicy" type="xs:nonNegativeInteger">
+				<xs:annotation>
+					<xs:documentation>Calculated value of TC policy</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TCPolicyOvr" type="xs:nonNegativeInteger" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used in 040808 only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CabinCategory" type="CabinCategoryCode" minOccurs="0"/>
+			<xs:element name="EarnedCabinCategory" type="CabinCategoryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used in 040808 only for NCL</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CalcAsFlatAmount" type="Boolean"/>
+			<xs:element name="CalcAmount" type="Money"/>
+			<xs:element name="AdjAmount" type="Money"/>
+			<xs:element name="DistrAmount" type="Money"/>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TCCalcDetail">
+		<xs:annotation>
+			<xs:documentation>Tour Credit calculation detaiul</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:choice>
+				<xs:element name="GroupID" type="RecordID"/>
+				<xs:element name="ResID" type="RecordID"/>
+			</xs:choice>
+			<xs:element name="QtyQualified" type="xs:double"/>
+			<xs:element name="QtyTC" type="xs:double"/>
+			<xs:element name="SumEarned" type="Money"/>
+			<xs:element name="CabinCategory" type="CabinCategoryCode"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TCDistrDetail">
+		<xs:annotation>
+			<xs:documentation>Tour Credit Distribution item</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:choice>
+				<xs:element name="GroupID" type="RecordID"/>
+				<xs:element name="ResID" type="RecordID"/>
+				<xs:element name="AgencyID" type="RecordID"/>
+				<xs:element name="AgencyBankID" type="RecordID"/>
+				<xs:element name="AmenityID" type="RecordID"/>
+			</xs:choice>
+			<xs:element name="DistrType" type="TCDistrType"/>
+			<xs:element name="ReqAmount" type="Money">
+				<xs:annotation>
+					<xs:documentation>Requested amount</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ApplAmount" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Applied amount (output only)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GuestID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Provided for distribution as discount or commission</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CommissCode" type="CommissionCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Provided for distribution as commission</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TransType" type="Code" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Provided for distribution as transaction</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TransID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Refers to generated Transaction for the corresponding distribution type (output only)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="User" type="Username" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Creator of the record. Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Timestamp" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Timestamp when the record was created. Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AccBatchHeader">
+		<xs:all>
+			<xs:element name="BatchID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IsActive" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Changing form Y to N causes posting the batch if possible</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OpenAt" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ClosedAt" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FormOfTrans" type="FormOfTrans" minOccurs="0"/>
+			<xs:element name="BatchAmount" type="Money" minOccurs="0"/>
+			<xs:element name="TransAmount" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Transactions amounts total (output only)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Currency" type="CurrencyCode" minOccurs="0"/>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+			<xs:element name="User" type="Username" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SourceCode" type="SourceCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Output only</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!--=============================================== Accounting Support-->
+	<xs:element name="ManageAccTrans_IN">
+		<xs:annotation>
+			<xs:documentation>Create/accept/void transactions</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>CC processing parameters</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="StatusPollQty" type="xs:nonNegativeInteger">
+								<xs:annotation>
+									<xs:documentation>0 means no waiting</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="StatusPollFreq" type="xs:nonNegativeInteger" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Interval in seconds between pollings</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Create" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Payments" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Amount" type="Money" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Total Amount of all payments</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Payment" maxOccurs="unbounded">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="SrcEntity" type="AccSourcePmntEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="DestEntity" type="AccDestPmntEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Amount" type="Money">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="FormOfTrans" type="FormOfTrans">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="TransType" type="Code" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="TransFormInfo" type="TransFormInfo" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="PurchaseInsurance" type="Boolean" minOccurs="0">
+														<xs:annotation>
+															<xs:documentation>Y indicates that when the payment is being processed, the payment amount includes purchasing Insurance. </xs:documentation>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="ExternalIdent" type="ExternalIdent" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="CCMerchant" type="CCMerchant" minOccurs="0">
+														<xs:annotation>
+															<xs:documentation>Merchant who creates the CC transaction</xs:documentation>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Comments" type="ShortComment" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Refunds" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Amount" type="Money" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Total Amount of all refunds</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Refund" maxOccurs="unbounded">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="SrcEntity" type="AccDestPmntEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="DestEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:choice>
+																<xs:element name="ClientID" type="RecordID">
+																	<xs:annotation>
+																		<xs:appinfo source="Versonix">
+																			<XMLBridge>Implemented</XMLBridge>
+																		</xs:appinfo>
+																	</xs:annotation>
+																</xs:element>
+																<xs:element name="AgencyID" type="RecordID">
+																	<xs:annotation>
+																		<xs:appinfo source="Versonix">
+																			<XMLBridge>Implemented</XMLBridge>
+																		</xs:appinfo>
+																	</xs:annotation>
+																</xs:element>
+																<xs:element name="GLRefID" type="RecordID">
+																	<xs:annotation>
+																		<xs:appinfo source="Versonix">
+																			<XMLBridge>Implemented</XMLBridge>
+																		</xs:appinfo>
+																	</xs:annotation>
+																</xs:element>
+															</xs:choice>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="TransID" type="RecordID"/>
+													<xs:element name="Amount" type="Money">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="FormOfTrans" type="FormOfTrans">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="TransType" type="Code" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="TransFormInfo" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:group ref="CreditCardInfoOrRefNum"/>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="ExternalIdent" type="ExternalIdent" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Comments" type="ShortComment" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Transfers" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Amount" type="Money" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Total Amount of all transfers</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If provided, shoul be the same as source booking's currency</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Transfer" maxOccurs="unbounded">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="SrcEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:choice>
+																<xs:element name="ResID" type="RecordID"/>
+																<xs:element name="GroupID" type="RecordID"/>
+																<xs:element name="CollectionID" type="RecordID"/>
+															</xs:choice>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="DestEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:choice>
+																<xs:element name="ResID" type="RecordID"/>
+																<xs:element name="GroupID" type="RecordID"/>
+															</xs:choice>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="TransID" type="RecordID"/>
+													<xs:element name="Amount" type="Money">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="TransType" type="Code" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Comments" type="ShortComment" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="TermsPayments" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Amount" type="Money" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Total Amount of all terms</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If provided, shoul be the same as booking's currency</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="TermsPayment" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:choice>
+														<xs:element name="ResID" type="RecordID"/>
+														<xs:element name="GroupID" type="RecordID"/>
+													</xs:choice>
+													<xs:element name="Amount" type="Money" minOccurs="0">
+														<xs:annotation>
+															<xs:documentation>Provided for manual terms only</xs:documentation>
+														</xs:annotation>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Accept" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Transaction" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:choice>
+											<xs:element name="TransID" type="RecordID">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="CCTransID" type="RecordID">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="Amount" type="Money">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>ToBeImplemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+										</xs:choice>
+										<xs:element name="CCServerResponse" type="LongComment" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ExternalIdent" type="ExternalIdent" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="OrigStatus" type="TransStatus" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If provided, transaction status before processing should be equal to provided value</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="CCMerchant" type="CCMerchant" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Merchant who creates the CC transaction</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Comments" type="ShortComment" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Decline" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Transaction" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:choice>
+											<xs:element name="TransID" type="RecordID">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="CCTransID" type="RecordID">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:sequence>
+												<xs:element name="RefNumber" type="RefNumber">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="Amount" type="Money">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+											</xs:sequence>
+										</xs:choice>
+										<xs:element name="CCServerResponse" type="LongComment" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ExternalIdent" type="ExternalIdent" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="OrigStatus" type="TransStatus" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If provided, transaction status before processing should be equal to provided value</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Comments" type="ShortComment" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Void" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Transaction" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:choice>
+											<xs:element name="TransID" type="RecordID">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:sequence>
+												<xs:element name="RefNumber" type="RefNumber">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="Amount" type="Money">
+													<xs:annotation>
+														<xs:appinfo source="Versonix">
+															<XMLBridge>ToBeImplemented</XMLBridge>
+														</xs:appinfo>
+													</xs:annotation>
+												</xs:element>
+											</xs:sequence>
+										</xs:choice>
+										<xs:element name="OrigStatus" type="TransStatus" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If provided, transaction status before processing should be equal to provided value</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Comments" type="ShortComment" minOccurs="0">
+											<xs:annotation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageAccTrans_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ManageAccTrans_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Transactions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Transaction" type="AccTransaction" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="DistrAccTrans_IN">
+		<xs:annotation>
+			<xs:documentation>Re-distribute acc.transaction between shorex packages</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TransID" type="RecordID"/>
+				<xs:element name="ShorexDistr" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Only provided records will be updated</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="ShorexDistrRec" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="PackageID" type="RecordID">
+											<xs:annotation>
+												<xs:documentation>PackageID of the Shorex Package</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ClientID" type="RecordID"/>
+										<xs:element name="Amount" type="Money"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DistrAccTrans_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for DistrAccTrans_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Transaction" type="AccTransaction" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="SearchAccBatch_IN">
+		<xs:annotation>
+			<xs:documentation>Extract Acc.Batch based on specified search criteria</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="MaxRows" minOccurs="0">
+								<xs:simpleType>
+									<xs:restriction base="xs:positiveInteger">
+										<xs:totalDigits value="9"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="SearchOptions">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="IsActive" type="Boolean" minOccurs="0"/>
+							<xs:element name="OpenAt" type="DateRange" minOccurs="0"/>
+							<xs:element name="ClosedAt" type="DateRange" minOccurs="0"/>
+							<xs:element name="FormOfTrans" type="FormOfTrans" minOccurs="0"/>
+							<xs:element name="Currency" type="CurrencyCode" minOccurs="0"/>
+							<xs:element name="User" type="Username" minOccurs="0"/>
+							<xs:element name="Amount" type="Money" minOccurs="0"/>
+							<xs:element name="BatchID" type="RecordID" minOccurs="0"/>
+							<xs:element name="ExternalIdent" type="ExternalIdent" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+									<xs:documentation>Search for a batch where transaction with provided ExternalIdent exists</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+                                                        <xs:element name="SrcEntity" type="AccSourceBatchEntity" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Search for a batch where transaction with provided source entity exists</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="SourceCode" type="SourceCode" minOccurs="0"/>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SearchAccBatch_OUT">
+		<xs:annotation>
+			<xs:documentation>Response nessage to SearchAccBatch_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AccBatches" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="AccBatch" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="BatchHeader" type="AccBatchHeader"/>
+										<xs:element name="Transactions" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Transaction" type="AccTransaction" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAccBatch_IN">
+		<xs:annotation>
+			<xs:documentation>Create, update or post accounting batch</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AllowDeleteTransactions" type="Boolean" default="N" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>N: only Insert and Update operations are allowed for Transactions node</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AccBatch">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="BatchHeader" type="AccBatchHeader"/>
+							<xs:element name="Transactions" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Transaction" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="TransID" type="RecordID" minOccurs="0">
+														<xs:annotation>
+															<xs:documentation>Mandatory for existing transactions</xs:documentation>
+														</xs:annotation>
+													</xs:element>
+                                                                                                        <xs:element name="SrcEntity" type="AccSourceBatchEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="DestEntity" type="AccDestPmntEntity">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Amount" type="Money">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="TransType" type="Code" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="ExternalIdent" type="ExternalIdent" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+													<xs:element name="Comments" type="ShortComment" minOccurs="0">
+														<xs:annotation>
+															<xs:appinfo source="Versonix">
+																<XMLBridge>Implemented</XMLBridge>
+															</xs:appinfo>
+														</xs:annotation>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAccBatch_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdateAccBatch_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AccBatch" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="BatchHeader" type="AccBatchHeader"/>
+							<xs:element name="Transactions" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Transaction" type="AccTransaction" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAccBatch_IN">
+		<xs:annotation>
+			<xs:documentation>Delete empty accounting batch</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="BatchID" type="RecordID"/>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAccBatch_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for DeleteAccBatch_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="ShowClientBankFunds_IN">
+		<xs:annotation>
+			<xs:documentation>Shows funds amount in the specified Client Bank</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="ClientID" type="RecordID"/>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowClientBankFunds_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ShowClientBankFunds_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Funds" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Item" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Currency" type="CurrencyCode"/>
+										<xs:element name="Amount" type="Money"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="PostCCBatch_IN">
+		<xs:annotation>
+			<xs:documentation>Post CC Batch linked with CC transactions</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>CC processing parameters</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="StatusPollQty" type="xs:nonNegativeInteger">
+								<xs:annotation>
+									<xs:documentation>0 means no waiting</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="StatusPollFreq" type="xs:nonNegativeInteger" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Interval in seconds between pollings</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="BatchID" type="RecordID"/>
+				<xs:element name="CCData" type="CreditCard">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="PostCCBatch_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for PostCCBatch_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AccBatch" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="BatchHeader" type="AccBatchHeader"/>
+							<xs:element name="Transactions" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Transaction" type="AccTransaction" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="ValidateCC_IN">
+		<xs:annotation>
+			<xs:documentation>Performs CC data validation </xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice>
+					<xs:element name="CCData" type="CreditCardBaseInfo">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="CCNumber" type="CCNumber">
+						<xs:annotation>
+							<xs:documentation>Can be used for quick validation of credit card number entered by the user. The number is valid if response message contains non-empty CCType element.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ValidateCC_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ValidateCC_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="CCType" type="CCType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Populated only if CCNumber option is used in the input message and only if provided credit card number is valid and its type is supported by Seaware.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="ShowTourCredit_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+			<xs:documentation>Search previously created TC</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="SearchOptions">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:choice>
+								<xs:element name="TCID" type="RecordID"/>
+								<xs:element name="GroupID" type="RecordID"/>
+								<xs:sequence>
+									<xs:element name="AgencyID" type="RecordID" minOccurs="0"/>
+									<xs:element name="Ship" type="ShipCode" minOccurs="0"/>
+									<xs:element name="DateRange" type="DateRange"/>
+								</xs:sequence>
+								<xs:element name="CollectionID" type="RecordID">
+									<xs:annotation>
+										<xs:documentation>Used in 040808 only</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:choice>
+							<xs:element name="TCType" type="TcType" minOccurs="0"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowTourCredit_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+			<xs:documentation>Response message for ShowTourCredit_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="TourCredits" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="TCShell" type="TCShell" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateTourCredit_IN">
+		<xs:annotation>
+			<xs:documentation>Update previously created TC item</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="AllowDeleteDistributions" type="Boolean" default="N" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>N: only Insert and Update operations are allowed for Distributions node</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Recalculate" type="Boolean" default="N" minOccurs="0"/>
+				<xs:element name="TCShell">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="TCHeader">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="TCID" type="RecordID"/>
+										<xs:element name="AdjAmount" type="Money" minOccurs="0"/>
+										<xs:element name="TCPolicyOvr" type="xs:nonNegativeInteger" nillable="true" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Used in 040808 only</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Distributions" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Distribution" type="TCDistrDetail" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateTourCredit_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdsateTourCredit_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="TCShell" type="TCShell" minOccurs="0"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:simpleType name="AFPOption">
+		<xs:annotation>
+			<xs:documentation>Automatic Final Credit Card Payment Options</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="CREATE"/>
+			<xs:enumeration value="REMOVE"/>
+			<xs:enumeration value="VALIDATE"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:element name="AutoFinalPayment_IN">
+		<xs:annotation>
+			<xs:documentation>Credit Card Auto Final Payment input message. Implemented in 040808 View only</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="ResID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Only ResID is supported as AFP Destination entity</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ClientID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Only ClientID is supported as AFP Source Entity</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AFPOption" type="AFPOption"/>
+				<xs:element name="Amount" type="Money" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Final Payment Amount. Must be equal to "GROSS DUE" on Booking at the time of Auto Payment </xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="CreditCard" minOccurs="0">
+					<xs:complexType>
+						<xs:choice>
+							<xs:element name="CCClientID" type="RecordID">
+								<xs:annotation>
+									<xs:documentation>Reference to Credit Card (CC_CLIENT table)</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="CCData" type="CreditCardBaseInfo"/>
+						</xs:choice>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AutoFinalPayment_OUT">
+		<xs:annotation>
+			<xs:documentation>Credit Card Auto Final Payment output message. Implemented in 040808 View only</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Status" type="xs:string" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Returns Status of AFP record for VALIDATE option:  'N/A'-No setup for booking,  'No AFP Amount Setup'-AFP Amount is not defined,  'DONE'-AFP transaction has been made successfully,  'NOTHING TO PAY'- Amount due has been payed without AFP,   'FUTURE'-AFP Transaction have to be created in future, 'SCHEDULED'-AFP Transaction have to be created in less than 7 days, 'CURRENT' - AFP Transaction missing but Grace Period is not expired yet, 'PAST DUE' -AFP Transaction missing and Grace periond expired</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Validation Messages</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowSVCBalance_IN">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="CCData" type="CreditCardBaseInfo">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowSVCBalance_OUT">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Amount" type="xs:double" minOccurs="0"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

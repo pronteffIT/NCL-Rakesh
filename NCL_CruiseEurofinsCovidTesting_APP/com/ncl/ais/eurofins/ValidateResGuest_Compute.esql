@@ -1,0 +1,68 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+DECLARE DEFAULT_REPLY_Q EXTERNAL CHARACTER 'NCL_CRUISE_EUROFINS_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE ERR_NAME_NOT_MATCHED EXTERNAL CHARACTER '';
+DECLARE ERR_GUEST_NOT_FOUND EXTERNAL CHARACTER '';
+
+CREATE COMPUTE MODULE ValidateResGuest_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseEurofinsValidateGuestRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseEurofinsValidateGuestRS;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rGuestId DECIMAL;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLY_Q;
+		END IF;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC'; 
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseEurofinsValidateGuestRS;
+		DECLARE cQuery CHARACTER 'SELECT rg.res_id,
+						       rg.client_id,
+						       rg.guest_id, 
+						       c.first_name,
+						       c.last_name,
+						       to_char(c.birthday,''yyyy-mm-dd'') as dob,
+						       to_char(rh.sail_date_from,''yyyy-mm-dd'') as sail_date,
+						       to_char(rh.sail_date_to,''yyyy-mm-dd'') as sail_end_date,
+						       rh.ship_code,
+						       s.ship_name
+						        from res_guest rg,
+						                res_header rh,
+						                client c,
+						                ship s
+						            where 
+						            rh.res_id=rg.res_id
+						            and rh.res_status=''BK''
+						            and rg.guest_id=?
+						            and c.client_id = rg.client_id
+						            and s.ship_code=rh.ship_code';
+		DECLARE dGuestID DECIMAL CAST(rIn.*:GuestID AS DECIMAL(9,0) DEFAULT 0.0);
+		IF dGuestID > 0 THEN						            
+			SET rEnv.ResGuest[] = PASSTHRU(cQuery VALUES(rIn.*:GuestID));
+		END IF;		
+		IF EXISTS(rEnv.ResGuest[]) THEN
+			IF UPPER(rEnv.ResGuest[1].FIRST_NAME)=UPPER(rIn.ns:FirstName) 
+				AND UPPER(rEnv.ResGuest[1].LAST_NAME)=UPPER(rIn.ns:LastName) THEN
+				SET rOut.ns:Status = '200';
+				SET rOut.ns:Payload.ns:RID  =  rIn.*:GuestID;
+				SET rOut.ns:Payload.ns:FirstName = 	rEnv.ResGuest[1].FIRST_NAME;
+				SET rOut.ns:Payload.ns:LastName = rEnv.ResGuest[1].LAST_NAME;
+				SET rOut.ns:Payload.ns:ReservationId = rEnv.ResGuest[1].RES_ID;
+				SET rOut.ns:Payload.ns:DOB  = rEnv.ResGuest[1].DOB;
+				SET rOut.ns:Payload.ns:ShipCode  = rEnv.ResGuest[1].SHIP_CODE;
+				SET rOut.ns:Payload.ns:SailDate  = rEnv.ResGuest[1].SAIL_DATE;
+				SET rOut.ns:Payload.ns:SailEndDate = rEnv.ResGuest[1].SAIL_END_DATE;
+				SET rOut.ns:Payload.ns:ClientID  = rEnv.ResGuest[1].CLIENT_ID;				
+			ELSE
+				SET rOut.ns:Status = '400';
+				SET rOut.ns:Message = ERR_NAME_NOT_MATCHED;
+			END IF;
+		ELSE
+			SET rOut.ns:Status = '404';
+			SET rOut.ns:Message = ERR_GUEST_NOT_FOUND;
+		END IF;
+		 	
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,21 @@
+BROKER SCHEMA com.ncl.cvs
+
+DECLARE nr NAMESPACE  'http://com.ncl.newrelic';
+CREATE COMPUTE MODULE GeneratePassengerManifest_NREvent
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.nr:NewRelicInsightEvent;
+		CREATE FIELD OutputRoot.XMLNSC.nr:NewRelicInsightEvent AS rOut;
+		SET rOut.(XML.NamespaceDecl)xmlns=nr;
+		SET rOut.nr:Events[1].nr:EventType = 'CVS_PASSENGER_MANIFEST'; 
+		SET rOut.nr:Events[1].nr:Fields[1].nr:FieldName ='SAIL_ID';
+		SET rOut.nr:Events[1].nr:Fields[1].nr:FieldValue = rEnv.SAIL_ID;
+		SET rOut.nr:Events[1].nr:Fields[2].nr:FieldName ='FILE_NAME';
+		SET rOut.nr:Events[1].nr:Fields[2].nr:FieldValue = rEnv.FILE_NAME;
+		SET rOut.nr:Events[1].nr:Fields[3].nr:FieldName ='STATUS';
+		SET rOut.nr:Events[1].nr:Fields[3].nr:FieldValue = COALESCE(rEnv.STATUS,'OK');
+		RETURN TRUE;
+	END;
+		
+END MODULE;

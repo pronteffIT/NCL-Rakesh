@@ -1,0 +1,174 @@
+
+
+BROKER SCHEMA com.ncl.ais
+--DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+--DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_CHECKIN_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseCheckIn
+* MODULE NAME : NCL_CruiseCheckIn_CheckIn
+* Description : This module Retrives checkInRecords
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCheckIn_CheckIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,CheckInRecords REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCheckInRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseCheckInRS;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		--create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		---add metadatset
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ReservationId, ''),
+		COALESCE(rIn.*:ClientId,''),
+		'',
+		rEnv);
+ 
+		---add payload
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'NCL_Cruise_CheckIn request message', 'xml', rEnv);
+	END IF;
+	IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+		THEN
+		SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+	END IF;
+	SET rEnv.MQMD = InputRoot.MQMD;
+	SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+	SET OutputRoot.MQMD.Format = MQFMT_STRING;
+	SET OutputRoot.MQMD = rEnv.MQMD;
+	-- Select Statement
+	SET rEnv.resultset[]= select * from Database.ncl_check_in AS a WHERE a.res_id = rIn.*:ReservationId and a.client_id = rIn.*:ClientId;
+	CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCheckInRS AS rOut;
+	IF CARDINALITY(rEnv.resultset[])> 100 THEN
+		SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '88798';
+		SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'Matches Exceeded Limit';
+		SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+	ELSEIF EXISTS(rEnv.resultset[]) THEN
+		SET rOut.Success = '';
+		FOR resultset AS rEnv.resultset[] DO
+			CREATE LASTCHILD OF rOut AS CheckInRecords NAME 'CheckInRecords';
+			SET CheckInRecords.SailID = rEnv.resultset.SAIL_ID;
+			SET CheckInRecords.ReservationId = rEnv.resultset.RES_ID;
+			SET CheckInRecords.ClientID = rEnv.resultset.CLIENT_ID;
+			SET CheckInRecords.CheckInDateTime = rEnv.resultset.CHECK_IN_DATE_TIME ;
+			SET CheckInRecords.CreationDateTime = CAST(CAST(rEnv.resultset.DATE_TIME_STAMP AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ss.S') AS CHARACTER FORMAT 'yyyy-MM-dd'' ''HH:mm:ss.S');
+			SET CheckInRecords.ModifiedDateTime = CAST(CAST(rEnv.resultset.MODIFIED_DATE AS TIMESTAMP FORMAT 'yyyy-MM-dd''T''HH:mm:ss.S') AS CHARACTER FORMAT 'yyyy-MM-dd'' ''HH:mm:ss.S');
+		END FOR;
+	ELSE
+		SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '88799';
+		SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = 'No Match Found';
+		SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	-- add response msg to log event
+	DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+	IF(LogPayLoad) THEN
+	CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise CheckIn response message', 'xml', rEnv);
+END IF;
+SET OutputRoot.XMLNSC = NULL;
+SET OutputRoot.BLOB.BLOB = bPayload;
+RETURN TRUE;
+END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseCheckIn
+* MODULE NAME : NCL_CruiseCheckIn_Exception
+* Description : This module handles Exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCheckIn_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCLCruiseCheckIn Inavlid request message', 'xml', rEnv);
+		END IF;
+	END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseCheckIn
+* MODULE NAME : NCL_CruiseCheckIn_Exception
+* Description : This module handles Exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/22/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCheckIn_Fault_Handling
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseCheckInRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			--SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseCheckInRS AS runTimeErr;
+		--SET runTimeErr.Errors.Error = cErrorText;
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)ShortText = cErrorText; --RIGHT(cErrorText,64);
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;

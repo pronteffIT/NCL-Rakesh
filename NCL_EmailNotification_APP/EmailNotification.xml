@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EmailRequest>
+	<EmailSubject>test</EmailSubject>
+	<EmailContent>body</EmailContent>
+	<EmailContentType>xml/plain</EmailContentType>
+	<Attachment>
+		<AttachmentType>text/plain</AttachmentType>
+		<AttachmentEncoding>ascii</AttachmentEncoding>
+		<AttachmentContent>attachment</AttachmentContent>
+		<AttachmentName>exception.xml</AttachmentName>
+	</Attachment>
+</EmailRequest>

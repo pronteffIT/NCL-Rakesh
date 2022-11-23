@@ -1,0 +1,58 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_StatelessCreateUpdateShorexAndOnBoardPackages_MapToStateful
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ AS rOut; 
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		
+		SET rOut.ns:POS = rIn.*:POS;
+		SET rOut.ns:AgentInfo = rIn.*:AgentInfo;
+		SET rOut.ns:SailingInfo = rIn.*:SailingInfo;
+		SET rOut.ns:ReservationInfo = rIn.*:ReservationInfo;
+		SET rOut.ns:Packages = rIn.*:Packages;
+		SET rOut.ns:StandardDinings = rIn.*:StandardDinings;
+		--SET rOut.ns:ModeOfOperation = rIn.*:ModeOfOperation;
+		SET rOut.ns:ModeOfOperation = 'Edit';
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_StatelessCreateUpdateShorexAndOnBoardPackages_CreateResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+		--DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_StatefulCreateUpdateShorexAndOnBoardPackagesRS;
+		--DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseCreateUpdateShorexAndOnBoardPackagesRS;
+		DECLARE rOut REFERENCE TO Environment.Variables;
+		
+		--CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseCreateUpdateShorexAndOnBoardPackagesRS;
+		
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		--CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Success = rIn.*:Success;
+		SET rOut.ns:Warnings = rIn.*:Warnings;
+		
+		IF NOT com.ncl.ais.utils.isEmpty(rIn.*:ReservationID.(XMLNSC.Attribute)ID) THEN
+			SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = rIn.*:ReservationID.(XMLNSC.Attribute)ID;
+		END IF;
+		
+		SET rOut.ns:SailingInfo = rIn.*:SailingInfo;
+		SET rOut.ns:GuestInfo = rIn.*:GuestInfo;
+		SET rOut.ns:Packages = rIn.*:Packages;
+		SET rOut.ns:StandardDinings = rIn.*:StandardDinings;
+		SET rOut.ns:BookingPayment = rIn.*:BookingPayment;
+		--SET rOut.ns:AgencyInfo = rIn.*:AgencyInfo;
+		SET rOut.ns:Errors = rIn.*:Errors;
+
+		RETURN TRUE;
+	END;
+END MODULE;

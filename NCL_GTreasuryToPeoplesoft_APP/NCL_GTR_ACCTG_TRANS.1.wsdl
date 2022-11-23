@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?><wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" name="NCL_GTR_ACCTG_TRANS.1" targetNamespace="http://xmlns.oracle.com/Enterprise/Tools/services/NCL_GTR_ACCTG_TRANS.1" xmlns:NCL_GTR_ACCTG_TRANS.V1="http://xmlns.oracle.com/Enterprise/Tools/schemas/NCL_GTR_ACCTG_TRANS.V1" xmlns:plnk="http://schemas.xmlsoap.org/ws/2003/05/partner-link/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://xmlns.oracle.com/Enterprise/Tools/services/NCL_GTR_ACCTG_TRANS.1" xmlns:wsp="http://schemas.xmlsoap.org/ws/2002/12/policy">
+  <wsdl:documentation>
+    <wsdl:appinfo source="WMQI_APPINFO">
+      <MRWSDLAppInfo imported="true">
+        <generatedXSD location="NCL_GTR_ACCTG_TRANS.1_InlineSchema1.xsd"/>
+        <binding hasEncoding="false" imported="true" name="NCL_GTR_ACCTG_TRANS_Binding" originalBindingStyle="document"/>
+      </MRWSDLAppInfo>
+    </wsdl:appinfo>
+  </wsdl:documentation>
+  <wsp:UsagePolicy wsdl:Required="true"/>
+  <plnk:partnerLinkType name="NCL_GTR_ACCTG_TRANS_PartnerLinkType">
+    <plnk:role name="NCL_GTR_ACCTG_TRANS_Provider">
+      <plnk:portType name="tns:NCL_GTR_ACCTG_TRANS_PortType"/>
+    </plnk:role>
+  </plnk:partnerLinkType>
+  <wsdl:types>
+    <xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://xmlns.oracle.com/Enterprise/Tools/schemas/NCL_GTR_ACCTG_TRANS.V1" xmlns="http://xmlns.oracle.com/Enterprise/Tools/schemas/NCL_GTR_ACCTG_TRANS.V1" xmlns:ibmSchExtn="http://www.ibm.com/schema/extensions">
+      <xsd:include schemaLocation="NCL_GTR_ACCTG_TRANS.1_InlineSchema1.xsd"/>
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="NCL_GTR_ACCTG_TRANS.V1">
+    <wsdl:documentation>GTR Accounting Entries</wsdl:documentation>
+    <wsdl:part element="NCL_GTR_ACCTG_TRANS.V1:NCL_GTR_ACCTG_TRANS" name="parameter"/>
+  </wsdl:message>
+  <wsdl:portType name="NCL_GTR_ACCTG_TRANS_PortType">
+    <wsdl:operation name="NCL_GTR_ACCTG_TRANS">
+      <wsdl:documentation>GTR Accounting Entries</wsdl:documentation>
+      <wsdl:input message="tns:NCL_GTR_ACCTG_TRANS.V1" name="NCL_GTR_ACCTG_TRANS.V1"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="NCL_GTR_ACCTG_TRANS_Binding" type="tns:NCL_GTR_ACCTG_TRANS_PortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="NCL_GTR_ACCTG_TRANS">
+      <soap:operation soapAction="NCL_GTR_ACCTG_TRANS.v1" style="document"/>
+      <wsp:Policy xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="UsernameTokenSecurityPolicyPasswordOptional">
+        <wsp:ExactlyOne>
+          <wsp:All>
+            <wsse:SecurityToken xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" wsp:Usage="wsp:Required">
+              <wsse:TokenType>wsse:UserNameToken</wsse:TokenType>
+              <Claims>
+                <SubjectName MatchType="wsse:Exact"/>
+                <UsePassword wsp:Usage="wsp:Optional"/>
+              </Claims>
+            </wsse:SecurityToken>
+          </wsp:All>
+        </wsp:ExactlyOne>
+      </wsp:Policy>
+      <wsdl:input name="NCL_GTR_ACCTG_TRANS.V1">
+        <soap:body encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" use="literal"/>
+      </wsdl:input>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="NCL_GTR_ACCTG_TRANS">
+    <wsdl:documentation>GTR Accounting Entries</wsdl:documentation>
+    <wsdl:port binding="tns:NCL_GTR_ACCTG_TRANS_Binding" name="NCL_GTR_ACCTG_TRANS_Port">
+      <soap:address location="https://psfin-dev.ncl.com:443/PSIGW/PeopleSoftListeningConnector/PSFT_EP"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

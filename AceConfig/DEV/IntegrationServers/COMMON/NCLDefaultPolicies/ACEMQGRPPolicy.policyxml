@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<policies>
+  <policy policyType="MQEndpoint" policyName="ACEMQGRPPolicy" policyTemplate="MQEndpoint">
+    <connection>CCDT</connection>
+    <destinationQueueManagerName>*HDQPSWQAQM</destinationQueueManagerName>
+    <queueManagerHostname></queueManagerHostname>
+    <listenerPortNumber></listenerPortNumber>
+    <channelName></channelName>
+    <CCDTUrl>file:///home/aceuser/ace-server/ccdt/CCDT.json</CCDTUrl>
+    <securityIdentity></securityIdentity>
+    <useSSL>false</useSSL>
+    <SSLPeerName></SSLPeerName>
+    <SSLCipherSpec></SSLCipherSpec>
+    <SSLCertificateLabel></SSLCertificateLabel>
+    <MQApplName>ACEMQGRPPolicy</MQApplName>
+    <reconnectOption>default</reconnectOption>
+  </policy>
+</policies>

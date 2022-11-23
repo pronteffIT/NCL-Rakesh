@@ -1,0 +1,58 @@
+BROKER SCHEMA com.ncl.ais
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseLinkReservation
+ * MODULE NAME       :     MergeClient
+ * Description       :     This module is merge module
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseLinkReservation_MergeClient
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		 CALL CopyMessageHeaders();
+		 DECLARE rEnv REFERENCE TO Environment.Variables;	
+		 DECLARE ref REFERENCE TO Environment.Variables.XMLNSC;
+		 DECLARE p_MainClientId ,p_DuplClientId,p_TransId INTEGER;
+		 DECLARE p_AreFiledsCopied,p_AreHoseholdsToBeCombined CHARACTER;
+	 
+	   -- Prepare parameters to call Client Profile Stored procedure
+	     SET p_MainClientId = ref.*:ClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID;
+      	 SET p_DuplClientId =rEnv.clientid1;
+	     SET p_AreHoseholdsToBeCombined ='N';
+	     SET p_AreFiledsCopied ='N';
+	   
+	
+	      CALL mergeclient(rEnv.p_TransId,p_MainClientId,p_DuplClientId,p_AreFiledsCopied,p_AreHoseholdsToBeCombined);
+   	    --calling logging procedure 
+   	     CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc  msg successful', rEnv);
+   	       END;
+	     CREATE PROCEDURE  mergeclient(OUT tansid INT,IN mainid INT,IN dupliid INT, IN arefieldcopy CHAR,IN arehouseholdcombined CHAR)
+	       LANGUAGE DATABASE
+	        EXTERNAL NAME "SEA.SW_ENTITYMERGE.CLIENTMERGEDUPLICATEEXTENDED";
+
+	          
+	        CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+
+

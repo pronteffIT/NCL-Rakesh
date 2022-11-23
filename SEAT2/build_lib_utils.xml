@@ -1,0 +1,224 @@
+<project name="IIB-CI-MAIN" default="dev" basedir="..">
+  <description>IIB Continuous Integration(main script)</description>
+	
+	<property name = "app.name" value = ""/>
+	<property name = "env.wrksp" value = ""/>
+	<property name = "iib.svr1" value = ""/>
+	<property name = "iib.svr2" value = ""/>
+	<property name = "iib.svr3" value = ""/>
+	<property name = "iib.svr4" value = ""/>
+	<property name = "iib.svr5" value = ""/>
+	<property name = "iib.svr6" value = ""/>
+	<property name = "iib.svr7" value = ""/>
+	<property name = "iib.svr8" value = ""/>
+	<property name = "iib.svr9" value = ""/>
+  <target name="init">
+    <tstamp />
+
+  	<property name = "path.parent" value = "${basedir}"/>
+  	
+  	<property name="path.build" value="SEAT2" />
+  	<property file="${path.build}/build.properties" />
+  	
+  </target>
+
+  <target name="dev" depends="init">
+  	
+
+	 <!-- Applying Bar Override using Properties File -->
+	
+    <exec executable="mqsiapplybaroverride">
+      <arg value="-b" />
+      <arg value="${var.path}SEAT2/${app.name}_DEV.bar" />
+      <arg value="-p" />
+    	<arg value="${env.wrksp}/BarfileOverrides/SEAT2/${app.name}_SEAT2.properties"/>
+ 	  <arg value="-r" /> 
+ 	  <arg value="-o" />
+    	<arg value="${var.path}${app.name}_SEAT2.bar"/>
+    </exec>
+  	
+  	 <!-- Deploying Library Bar files to Integration Servers in Integration Node 1-->
+  	 	
+  	   <exec executable="mqsideploy">
+  	     <arg value="-n" />
+  	     <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	     <arg value="-e" />
+  	     <arg value="${iib.svr1}" />
+  	     <arg value="-a" />
+  	     <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	   </exec>
+  	  	
+	   <exec executable="mqsideploy">
+	     <arg value="-n" />
+	     <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+	     <arg value="-e" />
+	     <arg value="${iib.svr2}" />
+	     <arg value="-a" />
+	     <arg value="${var.path}${app.name}_SEAT2.bar" />
+	   </exec>
+  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr2}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	 	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr3}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr4}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr5}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr6}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr7}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr8}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename1}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr9}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  
+  	  	<!-- Deploying Library Bar files to Integration Servers in Integration Node 2-->
+  	  	
+  	   <exec executable="mqsideploy">
+  	     <arg value="-n" />
+  	     <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	     <arg value="-e" />
+  	     <arg value="${iib.svr1}" />
+  	     <arg value="-a" />
+  	     <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	   </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr2}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr3}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr4}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr5}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr6}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr7}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr8}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	  	
+  	    <exec executable="mqsideploy">
+  	      <arg value="-n" />
+  	      <arg value="${iib.brkfileloc}${iib.brkfilename2}" />
+  	      <arg value="-e" />
+  	      <arg value="${iib.svr9}" />
+  	      <arg value="-a" />
+  	      <arg value="${var.path}${app.name}_SEAT2.bar" />
+  	    </exec>
+  	 	
+ 	<!-- Backing up deployed Bar files with Date Time Stamp-->
+ 	
+ 	<copy file="${var.path}${app.name}_SEAT2.bar" overwrite="true" tofile="${var.path}backup/SEAT2/${app.name}_SEAT2.bar_${DSTAMP}${TSTAMP}"/>
+  	
+  	<!--Moving SEAT2 Bar file to PROD folder for deployment-->
+  	
+  	<move file="${var.path}${app.name}_SEAT2.bar" overwrite="true" tofile="${var.path}PROD/${app.name}_SEAT2.bar"/>
+  	
+  	 </target>
+</project>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" id="OTA2006A" targetNamespace="http://nclapi/schemas" version="2.1" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseRegistrationRS">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+						responds with Travel Agency information if registered and warnings or errors if not registered
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="Success" type="SuccessType">
+						<xs:annotation>
+							<xs:documentation xml:lang="en">Standard way to indicate successful 
+processing of an OTA message. Returning an empty element of this type indicates 
+success.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element minOccurs="0" name="Warnings" type="WarningsType">
+						<xs:annotation>
+							<xs:documentation xml:lang="en"> Standard way to indicate successful 
+processing of an OTA message, but one in which warnings are 
+generated.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="AgencyInfo">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="AgencyPhones">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element maxOccurs="5" minOccurs="1" name="AgencyPhone" type="TelephoneInfoType">
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="AgencyAddresses">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element maxOccurs="5" minOccurs="1" name="AgencyAddress" type="AddressInfoType">
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+							<xs:attribute name="AgencyID" type="StringLength0to32" use="required">
+								<xs:annotation>
+									<xs:documentation xml:lang="en">Requested AgencyID of the registration request</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="PseudoCityCode" type="StringLength1to16" use="required">
+								<xs:annotation>
+									<xs:documentation xml:lang="en">An identification code assigned to an office/agency by a reservation system.</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="AgencyName" type="StringLength0to64" use="optional">
+								<xs:annotation>
+									<xs:documentation xml:lang="en">An identification code assigned to an office/agency by a reservation system.</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="IATANumber" type="StringLength0to64" use="optional"/>
+							<xs:attribute name="ARCNumber" type="StringLength0to64" use="optional"/>
+							<xs:attribute name="IATACountryCode" type="ISO3166" use="optional"/>
+							<xs:attribute name="IATAStateProvCode" type="StateProvCodeType" use="optional"/>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="Errors" type="ErrorsType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en"> A collection of errors that occurred during 
+the processing of a message.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

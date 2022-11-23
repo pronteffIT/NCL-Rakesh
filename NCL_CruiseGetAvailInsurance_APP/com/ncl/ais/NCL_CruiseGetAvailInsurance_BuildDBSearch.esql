@@ -1,0 +1,20 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailInsurance_BuildDBSearch
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS rOut;
+		SET rOut.MsgHeader = InputRoot.XMLNSC.Impersonate_OUT.MsgHeader;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.*:sessionGUID,rOut);
+		SET rOut.Options.ActiveOnly = 'Y';
+		SET rOut.Options.CountOnly = 'N';
+		SET rOut.Options.FilterBySets = 'Y';
+		SET rOut.Options.IncludeDisplayRanks = 'N';
+		SET rOut.Options.MaxDuration = '60';
+		CREATE FIELD rOut.Insurances;
+		RETURN TRUE;
+	END;
+END MODULE;

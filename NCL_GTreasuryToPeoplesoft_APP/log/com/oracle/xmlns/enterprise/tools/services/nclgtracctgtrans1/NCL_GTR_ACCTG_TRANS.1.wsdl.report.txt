@@ -1,0 +1,22 @@
+
+
+Importing file: C:\Users\spendru\Documents\NCL_GTR_ACCTG_TRANS.1.wsdl
+
+The WSDL import will proceed with bindings NCL_GTR_ACCTG_TRANS_Binding.
+Creating wsdl schema document for file:///C:/Users/spendru/Documents/NCL_GTR_ACCTG_TRANS.1.wsdl.
+Parsing wsdl binding {http://xmlns.oracle.com/Enterprise/Tools/services/NCL_GTR_ACCTG_TRANS.1}NCL_GTR_ACCTG_TRANS_Binding.
+Parsing wsdl binding input NCL_GTR_ACCTG_TRANS.
+Parsing wsdl binding output NCL_GTR_ACCTG_TRANS.
+Processing doc style for operation NCL_GTR_ACCTG_TRANS.
+Populating WSDL schema NCL_GTR_ACCTG_TRANS.1.xsd.
+Creating file NCL_GTR_ACCTG_TRANS.1.xsd in the workspace.
+Creating file /NCL_GT_PPLSFT/NCL_GTR_ACCTG_TRANS.1_InlineSchema1.xsd in the workspace.
+Copying source WSDL NCL_GTR_ACCTG_TRANS.1.wsdl to NCL_GTR_ACCTG_TRANS.1.wsdl.
+
+Elapsed time processing this message definition file: 0.576 seconds
+Number of warnings for this message definition file: 0
+
+
+Number of files processed: 1
+
+

@@ -1,0 +1,56 @@
+{
+  "channel": [
+    {
+      "connectionManagement": {
+        "sharingConversations": 1,
+        "clientWeight": 99,
+        "affinity": "none",
+        "defaultReconnect": "yes",
+        "disconnectInterval": 6000,
+        "heartbeatInterval": 60,
+        "keepAliveInterval": 300
+      },
+      "general": {
+        "description": "QM HDQPSWQAQM2",
+        "maximumMessageLength": 4194304
+      },
+      "name": "ACE.SVRCONN",
+      "clientConnection": {
+        "connection": [
+          {
+            "host": "167.118.127.78",
+            "port": 14142
+          }
+        ],
+        "queueManager": "HDQPSWQAQM2"
+      },
+      "type": "clientConnection"
+    },
+    {
+      "connectionManagement": {
+        "sharingConversations": 1,
+        "clientWeight": 99,
+        "affinity": "none",
+        "defaultReconnect": "yes",
+        "disconnectInterval": 6000,
+        "heartbeatInterval": 60,
+        "keepAliveInterval": 300
+      },
+      "general": {
+        "description": "QM HDQPSWQAQM1",
+        "maximumMessageLength": 4194304
+      },
+      "name": "ACE.SVRCONN",
+      "clientConnection": {
+        "connection": [
+          {
+            "host": "167.118.127.78",
+            "port": 14142
+          }
+        ],
+        "queueManager": "HDQPSWQAQM1"
+      },
+      "type": "clientConnection"
+    }
+  ]
+}

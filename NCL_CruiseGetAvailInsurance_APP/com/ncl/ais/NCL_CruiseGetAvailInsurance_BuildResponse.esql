@@ -1,0 +1,41 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailInsurance_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rInReq REFERENCE TO rEnv.rInReq;
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseGetAvailInsuranceRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rInReq,rOut);
+		DECLARE rInDBSearch REFERENCE TO InputRoot.XMLNSC;
+		IF EXISTS(rInDBSearch.Errors.Error[]) THEN	
+			CALL com.ncl.ais.utils.getAdvisoryCode(rInDBSearch.Errors.Error.ErrorCode,rEnv.Temp.Channel,rEnv);
+			SET rOut.Warnings.Warning = rInDBSearch.Errors.Error.ErrorMessage;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = rEnv.Temp.FinalResp.EXTERNAL_CODE;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = rEnv.Temp.FinalResp.DESCRIPTION;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			CREATE FIELD rOut.Success;
+			DECLARE rInsuranceRec REFERENCE TO rInDBSearch.*.Insurances.Insurance;
+			DECLARE rOutInsurance REFERENCE TO rOut.Insurances.InsuranceType;
+			DECLARE cInsuranceCode CHARACTER;
+			--SET rOut.Insurances = rInDBSearch.*.Insurances;
+			FOR rInsuranceRec AS rInDBSearch.*.Insurances.Insurance[]
+			DO
+				CREATE LASTCHILD OF rOut.Insurances AS  rOutInsurance DOMAIN('XMLNSC') IDENTITY Insurance;
+				--SET cLookupCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode('NCLWEBC', rInsuranceRec.InsuranceType, 'Insurance');
+				SET cInsuranceCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(rEnv.Temp.Channel, rInsuranceRec.InsuranceType, 'Insurance');
+				IF CONTAINS(cInsuranceCode, '#1#') THEN			
+					SET rOutInsurance.InsuranceCode = SUBSTRING(cInsuranceCode BEFORE '#1#');
+					SET rOutInsurance.InsuranceName = rInsuranceRec.InsuranceType;
+					SET rOutInsurance.Comments = rInsuranceRec.Comments;
+				END IF;				
+			END FOR;
+		END IF;							
+		RETURN TRUE;
+	END;
+
+END MODULE;

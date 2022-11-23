@@ -1,0 +1,1620 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xhtml="http://www.w3.org/1999/xhtml" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:include schemaLocation="GroupShell.xsd"/>
+	<xs:include schemaLocation="TwShell.xsd"/>
+	<xs:annotation>
+		<xs:documentation>This schema contains definitions related to booking management calls (core functionality in SeaWare). Also there are definitions of Trawel With related calls and Group management calls.</xs:documentation>
+	</xs:annotation>
+	<!--===============================================  ResShell Maintenance-->
+	<xs:element name="LoadBooking_IN">
+		<xs:annotation>
+			<xs:documentation>Loads and, optionally, locks  an existing booking into session cache.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Lock" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If "Y" than reservation will be locked in DB</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="LockMode" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Defines locking details. Reservation can be unlocked by timeout (this feature is useful to prevent dead locks in case if calling third-party application doesn't unlock reservation because of some errors, etc). Also reservation locking interval can be autoextended if some activity on reservation is registered.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Duration" type="xs:int" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Amount of time (in minutes) when reservation should be locked (after this time is elapsed reservation will be unlocked automatically).</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="AutoExtend" type="Boolean" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If "Y" – lock expiration should be auto extended each time booking is accessed (via LoadBooking, UpdateBooking, etc.). If not provided, previously set value is used (originally set to Y)</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="RepairMode" type="Boolean" default="N" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Y: reservation that is in repair queue can be locked</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="CheckIn" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Indicates than this reservation is loaded to perform some check-in related operations. Can be set during first LoadBooking for the Reservation only. Implies Lock="Y".</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Departure" minOccurs="0" type="Departure">
+											<xs:annotation>
+												<xs:documentation>Departure for check-in related operations</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="History" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Indicates that reservation history should be returned as a part of output message. History filtering criteria can be specified as child elements. If several criterias are specified than all of them are combined by "AND".  If no child elements are set than full history of the booking will be returned.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="DateTimeRange" type="DateTimeRange" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>History records that were generated within specified date interval will be returned only</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="First" type="Boolean" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>To return the first (the older) history record only</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Last" type="Boolean" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>To return the last (the most recent) history record only</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="HeadersOnly" type="Boolean" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If 'Y' - do not populate ResShell or CargoShell in output history (reservation headers only are supposed to be returned)</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Filter history by ResShell oprions</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>ToBeImplemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="CalcFields" minOccurs="0" type="CalcFieldOptions">
+								<xs:annotation>
+									<xs:documentation>To return calculated fields</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Pickup" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If present, a reservation was previously saved via UnlockBooking.Send (or by Seaware GUI)</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="LoadTransportationItinerary" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If present, ResTransportation.ActualItinerary will be populated in the output message. <xhtml:span class="versiondiff">040808 only.</xhtml:span>
+									</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="LoadCheckInCheckListValidations" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If 'Y', LoadBooking_OUT may have CheckInCheckListValidations node (booking must be in CheckIn mode).</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="GuestFilter" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Information is returned for the specified guest only</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:choice>
+										<xs:element name="ClientID" type="RecordID"/>
+										<xs:element name="GuestID" type="RecordID"/>
+										<xs:element name="GuestSeqN" type="SeqNumber"/>
+									</xs:choice>
+								</xs:complexType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully stored, regardless of ResShellOptions.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines ShellOptions for Extensions</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice>
+					<xs:element name="ResID" type="RecordID">
+						<xs:annotation>
+							<xs:documentation>ID (primary key) of the reservation to load.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="StateKey" type="StateKey">
+						<xs:annotation>
+							<xs:documentation>If present system will try to load temporary booking previously saved via UnlockBooking.StateKey.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadBooking_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for LoadBooking_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+				<xs:element name="HistItems" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Reservation history</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="HistItem" type="ResHistItem" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>Reservation history record</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="CheckInCheckListValidations" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>
+							<xhtml:span class="warning">TBD</xhtml:span>
+						</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="CheckInCheckListValidation" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="GuestSeqN" type="GuestSeqN"/>
+										<xs:element name="CheckListMessage" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="SeqN" type="SeqNumber"/>
+													<xs:element name="MessageText" type="LongComment"/>
+													<xs:element name="Severity" type="ErrorSeverity" minOccurs="0"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="StoreBooking_IN">
+		<xs:annotation>
+			<xs:documentation>Stores new or updated booking in the database.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Unlock" type="Boolean" default="Y" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If "Y" than booking will be unlocked (and removed from temporary storage) after update.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Comments" type="LongComment" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Comments for this revision (will be seen in the history)</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="ForceResID" type="RecordID" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Can only be set in Conversion mode to force reservation ID for a new booking. Conversion mode is set by startup parameters of the XML API server.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="AutoValidationEnabled" type="Boolean" default="Y" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Y: Autovalidation rules are executed as a part of Res.Storing</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="LeaveInRepairQueue" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Y: reservation should be left in repair queue</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="UserInitiated" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If Y - the store operation was initiated by an user, if N - the operation was initiated by some automatic utility/process. If not set - no default value is assumed for compatibility purposes.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully stored, regardless of ResShellOptions.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines ShellOptions for Extensions</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Reservation ID to store</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="StoreBooking_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for StoreBooking_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+				<xs:element name="ReceiptResID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Returned only if CreateExtension_IN with ExtensionType = CHANGE_RECEIPT was called prior to the store. Extensions will contain ResShell for the corresponding booking</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="CancelBooking_IN">
+		<xs:annotation>
+			<xs:documentation>Loads and locks the booking into session cache and then perfroms cancellation on it. </xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Comments" type="LongComment" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="CancCase" type="RecordID" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Store" type="Boolean" default="Y" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>N: reservation stays in editing mode; cancel process will be completed after StoreBooking message</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="UserInitiated" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If Y - the store operation was initiated by an user, if N - the operation was initiated by some automatic utility/process. If not set - no default value is assumed for compatibility purposes.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully stored, regardless of ResShellOptions.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines ShellOptions for Extensions</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Reservation ID to cancel</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="CancelBooking_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for CancelBooking_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ReinstateBooking_IN">
+		<xs:annotation>
+			<xs:documentation>Loads and locks the booking into session cache and then reinstates it. </xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Comments" type="LongComment" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Store" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>N: reservation stays in editing mode; reinstate process will be completed after StoreBooking message</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="UserInitiated" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If Y - the store operation was initiated by an user, if N - the operation was initiated by some automatic utility/process. If not set - no default value is assumed for compatibility purposes.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully stored, regardless of ResShellOptions.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines ShellOptions for Extensions</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Reservation ID to reinstate</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ReinstateBooking_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ReinstateBooking_IN.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UnlockBooking_IN">
+		<xs:annotation>
+			<xs:documentation>Unlocks and optionally, removes booking from session cache discarding all changes.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:choice>
+								<xs:element name="Send">
+									<xs:annotation>
+										<xs:documentation>If present current state of the booking will be saved for later pickup via LoadBooking. This allows  exchange of temporary bookings between different sessions.</xs:documentation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:all>
+											<xs:element name="StateKey" type="StateKey" minOccurs="0">
+												<xs:annotation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="TaskCode" type="SecurityTask" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>If provided, reservation can be picked up by the user that has any rights for the task</xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>ToBeImplemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="Username" type="Username" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>If provided, reservation can be picked up by the session with given login name</xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>ToBeImplemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="AllowUserPickup" type="Boolean" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>If Y (default value), a reservation will be suspended: release time is defined by the SuspendExpMins setting, and  it can be picked up by Seaware UI client.
+ </xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+										</xs:all>
+									</xs:complexType>
+								</xs:element>
+							</xs:choice>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Reservation ID to unlock</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UnlockBooking_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UnlockBooking_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetCachedBookings_IN">
+		<xs:annotation>
+			<xs:documentation>Returns contents of the session cache.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully stored, regardless of ResShellOptions.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines ShellOptions for Extensions</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetCachedBookings_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for GetCachedBookings_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell" minOccurs="0" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateBooking_IN">
+		<xs:annotation>
+			<xs:documentation>Updates booking in the session cache.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ProcessComponentsAdj" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>This set of flags controls how dependent booking components should be automatically adjusted.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:choice>
+											<xs:element name="DisableAllAdjustments" type="Boolean" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Should be used with great care !</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:sequence>
+												<xs:element name="AdjustDynamicPackages" type="Boolean" default="Y" minOccurs="0"/>
+												<xs:element name="DelUnusedDynamicPackages" type="Boolean" default="Y" minOccurs="0"/>
+												<xs:element name="AutoBuildClubAccounts" type="Boolean" default="Y" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Update club accounts information based on existng clients</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="AutoAddMandatoryAddon" type="Boolean" default="Y" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Eligible Mandatory Addons will be added automatically</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="AutoPopulatePromos" type="Boolean" default="Y" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Automatically populate promotions for new cabins, cars, dining and ship rooms based on existing sail promotions</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="AutoCabinDistribution" type="Boolean" default="N" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Automatically seat guests. ResPackage with CabinSeqN=0 and defined GuestRefs must be present. This request will be transformed to new request(s) with properly seated guests. In shared cabin mode also corresponding ResShipRequest with CabinSeqN=0 and defined GuestRefs, MaxCabinOccupancy, Gender must be present.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="AutoCorrectDiningReq" type="Boolean" default="Y" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Automatically add new guests to existing dining requests on the same sail.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="AutoAddCarLegs" type="Boolean" default="Y" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>New car request leg will be added automatically in case when a car is present on all sails and a new sail is added.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+												<xs:element name="AutoSetCarGuest" type="Boolean" default="N" minOccurs="0">
+													<xs:annotation>
+														<xs:documentation>Automatically assign a guest to Car Requests that do not have Responsible Guest selected.</xs:documentation>
+													</xs:annotation>
+												</xs:element>
+											</xs:sequence>
+										</xs:choice>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="CalcAgencies" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Used for internal login only. Y: perform calculation of main agency based on secondary and company (same behaviour as for agent login); N (default): direct assignments of all agencies and agents</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="ForceGTY" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If present - all inventories will be forced to return positive response (OK or GTY) regardless of availability. Note that you stil can get NO result in case of wrong (impossible) requests.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Reason" type="LongComment" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Will be stored in User Notes with a predefined subject from Seaware setup.</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>ToBeImplemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="WithinCarDeckAllotmentOnly" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If set to 'Y', car deck and cargo requests that cannot fit into allotment completely will be rejected (will get WTL response).</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="CloneMode" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If 'Y' - requested update is performed on a clone of the booking without inventory update. Result of the update is returned in the response message after which that updated clone is discarded. That allows calling program estimate results of a future update without actually doing it.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="LockMode" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Can be used to change lock mode of the temporary booking.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Duration" type="xs:int" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Amount of time (in minutes) when reservation should be locked (after this time is elapsed reservation will be unlocked automatically).</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="AutoExtend" type="Boolean" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If "Y" – lock expiration should be auto extended each time booking is accessed (via LoadBooking, UpdateBooking, etc.). If not provided, previously set value is used (originally set to Y)</xs:documentation>
+												<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="CalcFields" minOccurs="0" type="CalcFieldOptions">
+								<xs:annotation>
+									<xs:documentation>To return calculated fields</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully updated, regardless of ResShellOptions.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines ShellOptions for Extensions</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateBooking_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdateBooking_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:group ref="ResOrCargoShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AddResHistory_IN">
+		<xs:annotation>
+			<xs:documentation>Add record with a comment to reservation's history</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Comments" type="LongComment"/>
+							<xs:element name="UserInitiated" type="Boolean" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If Y - the store operation was initiated by an user, if N - the operation was initiated by some automatic utility/process. If not set - no default value is assumed for compatibility purposes.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ResID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AddResHistory_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for AddResHistory_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="HistItem" type="ResHistItem" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>History record that was just added</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="ResHistory">
+		<xs:annotation>
+			<xs:documentation>State of the booking stored in the RES_HISTORY table.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:group ref="ResOrCargoShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:group>
+			</xs:sequence>
+			<xs:attribute name="Version" type="APIVersion" use="required">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:attribute>
+			<xs:attribute name="ChangesOnly" type="Boolean" default="N">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - ResShell element contains changed elements only.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:attribute>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--===============================================  Travel-With (TW) Maintenance-->
+	<xs:element name="LoadTW_IN">
+		<xs:annotation>
+			<xs:documentation>Loads an existing Travel-With definition</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Lock" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If "Y" than travel-with item will be locked in DB</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="TwShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TwID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadTW_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for LoadTW_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TwShell" type="TwShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateTW_IN">
+		<xs:annotation>
+			<xs:documentation>Adds or Updates Travel-With definition</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TwShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TwShell" type="TwShell">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateTW_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdateTW_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TwShell" type="TwShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="StoreTW_IN">
+		<xs:annotation>
+			<xs:documentation>Stores new or updated travel-with item in the database.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Unlock" type="Boolean" default="Y" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If "Y" than travel-with item will be unlocked (and removed from temporary storage) after update.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="TwShellOptions" type="ResShellOptions" minOccurs="0"/>
+				<xs:element name="TwID" type="RecordID"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="StoreTW_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for StoreTW_IN.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="TwShell" type="TwShell" minOccurs="0"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UnlockTW_IN">
+		<xs:annotation>
+			<xs:documentation>Unlocks travel with definition</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="TwID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Travel with ID to unlock</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UnlockTW_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UnlockTW_IN.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteTW_IN">
+		<xs:annotation>
+			<xs:documentation>Deletes an existing Travel-With definition</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TwID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteTW_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for DeleteTW_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--===============================================  Group Shell Maintenance-->
+	<xs:element name="LoadGroup_IN">
+		<xs:annotation>
+			<xs:documentation>Loads an existing group</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0" type="GroupOptions">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="GroupID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadGroup_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for LoadGroup_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="GroupShell" type="GroupShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateGroup_IN">
+		<xs:annotation>
+			<xs:documentation>Updates Group and Stores it</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0" type="GroupOptions">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="GroupShell" type="GroupShell">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateGroup_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdateGroup_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="GroupShell" type="GroupShell" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:complexType name="CalcFieldOptions">
+		<xs:all>
+			<xs:element name="PenaltyInfo" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If "Y" than information about cancellation penalties that will be applied if reservation is cancelled is supposed to be returned</xs:documentation>
+					<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoiceInfo" type="Boolean" default="N" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If "Y" than user definable invoice calculated parameters will be returned</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element default="N" minOccurs="0" name="PaymentCollectionInfo" type="Boolean">
+				<xs:annotation>
+					<xs:documentation>If "Y" then information about about which payments (e.g. Air, First Deposit, etc.) should be collected will be included.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="GroupOptions">
+		<xs:all>
+			<xs:element name="GroupShellOptions" type="ResShellOptions" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Options to control content of ResShell to be returned. ResShell.ResHeader is always returned if booking was successfully stored, regardless of ResShellOptions.</xs:documentation>
+					<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Inventories" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default value is 'N'</xs:documentation>
+					<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+</xs:schema>

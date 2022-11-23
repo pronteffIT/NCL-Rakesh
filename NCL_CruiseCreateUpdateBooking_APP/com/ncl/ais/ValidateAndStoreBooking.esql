@@ -1,0 +1,549 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE ValidateAndStoreBooking_PrepareCCRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rPaymentOpt,rWarnings,resShell REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+
+		-- clear messages from environment if not cleared in previous subflow
+		SET rEnv.Temp.UpdateBkg.UpdateBooking_OUT = NULL;
+		SET rEnv.Temp.GetAvailGateways_OUT = NULL;
+
+		-- set the endpoint of the VX server
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		
+		IF EXISTS(rInResInfo.*:PaymentOptions.*:PaymentOption[]) THEN
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rOut);
+--			SET rOut.MsgHeader = rIn.MsgHeader;
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+			
+			FOR rPaymentOpt AS rInResInfo.*:PaymentOptions.*:PaymentOption[]
+			DO
+				IF EXISTS(rPaymentOpt.*:PaymentCard[]) THEN --CC Payment. Prepare ValicateCC_IN
+					CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+					CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ValidateCC_IN;	
+					SET rOut.MsgHeader = rIn.MsgHeader;				
+					DECLARE rAddr REFERENCE TO rPaymentOpt.*:PaymentCard.*:Address;
+					DECLARE cExpDate CHARACTER FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)ExpireDate);
+					
+					SET rOut.CCData.CCNumber = FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)CardNumber);
+					IF EXISTS(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:Token[]) THEN
+						SET rOut.CCData.CCTokenInfo.CCTokenType = FIELDVALUE(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:TokenType);
+						SET rOut.CCData.CCTokenInfo.CCToken = FIELDVALUE(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:Token);
+						SET rOut.CCData.CCTokenInfo.CCNumberMasked = FIELDVALUE(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:CardNumberMasked);
+					END IF;
+					
+					-- If invalid expiry date is passed, throw an exception
+					IF com.ncl.ais.utils.isNumeric(cExpDate) AND LENGTH(cExpDate) = 4 THEN
+						
+						SET rOut.CCData.ExpDate = CAST(CAST('01'||FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)ExpireDate) AS DATE FORMAT 'ddMMyy') AS CHARACTER FORMAT 'yyyy-MM');
+					--	SET rOut.CCData.ExpDate = --com.ncl.ais.utils.TranformCCExpDate(cExpDate);
+					ELSE
+						--THROW USER EXCEPTION CATALOG 'MyCatalog' MESSAGE 
+						THROW USER EXCEPTION MESSAGE 2951 VALUES('Expiry Date Value: ' || cExpDate || ' is invalid') ;										
+					END IF;
+					SET rOut.CCData.CCType = com.ncl.ais.utils.LookupCCType(FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)CardCode));
+					SET rOut.CCData.ControlNumber = FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)SeriesCode);					
+					SET rOut.CCData.NameOnCard = rPaymentOpt.*:PaymentCard.*:CardHolderName;				
+					SET rOut.CCData.BillingAddress.Line1 = rAddr.*:AddressLine[1];
+					SET rOut.CCData.BillingAddress.Line2 = rAddr.*:AddressLine[2];
+					SET rOut.CCData.BillingAddress.Line3 = rAddr.*:AddressLine[3];
+					SET rOut.CCData.BillingAddress.Line4 = rAddr.*:AddressLine[4];
+					SET rOut.CCData.BillingAddress.City = rAddr.*:CityName;
+					SET rOut.CCData.BillingAddress.State = FIELDVALUE(rAddr.*:StateProv.(XMLNSC.Attribute)StateCode);
+					SET rOut.CCData.BillingAddress.Country = FIELDVALUE(rAddr.*:CountryName.(XMLNSC.Attribute)Code);
+					SET rOut.CCData.BillingAddress.ZIP = rAddr.*:PostalCode;
+					SET rOut.CCData.IssuedBy = rPaymentOpt.*:PaymentCard.*:CardIssuerName.(XMLNSC.Attribute)BankID;
+					
+				ELSEIF EXISTS(rPaymentOpt.*:BankAcct[]) THEN -- Check Payment. Prepare UpdateBooking_IN
+					CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+					CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY UpdateBooking_IN;
+					SET rOut.MsgHeader = rIn.MsgHeader;
+					SET rOut.ResShellOptions.IncludeElements = 'ResPaymentSchedule';
+					CREATE LASTCHILD OF rOut AS resShell IDENTITY ResShell;
+					SET resShell.ResHeader = rIn.ResShell.ResHeader;
+					SET resShell.ResPaymentSchedule.Extension.DurationBasis = 'DAYS';
+					SET resShell.ResPaymentSchedule.Extension.Duration = '0';
+					SET resShell.ResPaymentSchedule.Extension.CheckNum = FIELDVALUE(rPaymentOpt.(XMLNSC.Attribute)ReferenceNumber);
+					SET resShell.ResPaymentSchedule.Extension.Comments = 'Check mailed'; 
+				END IF;
+			END FOR;
+			
+			RETURN TRUE;
+		ELSE
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;		
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE ValidateAndStoreBooking_StoreBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rPaymentOpt REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn,rOut REFERENCE TO InputRoot.XMLNSC.ValidateCC_OUT;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+
+		--CALL CopyEntireMessage();
+		
+		/*WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF EXISTS(rError.ErrorMessage[]) AND rError.ErrorSeverity <> 'W' AND rError.ErrorSeverity <> 'I'
+			THEN
+				SET bFatalError = TRUE;
+			END IF;
+			
+			MOVE rError NEXTSIBLING;
+		END WHILE;			
+		
+		IF bFatalError = TRUE
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'ValidateCC API Returned Errors ...', rEnv);
+			CALL CopyEntireMessage();
+			
+			SET rEnv.Temp.ValidatePayment = 'Y';
+			
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;*/
+		
+		-- Copy non-fatal errors to Env
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			SET rEnv.Temp.ValidatePayment = 'Y';
+			CALL StoreErrorsAsWarnings(rIn.Errors, rEnvInMsg, rEnv, rOutRoot);	
+		END IF;
+		
+		--IF rEnvInMsg.*:Mode = 'Store' OR NOT EXISTS(rEnv.InResID[])
+		IF rEnvInMsg.*:Mode = 'Store' OR rEnv.Stateless = TRUE
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling StoreBooking API ...', rEnv);
+
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			--SET OutputRoot.XMLNSC.StoreBooking_IN
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rOut;
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.sessionID;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rOut);			
+			SET rOut.MsgHeader.CallerInfo.OfficeCode = rEnv.officeCode;
+			SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+			-- Setting this option to avoid calling UnlockBooking later
+			SET rOut.Options.Unlock = 'Y';
+			SET rOut.ResID = rEnv.ResID;
+	
+			RETURN TRUE;
+		ELSE
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE ValidateAndStoreBooking_PriceBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv,rOut,rPaymentOpt REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.StoreBooking_OUT;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE bFatalError BOOLEAN FALSE;
+		DECLARE rError REFERENCE TO rIn.Errors.Error[1];
+
+		--CALL CopyEntireMessage();
+		
+		WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+			IF EXISTS(rError.ErrorMessage[]) AND rError.ErrorSeverity <> 'W' AND rError.ErrorSeverity <> 'I'
+			THEN
+				SET bFatalError = TRUE;
+			END IF;
+			
+			MOVE rError NEXTSIBLING;
+		END WHILE;	
+
+		
+		--IF EXISTS(rIn.Errors.Error.ErrorMessage[]) AND rIn.Errors.Error.ErrorSeverity <> 'W' AND rIn.Errors.Error.ErrorSeverity <> 'I'
+		IF bFatalError = TRUE
+		THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'StoreBooking API Returned Errors ...', rEnv);
+			CALL CopyEntireMessage();
+			
+			PROPAGATE TO LABEL 'GENERIC_WARN';
+			RETURN FALSE;
+		END IF;
+		
+		-- Copy non-fatal errors to Env
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			CALL StoreErrorsAsWarnings(rIn.Errors, rEnvInMsg, rEnv, rOutRoot);	
+		END IF;
+		
+		-- Overwrite resID only if control came here from StoreBooking call
+		IF EXISTS(InputRoot.XMLNSC.StoreBooking_OUT[]) THEN
+			SET rEnv.ResID = rIn.ResShell.ResHeader.ResID;
+		END IF;
+		
+		-- pass the session details to price booking
+		SET OutputLocalEnvironment.CallableFlow.State = 'STATEFUL';
+		SET OutputLocalEnvironment.Service.State = 'STATEFUL';
+		SET OutputLocalEnvironment.Service.sessionID = rEnv.sessionID;
+		SET OutputLocalEnvironment.Service.agencyID = rEnv.agencyID;
+		SET OutputLocalEnvironment.Service.officeCode = rEnv.officeCode;
+		SET OutputLocalEnvironment.Service.endPoint = rEnv.endPoint;
+				
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC as rOut IDENTITY sc:NCL_CruiseStatefulPriceBookingRQ;
+		
+		CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg, rOut);
+		
+		SET rOut.sc:SessionId.sc:SessionToken = rEnv.sessionID;
+		SET rOut.sc:POS = rEnvInMsg.*:POS;
+		SET rOut.sc:ReservationInfo.sc:ReservationID.(XMLNSC.Attribute)ID = rEnv.ResID;
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking StatefulPriceBooking Callable Flow ...', rEnv);
+		RETURN TRUE;		
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE ValidateAndStoreBooking_BuildResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE rEnv,rOut,rPaymentOpt,rOutmsg,rOutPayment,rWarnings,rWarning REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseStatefulPriceBookingRS;
+		DECLARE cPolicyInfo,cExternalCode CHARACTER '';
+		DECLARE queryResult ROW;
+		DECLARE cChannel CHARACTER FIELDVALUE(rSource.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+		IF rEnvInMsg.*:Mode = 'Store' OR NOT EXISTS(rEnv.InResID[]) THEN
+			-- Get PolicyInfo from the DB
+			SET cExternalCode = com.ncl.ais.utils.GetExternalCodeFromCache(cChannel || '#' || AdviceCodeType, 
+															   rEnv.officeCode, XC10CacheMap, XC10ConnectionConfig);
+
+			IF COALESCE(cExternalCode, '') = '' OR STARTSWITH(cExternalCode, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = cChannel;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = AdviceCodeType;
+			
+				PROPAGATE TO LABEL 'CACHE_LOAD';
+
+				SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, rEnv.officeCode, AdviceCodeType);
+			END IF;
+			
+			SET cPolicyInfo = SUBSTRING(cExternalCode AFTER '#4#');	
+		END IF;	
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC as rOut IDENTITY sc:NCL_CruiseCreateUpdateBookingRS;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		
+		SET rOut.sc:Success =  rIn.*:Success;
+		
+		-- Join Warnings stored in Env
+		--CREATE LASTCHILD OF rOut AS rWarnings IDENTITY sc:Warnings;
+		
+		IF EXISTS(rEnv.Temp.Warnings.*:Warning[]) THEN
+			FOR rEnvWarn AS rEnv.Temp.Warnings.*:Warning[] DO
+				CREATE LASTCHILD OF rOut.sc:Warnings AS rWarning IDENTITY sc:Warning;
+				
+				SET rWarning.(XMLNSC.Attribute)Code = rEnvWarn.Code;
+				SET rWarning.(XMLNSC.Attribute)ShortText = rEnvWarn.ShortText;
+				SET rWarning.(XMLNSC.Attribute)Type = rEnvWarn.Type;
+				SET rWarning VALUE = FIELDVALUE(rEnvWarn);
+			END FOR;
+			
+			--SET rOut.sc:Warnings = rEnv.Temp.Warnings;
+		END IF;
+		
+		FOR rInWarning AS rIn.*:Warnings.*:Warning[]
+		DO
+			--CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY sc:Warning;
+			CREATE LASTCHILD OF rOut.sc:Warnings AS rWarning IDENTITY sc:Warning;
+			
+			SET rWarning = rInWarning;
+			SET rWarning VALUE = FIELDVALUE(rInWarning);
+		END FOR;		
+		
+		-- Clear out Warnings
+		DETACH rEnv.Temp.Warnings;
+		
+		SET rOut.sc:ReservationID.(XMLNSC.Attribute)ID = FIELDVALUE(rIn.*:ReservationID.(XMLNSC.Attribute)ID);
+		SET rOut.sc:SailingInfo = rIn.*:SailingInfo;
+		SET rOut.sc:PolicyInfo.sc:Text = COALESCE(cPolicyInfo,'');
+		
+		SET rOut.sc:GuestInfo = rIn.*:GuestInfo;
+		SET rOut.sc:BookingPayment = rIn.*:BookingPayment;
+		SET rOut.sc:Errors = rIn.*:Errors;
+		
+		-- Check if amount is > 0 (Implicit check in WESB code)
+		IF LENGTH(FIELDVALUE(rInResInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount)) > 0 AND
+			CAST(FIELDVALUE(rInResInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount) AS DECIMAL) > 0
+		THEN		
+			CREATE FIELD rEnv.OutMsg AS rOutmsg;
+			CREATE LASTCHILD OF rOutmsg DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET rOutmsg.XMLNSC = OutputRoot.XMLNSC;
+			
+			DETACH OutputRoot.XMLNSC.sc:NCL_CruiseCreateUpdateBookingRS;
+			
+			-- set the endpoint of the VX server
+			--CREATE FIRSTCHILD OF OutputRoot IDENTITY HTTPRequestHeader;
+			--SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			
+			CREATE LASTCHILD OF OutputRoot.XMLNSC as rOut NAME 'ManageAccTrans_IN';
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.sessionID;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rOut);
+			
+			SET rOut.Create.Payments.Currency = FIELDVALUE(rInResInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)CurrencyCode);
+			
+			FOR rPaymentOpt AS rInResInfo.*:PaymentOptions.*:PaymentOption[]
+			DO
+				DECLARE Index INTEGER 0;
+				CREATE LASTCHILD OF rOut.Create.Payments AS rOutPayment NAME 'Payment';
+				-- Mapping only first client ID
+				SET rOutPayment.SrcEntity.ClientID = CAST(COALESCE(FIELDVALUE(rEnv.ClientIds.*[1]),'0') AS INTEGER);
+				SET rOutPayment.DestEntity.ResID = rEnv.ResID;
+				SET rOutPayment.Amount = CAST(FIELDVALUE(rPaymentOpt.*:PaymentAmount.(XMLNSC.Attribute)Amount) AS DECIMAL)/100;
+				SET rOutPayment.Currency = FIELDVALUE(rPaymentOpt.*:PaymentAmount.(XMLNSC.Attribute)CurrencyCode);
+				IF EXISTS(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)CardNumber[]) 
+					OR EXISTS(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:Token[]) THEN
+					SET rOutPayment.FormOfTrans = 'CC';
+					
+					IF EXISTS(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:Token[]) THEN
+						SET rOutPayment.TransFormInfo.CCData.CCTokenInfo.CCTokenType = FIELDVALUE(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:TokenType);
+						SET rOutPayment.TransFormInfo.CCData.CCTokenInfo.CCToken = FIELDVALUE(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:Token);
+						SET rOutPayment.TransFormInfo.CCData.CCTokenInfo.CCNumberMasked = FIELDVALUE(rPaymentOpt.*:PaymentCard.*:TokenInfo.*:CardNumberMasked);
+					END IF;
+				--END IF;
+					SET rOutPayment.TransFormInfo.CCData.CCNumber = FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)CardNumber);
+					SET rOutPayment.TransFormInfo.CCData.CCType = com.ncl.ais.utils.LookupCCType(FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)CardCode));
+					SET rOutPayment.TransFormInfo.CCData.ExpDate = CAST(CAST('01'||FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)ExpireDate) AS DATE FORMAT 'ddMMyy') AS CHARACTER FORMAT 'yyyy-MM');
+					SET rOutPayment.TransFormInfo.CCData.NameOnCard = rPaymentOpt.*:PaymentCard.*:CardHolderName;
+					SET rOutPayment.TransFormInfo.CCData.ControlNumber = FIELDVALUE(rPaymentOpt.*:PaymentCard.(XMLNSC.Attribute)SeriesCode);
+					
+					DECLARE rAddr REFERENCE TO  rPaymentOpt.*:PaymentCard.*:Address;
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line1 = rAddr.*:AddressLine[1];
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line2 = rAddr.*:AddressLine[2];
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line3 = rAddr.*:AddressLine[3];
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.Line4 = rAddr.*:AddressLine[4]; 
+			
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.City = rAddr.*:CityName;
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.State = FIELDVALUE(rAddr.*:StateProv.(XMLNSC.Attribute)StateCode);
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.Country = FIELDVALUE(rAddr.*:CountryName.(XMLNSC.Attribute)Code);
+					SET rOutPayment.TransFormInfo.CCData.BillingAddress.ZIP = rAddr.*:PostalCode;
+					CALL ForterAddionalData(rEnvInMsg,Index,rOutPayment);					
+					SET Index = Index + 1;
+					SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'RES_ID';
+					SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value =  rEnv.ResID;
+					CALL CreateThreeDSData(rEnvInMsg,Index,rOutPayment);
+				END IF;	
+			END FOR;
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling ManageAccTrans API ...', rEnv);
+			
+			
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'CCData';
+			SET rEnv.CCData = rOutPayment.TransFormInfo.CCData;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+			IF(LogPayLoad) THEN
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateBooking response message', 'xml', rEnv);
+			END IF;
+			
+			--PROPAGATE TO TERMINAL 'out' DELETE NONE;
+			PROPAGATE TO LABEL 'ROUTETOCALLER';
+			--PROPAGATE TO LABEL 'UNLOCK_LOGOUT';
+		END IF;
+		
+		RETURN FALSE;
+	END;
+	CREATE PROCEDURE ForterAddionalData (IN rIn REFERENCE,INOUT Index INTEGER,INOUT rOutPayment REFERENCE )
+	BEGIN
+	
+		IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'FraudTrackingOrderId';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:FraudTrackingOrderId,'');
+		END IF;
+		IF COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'DeviceID';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:AdditionalFraudDetectionData.*:Device.*:DeviceID,'');
+		END IF;	
+	END;
+	
+	CREATE PROCEDURE CreateThreeDSData (IN rIn REFERENCE,IN Index INTEGER,INOUT rOutPayment REFERENCE )
+	BEGIN
+	    IF COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,'') <> '' THEN
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSversion';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSversion,'');
+		
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSdirectoryServerTransID';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSdirectoryServerTransID,'');
+		
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSauthVerificationValue';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSauthVerificationValue,'');
+	
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECIFlag';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECIFlag,'');
+			
+			SET Index = Index + 1;
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Code = 'ThreeDSECXid';
+			SET rOutPayment.TransFormInfo.CCData.AdditionalFraudDetectionData.Data[Index].Value = COALESCE(rIn.*:ThreeDSData.*:ThreeDSECXid,''); 			
+	    END IF; 
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE ValidateAndStoreBooking_SendResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rWarning,rSuccess REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rSource REFERENCE TO rEnvInMsg.*:POS.*:Source;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.ManageAccTrans_OUT;
+		DECLARE rOutmsg REFERENCE TO rEnv.OutMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+
+		--CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+       -- SET OutputRoot.MQMD = rEnv.MQMD;
+		--CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		--SET OutputRoot.XMLNSC = rEnv.OutMsg.XMLNSC;
+		
+		-- Map non-OK transactions to Warnings
+		FOR rTrans AS rIn.Transactions.Transaction[]
+		DO
+			IF NOT rTrans.Status = 'OK' THEN
+				IF NOT EXISTS(rOutmsg.*:Warnings[]) THEN
+					--SET rSuccess = rOutmsg.*:Success;
+					--CREATE NEXTSIBLING OF rSuccess AS rWarnings IDENTITY sc:Warnings;
+					CREATE NEXTSIBLING OF rOutmsg.*:Success IDENTITY sc:Warnings;
+				ELSE 
+					--SET rWarnings = rOutmsg.*:Warnings;
+					
+				END IF;
+				IF rTrans.Status = 'CC QUEUE' THEN
+					CREATE LASTCHILD OF rOutmsg.*:Warnings AS rWarning IDENTITY sc:Warning;
+					SET rWarning.(XMLNSC.Attribute)Code = '11760';
+					SET rWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(rTrans.CCServerResponse FROM 1 FOR 64);
+					SET rWarning.(XMLNSC.Attribute)Type = '2';					
+				ELSE
+					CREATE LASTCHILD OF rOutmsg.*:Warnings AS rWarning IDENTITY sc:Warning;
+					SET rWarning.(XMLNSC.Attribute)Code = '12620';
+					SET rWarning.(XMLNSC.Attribute)ShortText = SUBSTRING(rTrans.CCServerResponse FROM 1 FOR 64);
+					SET rWarning.(XMLNSC.Attribute)Type = '2';					
+				END IF;
+			END IF;		
+		END FOR;
+		
+ 		-- Map errors to Warnings
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			--CALL StoreErrorsAsWarnings(rIn.Errors, rEnvInMsg, rEnv, rOutRoot);
+			CALL StoreSABREErrorsAsWarnings(rIn.Errors, rEnvInMsg, rEnv, rOutRoot);
+		--END IF;
+			IF NOT EXISTS(rOutmsg.*:Warnings[]) THEN
+				--SET rSuccess = rOutmsg.*:Success;
+				--CREATE NEXTSIBLING OF rSuccess AS rWarnings IDENTITY sc:Warnings;
+				CREATE NEXTSIBLING OF rOutmsg.*:Success IDENTITY sc:Warnings;
+			--ELSE 
+				--SET rWarnings = rOutmsg.*:Warnings;
+				--MOVE rOutmsg.*:Warnings[] AS rWarnings;
+			END IF;
+			
+			DECLARE rWarnings REFERENCE TO rOutmsg.*:Warnings;
+			
+			FOR rEnvWarning AS rEnv.Temp.Warnings.*:Warning[] 
+			DO
+				--CREATE LASTCHILD OF rOutmsg.*:Warnings AS rWarning IDENTITY sc:Warning;
+				CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY sc:Warning;				
+				SET rWarning = rEnvWarning;
+				CALL com.ncl.ais.utils.CopyAttributes(rEnvWarning, rWarning);
+			END FOR;
+		ELSE
+			IF rEnvInMsg.*:AFP.*:AutoFinalPayment ='Y' 
+			THEN
+				PROPAGATE TO LABEL 'AFP';
+				SET rEnv.CCData = NULL;
+				
+				--SET rEnv.OutMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRS.*:AFPStatus = rEnv.AFPStatus;
+				--SET rEnv.OutMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRS.*:AFPErrorMessage = rEnv.AFPErrorMessage;
+				SET rOutmsg.*:AFPStatus = rEnv.AFPStatus;
+				SET rOutmsg.*:AFPErrorMessage = rEnv.AFPErrorMessage;
+			END IF;			
+		END IF; 
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET OutputRoot.XMLNSC = rEnv.OutMsg.XMLNSC;
+		
+		--CREATE NEXTSIBLING OF rSuccess AS rWarnings IDENTITY sc:Warnings;
+		
+		IF(LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateBooking response message', 'xml', rEnv);
+		END IF;
+		
+		--PROPAGATE TO TERMINAL 'out';	
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+			
+		--PROPAGATE TO LABEL 'UNLOCK_LOGOUT';		
+		RETURN FALSE;
+	END;
+	
+END MODULE;

@@ -1,0 +1,668 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MsgExpiry EXTERNAL INTEGER '1500';
+DECLARE ns2 NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_CREATE_AGENCY_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseCreateAgency
+* MODULE NAME : ValidateReq
+* Description : This module filters the request based on Action
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 02/01/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_ValidateReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,refOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreateAgencyRQ;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		DECLARE Requestor,BookingChannel CHARACTER;
+		
+		SET Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor, BookingChannel, '', '', '', rEnv);
+		
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		--Setting Default Reply to Queue to Environment
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+		
+		--Saving Input message to Environment
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN 'XMLNSC' NAME 'InpReq';
+		SET rEnv.Temp.InpReq = InputRoot.XMLNSC.*:NCL_CruiseCreateAgencyRQ;
+		
+		IF (LogPayLoad) THEN
+    
+		 	CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'LogMessage';
+		    SET rEnv.LogMessage.Request = InputRoot.XMLNSC;
+		    SET rEnv.LogMessage.Request.*:NCL_CruiseCreateAgencyRQ.*:UserLogin.(XMLNSC.Attribute)Password = 'XXXXXXXX';
+		    
+		    DECLARE bPayload BLOB ASBITSTREAM(rEnv.LogMessage.Request CCSID 1208 ENCODING 546);
+		    CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Create Agency request message', 'xml', rEnv);
+		    
+		END IF;
+		
+		IF rIn.*:AgencyInfo.(XMLNSC.Attribute)Action = 'A' THEN
+			
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Encrypt Decrypt...', rEnv);
+			
+			SET rEnv.Temp.AgencyPwd = CreateHash(RIGHT(UUIDASCHAR,10));
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE IF rIn.*:AgencyInfo.(XMLNSC.Attribute)Action = 'U' THEN
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+			
+		ELSE
+			SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+			
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+			
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+	
+			CREATE FIELD refOut.ns:Success;
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Invalid Action Type Specified';
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			
+			PROPAGATE TO TERMINAL 'out3';
+			RETURN FALSE;
+			
+		END IF;	
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE PROCEDURE CreateHash(IN cPassword CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.PasswordHash.createHash";
+	
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseCreateAgency
+* MODULE NAME : CreateAgency
+* Description : This module Creates a new Agency
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 02/01/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CreateAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,refOut REFERENCE TO Environment.Variables;
+		
+        SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+        
+		DECLARE p_Action,p_AgencyId,p_AgentId,p_Agent_First,p_Agent_Last,p_Sex,p_UserName,p_Password,
+		p_Role,p_Email,p_Phone,p_Contact_Pref,p_Agent_Loc,p_Can_access,p_AgencyName,p_Address1,p_Address2,
+		p_City,p_State,p_Zip,p_Country,p_Currency,p_Website,p_Agency_Email,p_Agency_Phone,p_Agency_Fax,
+		p_Agency_Contact_Pref,p_CompanyType,p_BusinessType,p_IDNumber,p_ARCNumber,p_IATANumber,p_CLIANumber,
+		p_OfficeCode,p_AgencyType,p_EntityType,p_ErrorMsg,p_LegalName,p_ErrorCode CHARACTER '';
+		
+		SET p_Action = FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)Action);
+		SET p_AgencyId = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID),'');
+		SET p_AgentId = '';
+		SET p_Agent_First = COALESCE(rEnv.Temp.InpReq.*:AgentInfo.*:PersonName.*:GivenName,'');
+		SET p_Agent_Last = COALESCE(rEnv.Temp.InpReq.*:AgentInfo.*:PersonName.*:Surname,'');
+		SET p_Sex = '';
+		SET p_UserName = COALESCE(UPPER(rEnv.Temp.InpReq.*:UserLogin.(XMLNSC.Attribute)UserLoginName),'');
+		SET p_Password = rEnv.Temp.AgencyPwd;
+		SET p_Role = '';
+		SET p_Email = COALESCE(rEnv.Temp.InpReq.*:AgentInfo.*:Email,'');
+		SET p_Phone = FIELDVALUE(rEnv.Temp.InpReq.*:AgentInfo.*:Telephone[1].(XMLNSC.Attribute)PhoneNumber);
+		SET p_Contact_Pref = '';
+		SET p_Agent_Loc = '';
+		SET p_Can_access = 'Y';
+		SET p_AgencyName = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.*:CompanyName,'');
+		
+		IF (rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[1]) IS NOT NULL THEN
+			SET p_Address1 = rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[1];
+		END IF;
+		IF (rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[2]) IS NOT NULL THEN
+			SET p_Address2 = rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[2];
+		END IF;	
+		SET p_City = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:CityName,'');
+		SET p_State = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:StateProv.(XMLNSC.Attribute)StateCode),'');
+		SET p_Zip = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:PostalCode,'');
+		SET p_Country = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:CountryName.(XMLNSC.Attribute)Code),'');
+		SET p_Currency = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)ISOCurrency),'');
+		SET p_Website = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)Website),'');
+		SET p_Agency_Email = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:Email,'');
+		SET p_Agency_Phone = FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Telephone[1].(XMLNSC.Attribute)PhoneNumber);
+		SET p_Agency_Fax = FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Telephone[2].(XMLNSC.Attribute)PhoneNumber);
+		SET p_Agency_Contact_Pref = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:ContactPreferences.(XMLNSC.Attribute)ContactPreference),'');
+		SET p_CompanyType = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)CompanyType),'');
+		SET p_BusinessType = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)BusinessType),'');
+		SET p_IDNumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)IdentificationNumber),'');
+		SET p_ARCNumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)ARCNumber),'');
+		SET p_IATANumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)IATANumber),'');
+		SET p_CLIANumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)CLIANumber),'');
+		SET p_OfficeCode = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)OfficeCode),'');
+		SET p_AgencyType = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)AgencyType),'');
+		SET p_EntityType ='AGEN';
+		SET p_LegalName= COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)LegalName),'');
+		
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Create Agency SP...', rEnv);
+  		
+		CALL CreateAgency(p_Action,p_AgencyId,p_AgentId,p_Agent_First,p_Agent_Last,p_Sex,p_UserName,p_Password,p_Role,
+									p_Email,p_Phone,p_Contact_Pref,p_Agent_Loc,p_Can_access,p_AgencyName,p_Address1,p_Address2,p_City,
+									p_State,p_Zip,p_Country,p_Currency,p_Website,p_Agency_Email,p_Agency_Phone,p_Agency_Fax,p_Agency_Contact_Pref,
+									p_CompanyType,p_BusinessType,p_IDNumber,p_ARCNumber,p_IATANumber,p_CLIANumber,p_OfficeCode,p_AgencyType,
+									p_EntityType,p_LegalName,p_ErrorCode,p_ErrorMsg);
+									
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+
+		SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+	
+		CREATE FIELD refOut.ns:Success;
+		
+		IF  p_ErrorCode <> '0' THEN
+			
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMsg,'');
+			
+		END IF;
+			
+			SET refOut.ns:UserLogin.(XMLNSC.Attribute)Password = rEnv.Temp.InpReq.*:UserLogin.(XMLNSC.Attribute)Password;
+			SET refOut.ns:UserLogin.(XMLNSC.Attribute)UserLoginName = rEnv.Temp.InpReq.*:UserLogin.(XMLNSC.Attribute)UserLoginName;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF (LogPayLoad) THEN
+    
+		 	CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'LogMessage';
+		    SET rEnv.LogMessage.Response = OutputRoot.XMLNSC;
+		    SET rEnv.LogMessage.Response.*:NCL_CruiseCreateAgencyRS.*:UserLogin.(XMLNSC.Attribute)Password = 'XXXXXXXX';
+		    
+		    DECLARE OPayload BLOB ASBITSTREAM(rEnv.LogMessage.Response CCSID 1208 ENCODING 546);
+		    CALL com.ncl.iib.log.AddPayloadLogEvent(OPayload, NodeLabel, 'Create Agency Response Message', 'xml', rEnv);
+		    
+		END IF;
+		
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;		
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CreateAgency(IN p_Action CHARACTER,IN p_AgencyId CHARACTER,IN p_AgentId CHARACTER,IN p_Agent_First CHARACTER,
+								 IN p_Agent_Last CHARACTER,IN p_Sex CHARACTER,IN p_UserName CHARACTER,IN p_Password CHARACTER,
+					             IN p_Role CHARACTER,IN p_Email CHARACTER,IN p_Phone CHARACTER,IN p_Contact_Pref CHARACTER,
+	                             IN p_Agent_Loc CHARACTER,IN p_Can_access CHARACTER,IN p_AgencyName CHARACTER,IN p_Address1 CHARACTER,
+								 IN p_Address2 CHARACTER,IN p_City CHARACTER,IN p_State CHARACTER,IN p_Zip CHARACTER,
+								 IN p_Country CHARACTER,IN p_Currency CHARACTER,IN p_Website CHARACTER,IN p_Agency_Email CHARACTER,
+								 IN p_Agency_Phone CHARACTER,IN p_Agency_Fax CHARACTER,IN p_Agency_Contact_Pref CHARACTER,IN p_CompanyType CHARACTER,
+						         IN p_BusinessType CHARACTER,IN p_IDNumber CHARACTER,IN p_ARCNumber CHARACTER,IN p_IATANumber CHARACTER,
+	                             IN p_CLIANumber CHARACTER,IN p_OfficeCode CHARACTER,IN p_AgencyType CHARACTER,IN p_EntityType CHARACTER,
+	                             IN p_LegalName CHARACTER,OUT p_ErrorCode CHARACTER,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.Ncl_WEsb_Create_Agency";
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseCreateAgency
+* MODULE NAME : UpdateAgencyDetails
+* Description : This module updates Agency Details
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 02/01/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_UpdateAgencyInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		--Insert Data IN Ncl_Wesb_Update_Agency_InfoBG
+		DECLARE rEnv,refOut REFERENCE TO Environment.Variables;
+
+		DECLARE p_Action,p_AgencyName,p_Currency,p_Website,p_Agency_Type,p_TaxPayer_Type,p_TaxPayer_Number,
+		p_ARCNumber,p_IATANumber,p_CLIANumber,p_OfficeCode,p_LegalName,
+		p_Agency_Classification_Code,p_Agency_Classification_Name,p_DRS_Delivery_Pref_Prekit,
+		p_DRS_Delivery_Pref_Final,p_ErrorCode,p_ErrorMsg CHARACTER '';
+		
+		DECLARE p_AgencyId INTEGER ;
+		
+        SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+        
+		SET p_Action = 'U';
+		SET p_AgencyId = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID),'');
+		SET p_AgencyName = COALESCE(rEnv.Temp.InpReq.*:POS.*:Source.*:RequestorID.*:CompanyName,'');
+		SET p_Currency = COALESCE(rEnv.Temp.InpReq.*:POS.*:Source.(XMLNSC.Attribute)ISOCountry,'');
+		SET p_Website = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)Website),'');
+		SET p_Agency_Type = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)AgencyType),'');
+		SET p_TaxPayer_Number = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)IdentificationNumber),'');
+		SET p_ARCNumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)ARCNumber),'');
+		
+		SET p_IATANumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)IATANumber),'');
+		SET p_CLIANumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)CLIANumber),'');
+		SET p_OfficeCode = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)OfficeCode),'');
+		SET p_LegalName = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)LegalName),'');
+		SET p_Agency_Classification_Code = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)AgencyClassificationCode),'');
+		SET p_Agency_Classification_Name = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)AgencyClassificationName),'');
+		SET p_DRS_Delivery_Pref_Prekit = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)PrekitDocsDeliveryPref),'');
+		SET p_DRS_Delivery_Pref_Final = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.(XMLNSC.Attribute)FinalDocsDeliveryPref),'');
+		
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Update Agency SP...', rEnv);
+		
+		CALL UpdateAgencyInfo (p_Action,p_AgencyId,p_AgencyName,p_Currency,p_Website,p_Agency_Type,
+							   p_TaxPayer_Type,p_TaxPayer_Number,p_ARCNumber,p_IATANumber,p_CLIANumber,p_OfficeCode,p_LegalName,
+							   p_Agency_Classification_Code,p_Agency_Classification_Name,p_DRS_Delivery_Pref_Prekit,
+							   p_DRS_Delivery_Pref_Final,p_ErrorCode,p_ErrorMsg);
+							   
+							   
+		IF p_ErrorCode <> '0' THEN
+			
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+
+			CREATE FIELD refOut.ns:Success;
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMsg,'');
+						
+			RETURN TRUE;
+			
+		END IF;
+		
+		-- --****************************************
+		--Updating Data to Ncl_Wesb_Upd_Agency_Phone_Info
+
+		DECLARE p_PhoneNumber,p_Phone_Type,p_Is_Phone_Primary,p_Is_Phone_Secondary,p_Is_Phone_Fax CHARACTER '';
+
+		SET p_AgencyId = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID),'');
+		SET p_PhoneNumber = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Telephone.(XMLNSC.Attribute)PhoneNumber),'');
+
+		DECLARE phnLocType CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Telephone.(XMLNSC.Attribute)PhoneLocationType);
+		DECLARE phnUseType CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Telephone.(XMLNSC.Attribute)PhoneUseType);
+		DECLARE phnTechType CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Telephone.(XMLNSC.Attribute)PhoneTechType);
+
+		CASE
+		WHEN phnLocType = 10 THEN
+			SET p_Phone_Type ='CELLUAR';
+
+		WHEN phnLocType = 11 THEN
+			SET p_Phone_Type ='BUSINESS';
+
+		WHEN phnLocType = 8 AND phnUseType = 8 THEN
+			SET p_Phone_Type ='PRIMARY';
+
+		WHEN phnLocType = 6 THEN
+			SET p_Phone_Type ='HOME';
+
+		WHEN phnLocType = 8 AND phnTechType = 3 THEN
+			SET p_Phone_Type ='FAX';
+
+		WHEN phnLocType = 8 AND phnTechType =9 THEN
+			SET p_Phone_Type ='SECONDARY';
+		ELSE
+
+			SET p_Phone_Type = '';
+
+		END CASE;
+
+		IF phnUseType = 8 THEN
+			SET p_Is_Phone_Primary = 'Y';
+		ELSE
+			SET p_Is_Phone_Primary = 'N';
+		END IF;
+
+		IF phnUseType = 9 THEN
+			SET p_Is_Phone_Secondary = 'Y';
+		ELSE
+			SET p_Is_Phone_Secondary = 'N';
+		END IF;
+
+		IF phnTechType = 3 THEN
+			SET p_Is_Phone_Fax = 'Y';
+		ELSE
+			SET p_Is_Phone_Fax = 'N';
+		END IF;
+		
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Update Agency PhoneInfo SP...', rEnv);
+  		
+		CALL UpdateAgencyPhoneInfo(p_AgencyId,p_PhoneNumber,p_Phone_Type,p_Is_Phone_Primary,p_Is_Phone_Secondary,p_Is_Phone_Fax,p_ErrorCode,p_ErrorMsg);
+
+		IF p_ErrorCode <> '0' THEN
+
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+
+			CREATE FIELD refOut.ns:Success;
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+			SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMsg,'');
+	
+			RETURN TRUE;
+		END IF;
+
+--		--******************************************
+--		--Insert Data IN Ncl_Wesb_Upd_Agency_Addr_InfoBG
+
+			DECLARE p_Address_Line1,p_Address_Line2,p_Address_Line3,p_Address_Line4,p_Address_City,p_State_Code,p_Country_Code,p_Zip,p_Address_Type,
+			p_Is_Address_Mailing,p_Is_Address_Shipping CHARACTER '';
+
+			SET p_AgencyId = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID),'');
+
+			IF rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[1] IS NOT NULL THEN
+				SET p_Address_Line1 = rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[1];
+			END IF;
+
+			IF rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[2] IS NOT NULL THEN
+				SET p_Address_Line2 = rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[2];
+			END IF;
+
+			IF rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[3] IS NOT NULL THEN
+				SET p_Address_Line3 = rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[3];
+			END IF;
+
+			IF rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[4] IS NOT NULL THEN
+				SET p_Address_Line4 = rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:AddressLine[4];
+			END IF;
+
+			SET p_Address_City = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:CityName,'');
+			SET p_State_Code = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:StateProv.(XMLNSC.Attribute)StateCode),'');
+			SET p_Country_Code = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:CountryName.(XMLNSC.Attribute)Code),'');
+			SET p_Zip = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.*:PostalCode,'');
+
+			DECLARE addrType CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.(XMLNSC.Attribute)Type);
+			DECLARE addrMail CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.(XMLNSC.Attribute)ShareSynchInd);
+			DECLARE addrShip CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Address.(XMLNSC.Attribute)ShareMarketInd);
+
+			CASE
+			WHEN addrType ='3' THEN
+				SET p_Address_Type = 'PRIMARY';
+
+			WHEN addrType ='4' THEN
+				SET p_Address_Type = 'SECONDARY';
+
+			ELSE
+				SET p_Address_Type ='';
+			END CASE;
+
+			CASE
+			WHEN addrMail = 'Yes' THEN
+				SET p_Is_Address_Mailing = 'Y';
+
+			WHEN addrMail = 'No' THEN
+				SET p_Is_Address_Mailing = 'N';
+
+			ELSE
+				SET p_Is_Address_Mailing ='';
+			END CASE;
+
+			CASE
+			WHEN addrShip = 'Yes' THEN
+				SET p_Is_Address_Shipping ='Y';
+
+			WHEN addrShip = 'No' THEN
+				SET p_Is_Address_Shipping ='N';
+
+			ELSE
+				SET p_Is_Address_Shipping = '';
+			END CASE;
+
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Update Agency AddrInfo SP...', rEnv);
+  			
+			CALL UpdateAgencyAddrInfo(p_AgencyId,p_Address_Line1,p_Address_Line2,p_Address_Line3,p_Address_Line4,p_Address_City,
+			p_State_Code,p_Country_Code,p_Zip,p_Address_Type,
+			p_Is_Address_Mailing,p_Is_Address_Shipping,p_ErrorCode,p_ErrorMsg);
+
+			IF p_ErrorCode <> '0' THEN
+
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+
+				SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+
+				CREATE FIELD refOut.ns:Success;
+				SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+				SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMsg,'');
+				
+				RETURN TRUE;
+			END IF;
+			
+--		-- --***********************************
+--		--Insert Data IN Ncl_Wesb_Upd_Agency_Email_InfoBG
+
+			SET p_AgencyId = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID),'');
+			SET p_Address_Line1 = COALESCE(rEnv.Temp.InpReq.*:AgencyInfo.*:Email,'');
+
+			DECLARE emailSynch CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Email.(XMLNSC.Attribute)ShareSynchInd);
+			DECLARE emailShare CHARACTER FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:Email.(XMLNSC.Attribute)ShareMarketInd);
+
+			IF emailSynch = 'Yes' THEN
+				SET p_Is_Address_Mailing ='Y';
+			ELSE
+				SET p_Is_Address_Mailing ='N';
+			END IF;
+
+			IF emailShare = 'Yes' THEN
+				SET p_Is_Address_Shipping ='Y';
+			ELSE
+				SET p_Is_Address_Shipping ='N';
+			END IF;
+			
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Update Agency EmailInfo SP...', rEnv);
+  			
+			CALL UpdateAgencyEmailInfo (p_AgencyId,p_Address_Line1,p_Is_Address_Mailing,p_Is_Address_Shipping,p_ErrorCode,p_ErrorMsg);
+
+			IF p_ErrorCode <> '0' THEN
+
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+
+				SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+
+				CREATE FIELD refOut.ns:Success;
+				SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+				SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMsg,'');
+				
+				RETURN TRUE;
+			END IF;
+			
+--		--**********************************
+--		--Insert Data IN Ncl_Wesb_Upd_Agc_Conpref_InfoBG
+
+		DECLARE p_Agency_Contact_Pref CHARACTER '';
+
+		SET p_AgencyId = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID),'');
+		SET p_Agency_Contact_Pref = COALESCE(FIELDVALUE(rEnv.Temp.InpReq.*:AgencyInfo.*:ContactPreferences.(XMLNSC.Attribute)ContactPreference),'');
+
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Update Agency ConfPrefInfo SP...', rEnv);
+		CALL UpdateAgencyConPrefInfo(p_AgencyId,p_Agency_Contact_Pref,p_ErrorCode,p_ErrorMsg);
+			
+		IF p_ErrorCode <> '0' THEN
+			
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+			
+			SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+			
+			CREATE FIELD refOut.ns:Success;
+				SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+				SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = COALESCE(p_ErrorMsg,'');
+				
+			RETURN TRUE;
+		END IF;		
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS refOut;
+
+		SET refOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.Temp.InpReq.(XMLNSC.Attribute)TransactionIdentifier;
+
+		CREATE FIELD refOut.ns:Success;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Create(Update) Agency Response ...', 'xml', rEnv);
+	
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		RETURN TRUE;
+	END;
+	--Insert Data IN Ncl_Wesb_Update_Agency_InfoBG
+	CREATE PROCEDURE UpdateAgencyInfo(IN p_Action CHARACTER ,IN p_AgencyId INTEGER,IN p_AgencyName CHARACTER,IN p_Currency CHARACTER ,IN p_Website CHARACTER ,
+									  IN p_Agency_Type CHARACTER ,IN p_TaxPayer_Type CHARACTER,
+						              IN p_TaxPayer_Number CHARACTER ,IN p_ARCNumber CHARACTER,IN p_IATANumber CHARACTER ,IN p_CLIANumber CHARACTER ,IN p_OfficeCode CHARACTER ,IN p_LegalName CHARACTER ,
+									  IN p_Agency_Classification_Code CHARACTER ,IN p_Agency_Classification_Name CHARACTER ,IN p_DRS_Delivery_Pref_Prekit CHARACTER ,IN p_DRS_Delivery_Pref_Final CHARACTER,
+									  OUT p_ErrorCode CHARACTER,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.Ncl_Wesb_Update_Agency_Info";
+
+--	--Insert Data IN Ncl_Wesb_Upd_Agency_Phone_Info
+	CREATE PROCEDURE UpdateAgencyPhoneInfo(IN p_AgencyId INTEGER,IN p_PhoneNumber CHARACTER ,IN p_Phone_Type CHARACTER,
+										   IN p_Is_Phone_Primary CHARACTER,IN p_Is_Phone_Secondary CHARACTER, IN p_Is_Phone_Fax CHARACTER,
+										   OUT p_ErrorCode CHARACTER,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.Ncl_Wesb_Upd_Agency_Phone_Info";
+--
+--	--Insert Data IN Ncl_Wesb_Upd_Agency_Addr_Info
+	CREATE PROCEDURE UpdateAgencyAddrInfo(IN p_AgencyId INTEGER ,IN p_Address_Line1 CHARACTER ,IN p_Address_Line2 CHARACTER ,
+										  IN p_Address_Line3 CHARACTER ,IN p_Address_Line4 CHARACTER ,IN p_Address_City CHARACTER ,
+										  IN p_State_Code CHARACTER ,IN p_Country_Code CHARACTER ,IN p_Zip CHARACTER ,IN p_Address_Type CHARACTER,
+										  IN p_Is_Address_Mailing CHARACTER ,IN p_Is_Address_Shipping CHARACTER ,OUT p_ErrorCode CHARACTER ,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.Ncl_Wesb_Upd_Agency_Addr_Info";
+--
+--	--Insert Data IN Ncl_Wesb_Upd_Agency_Email_InfoBG
+	CREATE PROCEDURE UpdateAgencyEmailInfo(IN p_AgencyId INTEGER,IN p_Address_Line1 CHARACTER ,IN p_Is_Address_Mailing CHARACTER,
+									       IN p_Is_Address_Shipping CHARACTER,OUT p_ErrorCode CHARACTER,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.Ncl_Wesb_Upd_Agency_Email_Info";
+--
+--	--Insert Data IN Ncl_Wesb_Upd_Agc_Conpref_InfoBG
+	CREATE PROCEDURE UpdateAgencyConPrefInfo(IN p_AgencyId INTEGER, IN p_Agency_Contact_Pref CHARACTER,OUT p_ErrorCode CHARACTER,OUT p_ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.Ncl_Wesb_Upd_Agc_Conpref_Info";
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : Ncl_CruiseCreate_UpdateAgency
+* MODULE NAME : Create/Update Agency
+* Description : This module retrieves Client details from Seaware database
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 02/01/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateAgency_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+				SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Create Agency Exception..', 'xml', rEnv);
+		END IF;
+
+		SET OutputRoot = InputRoot;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : Ncl_CruiseCreate_UpdateAgency
+* MODULE NAME : Create/Update Agency
+* Description : This module retrieves Client details from Seaware database
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 02/01/2018 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateAgency_Fault_Handling
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv,runTimeErr REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.TempHeaders.MQMD.ReplyToQ;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateAgencyRS AS runTimeErr;
+
+		SET runTimeErr.Errors.Error = cErrorText;
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,40 @@
+BROKER SCHEMA NCL_CruiseNewRelicEvent_LIB
+DECLARE ns NAMESPACE  'http://com.ncl.newrelic';
+DECLARE NR_INSIGHT_API_KEY EXTERNAL CHARACTER '';
+DECLARE NR_INSIGHT_URL EXTERNAL CHARACTER '';
+CREATE COMPUTE MODULE Log_NewRelicInsightEvent_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NewRelicInsightEvent;
+		SET OutputLocalEnvironment.Destination.HTTP.Compression = 'gzip';
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = NR_INSIGHT_URL;
+		SET OutputRoot.HTTPRequestHeader."X-Insert-Key" = NR_INSIGHT_API_KEY;
+		
+		CREATE FIELD OutputRoot.JSON.Data IDENTITY (JSON.Array)Data;
+		
+		DECLARE rOut REFERENCE TO OutputRoot.JSON.Data;
+		DECLARE I INTEGER 1;
+		DECLARE cFieldType CHAR 'STRING';
+		FOR e AS rIn.*:Events[] 
+		DO
+			SET rOut.Item[I].eventType = e.*:EventType;
+			FOR f AS e.*:Fields[]
+			DO
+				SET cFieldType = COALESCE(	f.*:FieldType ,'STRING');
+				IF cFieldType = 'INTEGER' THEN
+					SET rOut.Item[I].{f.*:FieldName} = CAST( f.*:FieldValue AS INTEGER DEFAULT 0);
+				ELSEIF cFieldType = 'FLOAT' THEN
+					SET rOut.Item[I].{f.*:FieldName} = CAST( f.*:FieldValue AS DECIMAL DEFAULT 0.0);					
+				ELSE
+					SET rOut.Item[I].{f.*:FieldName} = f.*:FieldValue;	
+				END IF;														
+			END FOR;
+			SET I = I + 1;			 		
+		END FOR;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+

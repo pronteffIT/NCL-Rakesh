@@ -1,0 +1,27 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateUpdateTravewith_MapErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.Temp.Message.*:NCL_CruiseCreateUpdateTravelWithRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC;
+		MOVE rIn FIRSTCHILD;
+		MOVE rIn NEXTSIBLING;
+		
+		DECLARE rOutRoot,rOut REFERENCE TO OutputRoot;
+		CALL CreateWarningRespForVXErrors(rEnv, rEnvInMsg, rIn, rOutRoot);
+
+--		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+--		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateTravelWith response message', 'xml', rEnv);
+
+		PROPAGATE TO LABEL 'ROUTETOCALLER';
+
+		RETURN FALSE;		
+		
+END;
+	
+	
+END MODULE;

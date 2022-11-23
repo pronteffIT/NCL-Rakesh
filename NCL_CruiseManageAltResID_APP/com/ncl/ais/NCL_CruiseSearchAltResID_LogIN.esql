@@ -1,0 +1,441 @@
+
+
+BROKER SCHEMA com.ncl.ais
+
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER '';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : LogIn
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/21/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_LogIN
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS;
+		DECLARE rlogIn REFERENCE TO OutputRoot.XMLNSC.VerifyAgencyRequest;
+		DECLARE ref REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSearchAltResIDRQ;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cPCC , cSystemName,cQuery CHARACTER;
+		-- copy the entire initial request
+		CREATE FIELD Environment.Variables as rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.XMLNSC.InputReq = InputRoot.XMLNSC.*:NCL_CruiseSearchAltResIDRQ;
+
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+        -- add metadata to log event
+        CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(ref.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(ref.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'','','',rEnv);
+		---add input payload to looging
+		
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'SearchAltResId input request message', 'xml', rEnv);
+	END IF;
+		SET rEnv.code = ref.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyRequest AS rlogIn;
+		SET rlogIn.source.BookingChannel.CompanyName.Code = 'SABRE';
+		SET rlogIn.source.RequestorID.ID = ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rlogIn.source.PseudoCityCode = ref.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : Filter
+* Description : This module is used for building response and request on the basis of input.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/21/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_Filter
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC.InputReq;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE refDbSearch REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS;
+		---declaring refernce for AgencyId and SessionId
+		SET rEnv.SessionId = rAgency.sessionGUID;
+		SET rEnv.agencyId= rAgency.agencyID ;
+		SET rEnv.EndPoint = rAgency.endpoint;
+		-- This flow will decide the path to carryon based on the response obtained from the Callable flow.
+		IF EXISTS(rAgency.loginError.(XMLNSC.Attribute)Code[])
+			OR EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)Code[] ) THEN
+			-- If error exist from the callable invoke then send to Generic warning
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			IF EXISTS(rAgency.loginError[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.loginError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.loginError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSEIF EXISTS(rAgency.runtimeError[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.runtimeError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.runtimeError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+		ELSEIF ref.*:POS.*:Source.*:RequestorID = COALESCE(0,'') THEN
+			--agencyCheckError
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Agency not found ...', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			-- Creates Warnings as sibling to Success
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12805';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSEIF EXISTS(rAgency.agencyNotFound[])THEN
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			-- Creates Warnings as sibling to Success
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'The Res_ID associated with AltResID does is not accessible by the requesting channel';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			SET rOut.ns:AltReservationId= ref.*:AltReservationId;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		ELSE
+			---dbsearch request
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Dbsearch Invoke...', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+			CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS refDbSearch;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,refDbSearch);
+--			SET refDbSearch.MsgHeader.Version = VersonixAPIVersion;
+--			SET refDbSearch.MsgHeader.SessionGUID = rEnv.SessionId;
+			SET refDbSearch.Reservations.AltResID = COALESCE(ref.*:AltReservationId ,'');
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : LoadBooking
+* Description : This module is used for LoadBooking.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/21/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_LoadBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv ,rRes REFERENCE TO Environment.Variables;
+		DECLARE rDbSearch REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.InputReq;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS;
+		DECLARE rLoad REFERENCE TO OutputRoot.XMLNSC.LoadBooking_IN;
+
+
+		IF EXISTS(rDbSearch.Errors.Error.ErrorMessage[]) THEN
+			-----Validation Warning
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Occur While invoking DBsearch...', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rDbSearch.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			IF EXISTS(rDbSearch.Reservations.Reservation.ResID[]) THEN
+				-----check channel
+				IF (rEnv.code = rDbSearch.Reservations.Reservation.SourceCode)
+					THEN
+					IF (rEnv.agencyId = rDbSearch.Reservations.Reservation.AgencyID)
+						THEN
+						SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+						CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS rLoad;
+						CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rLoad);
+--						SET rLoad.MsgHeader.Version = VersonixAPIVersion;
+--						SET rLoad.MsgHeader.SessionGUID = rEnv.SessionId;
+						SET rLoad.Options.Lock = 'N';
+						SET rLoad.ResShellOptions.IncldeElements = 'ResHeader';
+						SET rLoad.ResID = CAST(rDbSearch.Reservations.Reservation.ResID AS INTEGER);
+						RETURN TRUE;
+
+					ELSE
+						-- call agencypccMismatch
+						CALL chnanelMismatch(rIn,rOut,rEnv);
+						RETURN FALSE;
+					END IF;
+				ELSE
+					----call channel mismatch
+					CALL chnanelMismatch(rIn,rOut,rEnv);
+					RETURN FALSE;
+				END IF;
+			ELSE
+				-------resid not found
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'AltResID does not exist in our system';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				SET rOut.ns:AltReservationId = COALESCE( rIn.*:AltReservationId , '');
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+		END IF;
+	END;
+	----procedure for channel mismatch and agencypccMismatch
+	CREATE PROCEDURE chnanelMismatch (IN inputRef REFERENCE , OUT outRef REFERENCE ,IN envRef REFERENCE)
+	BEGIN
+		SET OutputRoot.MQMD = envRef.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS outRef;
+		CALL com.ncl.ais.utils.CopyAttributes(inputRef,outRef);
+		SET outRef.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+		SET outRef.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'The Res_ID associated with AltResID does is not accessible by the requesting channel';
+		SET outRef.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		SET outRef.ns:AltReservationId = inputRef.*:AltReservationId;
+		PROPAGATE TO TERMINAL 'out1';
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : Response
+* Description : This module is used for Response.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/21/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLoadRsp REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.InputReq;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS;
+		
+		IF EXISTS(rLoadRsp.Errors.Error.ErrorMessage[]) THEN
+			-----Validation Warning
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur in LoadBooking ...', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rLoadRsp.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			----build response
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE LASTCHILD OF rOut NAMESPACE ns NAME 'Success';
+			SET rOut.ns:ReservationId = rLoadRsp.ResShell.ResHeader.ResID;
+			SET rOut.ns:AltReservationId = rLoadRsp.ResShell.ResHeader.AltResID;
+		    
+		    DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			---SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Search AltResId message Response', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+	        SET OutputRoot.BLOB.BLOB = bPayload;
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : Runtime
+* Description : This module is used for RuntimeException.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/21/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_Runtime
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS;
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSearchAltResIDRS AS rOut;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking UpdateBooking api', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv , rExcp);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			-----Build Error Response
+			SET rOut.ns:Errors.ns:Error = cErrorText;
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			RETURN TRUE;
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : ExceptionHandler
+* Description : This module is used for Exception Handling.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'searchAltResID Invalid request message', 'xml', rEnv);
+		END IF;
+		END IF;
+
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseSearchAltResID
+* MODULE NAME : LogOut
+* Description : This module is used for LogOut.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/21/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		SET OutputRoot = InputRoot;
+		-- send the response to queue
+		PROPAGATE;
+		-- call API to logout from session
+		IF EXISTS(rEnv.SessionId[]) THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+            SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+            SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionId;
+
+			PROPAGATE TO LABEL 'LOGOUT';
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseSearchAltResID_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.EndPoint;
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+

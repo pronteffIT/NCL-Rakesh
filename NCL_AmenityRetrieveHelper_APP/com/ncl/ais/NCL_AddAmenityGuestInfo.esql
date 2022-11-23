@@ -1,0 +1,169 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+
+CREATE COMPUTE MODULE NCL_AddAmenityGuestInfo_AddGuestInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addAmenityGuestInfo;
+		DECLARE rEnvResp REFERENCE TO Environment;
+		DECLARE rEnvItm REFERENCE TO Environment;
+		
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		DECLARE cLoyaltyMbrId CHARACTER '';
+		DECLARE bPayload BLOB;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:amenityOrder.*:RequestorInfo.ID, ''),
+												'',
+												COALESCE(rIn.*:reservationID, ''),
+												'',
+												'',
+											 	rEnv);
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Amenity guest info request message', 'xml', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		CREATE LASTCHILD OF rEnv.Temp.Message AS rEnvResp NAME 'addAmenityGuestInfoResponse';
+		SET rEnvResp = rIn;
+
+		DELETE FIELD rEnvResp.*:amenityOrder.*:AmenityOrderItemsInfo.*:AmenityOrderItems;
+
+		-- required for storing guest info
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Fanin';
+		
+		IF NOT EXISTS(rIn.*:amenityOrder.*:AmenityOrderItemsInfo.*:AmenityOrderItems.*:AmenityOrderItem[]) THEN
+			SET OutputRoot.XMLNSC.sc:addAmenityGuestInfoResponse = rIn;
+			DELETE FIELD OutputRoot.XMLNSC.*:addAmenityGuestInfoResponse.*:amenityOrder.*:AmenityOrderItemsInfo;
+			
+			RETURN TRUE;
+		END IF;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling add guest info api ...', rEnv);
+
+		-- loop thru the amenity order items
+		FOR rOrdItem AS rIn.*:amenityOrder.*:AmenityOrderItemsInfo.*:AmenityOrderItems.*:AmenityOrderItem[] DO
+			SET cLoyaltyMbrId = COALESCE(rOrdItem.*:Guest.(XMLNSC.Attribute)LoyaltyMembershipID,'');
+			SET rEnv.Temp.Var.CurrentLoyaltyMbrId = cLoyaltyMbrId;
+			
+			IF EXISTS(rEnv.Temp.Fanin.{cLoyaltyMbrId}[]) THEN
+				--SET rOrdItem.sc:Guest = rEnv.Temp.Fanin.{cLoyaltyMbrId}.Guest;
+				CREATE LASTCHILD OF rEnvResp.sc:amenityOrder.sc:AmenityOrderItemsInfo.sc:AmenityOrderItems AS rEnvItm NAMESPACE sc NAME 'AmenityOrderItem';
+				SET rEnvItm = rOrdItem;
+				SET rEnvItm.sc:Guest = rEnv.Temp.Fanin.{cLoyaltyMbrId}.Guest;				
+			ELSE
+				-- call addGuestInfo amenity helper module
+				SET OutputRoot.MQMD = InputRoot.MQMD;
+				SET OutputRoot.XMLNSC.sc:addGuestInfo.sc:amenityOrderItemReq = rOrdItem;
+				SET OutputRoot.XMLNSC.sc:addGuestInfo.sc:sessionGUID = rIn.*:sessionGUID;
+				SET OutputRoot.XMLNSC.sc:addGuestInfo.sc:reservationID = rIn.*:reservationID;
+				SET OutputRoot.XMLNSC.sc:addGuestInfo.sc:GuestNameOnly = rIn.*:GuestNameOnly;
+				SET OutputRoot.XMLNSC.sc:addGuestInfo.sc:Endpoint = rIn.*:Endpoint;
+				
+				PROPAGATE TO LABEL 'GUEST_INFO';
+				
+				IF EXISTS(rEnv.Temp.Fanin.{cLoyaltyMbrId}[]) THEN
+					--SET rOrdItem.sc:Guest = rEnv.Temp.Fanin.{cLoyaltyMbrId}.Guest;
+
+					CREATE LASTCHILD OF rEnvResp.sc:amenityOrder.sc:AmenityOrderItemsInfo.sc:AmenityOrderItems AS rEnvItm NAMESPACE sc NAME 'AmenityOrderItem';
+					SET rEnvItm = rOrdItem;
+					SET rEnvItm.sc:Guest = rEnv.Temp.Fanin.{cLoyaltyMbrId}.Guest;
+				END IF;
+			END IF;
+		END FOR;
+
+		SET OutputRoot.XMLNSC.sc:addAmenityGuestInfoResponse = rEnvResp;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Amenity guest info response message', 'xml', rEnv);
+		END IF;
+					
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddAmenityGuestInfo_StoreGuestInfo
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addGuestInfoResponse;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLoyaltyMbrId CHARACTER rEnv.Temp.Var.CurrentLoyaltyMbrId;
+		
+		IF EXISTS(rIn.*:amenityOrderItemRes[]) THEN
+			SET rEnv.Temp.Fanin.{cLoyaltyMbrId}.Guest = rIn.*:amenityOrderItemRes.*:Guest;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddAmenityGuestInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER UUIDASCHAR;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AddAmenityGuestInfo_CreateFaultMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rResp REFERENCE TO OutputRoot.XMLNSC.ns:addAmenityGuestInfoFault;
+		
+		DECLARE bPayload BLOB;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.sc:addAmenityGuestInfoFault AS rResp;
+		
+		SET rResp.(XMLNSC.Attribute)Code = '12228';
+		SET rResp.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rResp.(XMLNSC.Attribute)Type = '3';
+		SET rResp = COALESCE(rEnv.ErrorSummary.ErrorText, 'System error from back end. Please try again later');	
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Add amenity guest info response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

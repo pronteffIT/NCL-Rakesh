@@ -1,0 +1,979 @@
+
+
+
+
+
+
+
+
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_RETRIEVE_CLIENT_RESP';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER 3000;
+
+DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+DECLARE crcm NAMESPACE 'http://NCL_CruiseRetrieveClient_Module';
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : RetrieveClientDetails
+* Description : This module retrieves Client details from Seaware database
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClient_RetrieveClientDetails
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		/* CALL CopyMessageHeaders();
+		-- Set Message expiry
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+		THEN
+		SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF; */
+		-- Flags for Exit Handlers
+		DECLARE CPComplete, LATComplete, VACATComplete, VACATError BOOLEAN FALSE;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+
+		DECLARE rLocalEnv, rInmsg REFERENCE TO OutputLocalEnvironment;
+		DECLARE rEnv, rOutResp, rOutWarnings, rInClientInfo, rCruiseRetrieveResp, rOutClientInfo, rOutPersonName, rOutTelephone, rOutAddress,
+		rOutEmail, rOutLoyaltyInfo, rOutUserLogin, rVacatPref, rLoyaltyPgms, rOutComment REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrieveClientRQ;
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		-- Set Message expiry
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		-- Uncomment the below block once GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		'',
+		COALESCE(CAST(rIn.*:LoyaltyInfo.(XMLNSC.Attribute)MembershipID AS CHARACTER),''),
+		'',
+		rEnv);
+		-- Check if the request has come from callable node or MQ
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[])
+			THEN
+			SET rEnv.callableReq = TRUE;
+		ELSE
+			SET rEnv.callableReq = FALSE;
+		END IF;
+
+		DECLARE cCurDateTime CHARACTER CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmmssSS');
+		DECLARE gender, cLogMessage, cRecordId, cErrorCode, cErrorMsg, cTierLevel, cPrefCruiseLength, cFutureCruisePlan , cPrefCruiseTime,
+		cPreviouslyCruised , cPreviouslyCruisedNumber, cPrefBookingMode, pOption CHARACTER '';
+		-- If the Latitude Lookup call fails, this field needs a default of N
+		DECLARE cEnrolledFlg CHARACTER 'N';
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		-- If the Latitude Lookup call fails, this field needs a default of 0
+		DECLARE cTotalPoints DECIMAL 0;
+		DECLARE pMemberShipID, pResId, iByteCount, nclientId, addrLineCnt INTEGER;
+		DECLARE clientId, pSurname, pUserName, pFirstName, pShipCode, pSailDate, pAge, pPostCode, pEmail,pBirthDate, pPhone CHARACTER;
+		DECLARE nativeSupportFlag BOOLEAN FALSE;
+		-- Variables for Error Handler
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		/** Backup Input message in environment **/
+		CREATE FIELD rEnv.InMsg AS rInmsg;
+
+		CREATE LASTCHILD OF rInmsg DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET rInmsg.XMLNSC = InputRoot.XMLNSC;
+
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveClient request message', 'xml', rEnv);
+		END IF;
+		-- Prepare parameters to call Client Profile Stored procedure
+		SET pUserName = COALESCE(UPPER(rIn.*:UserLogin.(XMLNSC.Attribute)UserLoginName), '');
+		SET pResId = COALESCE(CAST(rIn.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER), 0);
+		SET pSurname = COALESCE(rIn.*:ClientInfo.*:PersonName.*:Surname, '');
+		SET pFirstName = COALESCE(rIn.*:ClientInfo.*:PersonName.*:GivenName, '');
+		SET pPhone = COALESCE(rIn.*:ClientInfo.*:Telephone.(XMLNSC.Attribute)PhoneNumber,'');
+		SET pShipCode = COALESCE(rIn.*:SelectedSailing.(XMLNSC.Attribute)ShipCode, '');
+		SET pSailDate = COALESCE(rIn.*:SelectedSailing.(XMLNSC.Attribute)Start, '');
+		SET pMemberShipID = COALESCE(CAST(rIn.*:LoyaltyInfo.(XMLNSC.Attribute)MembershipID AS INTEGER), 0);
+		SET pAge = COALESCE(rIn.*:ClientInfo.(XMLNSC.Attribute)Age, '');
+		SET pPostCode = COALESCE(rIn.*:ClientInfo.*:Address.*:PostalCode, '');
+		SET pEmail = COALESCE(rIn.*:ClientInfo.*:Email, '');
+		SET pBirthDate = COALESCE(rIn.*:ClientInfo.(XMLNSC.Attribute)BirthDate, '');
+		-- This has to be declared here whether it is used or not (in case of 'no client records found')
+		-- Else the attributes in Exit handlers don't get created properly
+		CREATE LASTCHILD OF rLocalEnv DOMAIN('XMLNSC') NAME 'XMLNSC';
+		DECLARE rLocalEnvXMLNSC REFERENCE TO rLocalEnv.XMLNSC;
+		-- Add metadata to log event.
+		-- CALL com.ncl.iib.log.CreateMetaData('MembershipID', CAST(pMemberShipID AS CHAR), 'Membership ID', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('ReservationId', CAST(pResId AS CHAR), 'Reservation ID', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('User Name', pUserName, 'User Login Name', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('Surname', pSurname, 'Surname', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('First Name', pFirstName, 'First Name', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('Ship Code', pShipCode, 'Ship Code', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('Sail Date', pSailDate, 'Sail Date', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('Age', pAge, 'Age', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('Post Code', pPostCode, 'Post Code', rEnv);
+		-- CALL com.ncl.iib.log.CreateMetaData('Email', pEmail, 'Email', rEnv);
+		-- Exit Handler to capture stored procedure errors/exceptions in the 'Warnings' section of Response
+		BEGIN
+			DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%'
+			BEGIN
+				IF NOT EXISTS (rLocalEnvXMLNSC.sc:Warnings[])
+					THEN
+					-- Extra check to ensure 'Warnings' Element is not created when there is an error in
+					-- VacationPreferences Stored Proc
+					IF NOT(LATComplete AND NOT VACATComplete) THEN
+						CREATE LASTCHILD OF rLocalEnvXMLNSC IDENTITY sc:Warnings;
+					END IF;
+				END IF;
+				DECLARE rWarn REFERENCE TO Environment.Variables;
+				DECLARE rWarnings REFERENCE TO rLocalEnvXMLNSC.sc:Warnings;
+				-- Determine where the exception occurred and capture warning accordingly
+				IF VACATComplete
+					THEN
+					-- The exception occurred in getClientPrograms
+					CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY sc:Warning;
+					--SET rWarn.(XMLNSC.Attribute)Code = '9917';
+					--SET rWarn.(XMLNSC.Attribute)ShortText = 'Unexpected Error 14';
+					-- Add Log Event to mark this
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Returned by Stored proc to Get Client Programs', rEnv);
+
+				ELSEIF LATComplete
+					THEN
+					-- The exception occurred in GetClientVacationPreference
+					-- No Warnings to capture for this. The default values of relevant variables will be used for mapping
+					-- Set this flag to ensure GetClientPrograms is not called if Vacation Preferences call errors out
+					SET VACATError = TRUE;
+					-- Add Log Event to mark this
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Returned by Stored proc to Get Client Vacation Preferences', rEnv);
+
+				ELSEIF CPComplete
+					THEN
+					-- The exception occurred in GetClientLatitudeData
+					CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY sc:Warning;
+					SET rWarn.(XMLNSC.Attribute)Code = '9917';
+					SET rWarn.(XMLNSC.Attribute)ShortText = 'read Latitude timeout';
+					-- Add Log Event to mark this
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error Returned by Stored proc to Get Client Latitude Data', rEnv);
+
+				ELSE
+					-- The exception occurred in GetClientProfile
+					CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY sc:Warning;
+					--SET rWarn = errorMsg;
+					SET rWarn.(XMLNSC.Attribute)Code = '9917';
+					SET rWarn.(XMLNSC.Attribute)ShortText = 'Unexpected Err 5';
+					-- Add Log Event to mark this
+					DECLARE errorMsg CHARACTER 'Error Returned by Stored proc to Get Client Profile Data : ' || 'SQLCODE - ' || CAST(SQLCODE AS CHAR) || ' ' || SUBSTRING(SQLERRORTEXT AFTER '[ODBC Oracle Wire Protocol driver]');
+					CALL com.ncl.iib.log.AddLogEvent(NodeLabel, errorMsg, rEnv);
+				END IF;
+
+			END;
+			-- Invoke GetClientProfile Stored Procedure
+			CALL GetClientProfile(pOption, pUserName, pResId, pSurname, pFirstName, pShipCode, pSailDate,
+			pMemberShipID, pBirthDate, pPostCode, pEmail, pPhone, '',
+			rEnv.ClientProfileResultSet[]);
+			--CALL GetClientProfile('', pUserName, pResId, pSurname, pFirstName, pShipCode, pSailDate,
+			-- pMemberShipID, pAge, pPostCode, pEmail, '', '',
+			-- rEnv.ClientProfileResultSet[]);
+			-- Add log event
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc to Get Client Profile complete', rEnv);
+			-- Check if rows were returned by the stored procedure
+			-- IF NOT EXISTS(rEnv.ClientProfileResultSet[])
+			--IF NOT EXISTS(rEnv.ClientProfileResultSet.LAST_NAME[])
+			--IF (NOT EXISTS (rEnv.ClientProfileResultSet.LAST_NAME[])) OR (rEnv.ClientProfileResultSet.LAST_NAME = '' )
+			IF rEnv.ClientProfileResultSet.LAST_NAME IS NULL
+				THEN
+				DECLARE errMsg CHARACTER 'No Clients Found';
+				-- Check if ClientProfile errored out or just didn't return any rows
+				IF EXISTS (rLocalEnvXMLNSC.sc:Warnings[]) THEN
+					SET errMsg = 'Unexpected Err 5';
+				END IF;
+				-- Send the appropriate error response and end flow
+				--CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration';
+				--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0';
+				--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseRetrieveClientRS;
+				CALL com.ncl.ais.utils.CopyAttributes(rIn, rOutResp);
+				CREATE LASTCHILD OF rOutResp IDENTITY sc:Success;
+
+				CREATE LASTCHILD OF rOutResp AS rOutWarnings IDENTITY sc:Warnings;
+				SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)Code = '9917';
+				SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)ShortText = errMsg;
+				SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)Type = '3';
+				-- add response msg to log event
+				SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				IF (LogPayLoad) THEN
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveClient response message', 'xml', rEnv);
+				END IF;
+				/*IF rEnv.callableReq
+				THEN
+				PROPAGATE TO LABEL 'CallableOut';
+				ELSE
+				PROPAGATE TO TERMINAL 'out';
+				END IF; */
+
+				PROPAGATE TO TERMINAL 'out';
+				RETURN FALSE;
+
+			END IF;
+			-- Establish if NATIVE CHAR support has been requested
+			IF EXISTS(rIn.*:IncludeNative[]) AND rIn.*:IncludeNative = TRUE THEN
+				SET nativeSupportFlag = TRUE;
+			END IF;
+			-- Store client ID. It will be used to invoke 3 other stored procedures
+			SET nclientId = COALESCE(CAST(rEnv.ClientProfileResultSet.CLIENT_ID AS INTEGER), 0);
+			SET clientId = COALESCE(rEnv.ClientProfileResultSet.CLIENT_ID, '');
+			-- Set the flag to indicate completion of ClientProfile Stored Proc. Used in Exit Handler later
+			SET CPComplete = TRUE;
+			CALL GetClientLatitudeData (clientId, cEnrolledFlg, cTotalPoints, cTierLevel, cErrorCode, cErrorMsg);
+			--CALL GetClientLatitudeData (clientId, '', cTotalPoints, cTierLevel, cErrorCode, cErrorMsg);
+			-- Add log event
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc to Get Client Latitude Data complete', rEnv);
+			-- Set the flag to indicate completion of Latitide Stored Proc. Used in Exit Handler later
+			SET LATComplete = TRUE;
+			CALL GetClientVacationPreference (nclientId, cPrefCruiseLength, cFutureCruisePlan , cPrefCruiseTime, cPreviouslyCruised , cPreviouslyCruisedNumber, cPrefBookingMode, rEnv.DestinationResultSet[],rEnv.PreviousCruiseResultSet[]);
+			-- Add log event
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc to Get Client Vacation Preferences complete', rEnv);
+			-- Set the flag to indicate completion of VacationPreference Stored Proc. Used in Exit Handler later
+			SET VACATComplete = TRUE;
+			-- If VacationPreference has errored out, there is no need to call GetClientPrograms
+			IF NOT VACATError THEN
+				CALL GetClientPrograms (clientId, rEnv.ClientProgramsResultSet[]);
+				-- Add log event
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invocation of Stored proc to Get Client Programs complete', rEnv);
+			END IF;
+		END; -- End Scope for Continue handler
+		/** Build output message in environment **/
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'XMLNSC';
+		DECLARE rEnvXmlNsc REFERENCE TO rEnv.XMLNSC;
+		CREATE LASTCHILD OF rEnvXmlNsc AS rCruiseRetrieveResp IDENTITY sc:NCL_CruiseRetrieveClientRS;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rCruiseRetrieveResp);
+		CREATE LASTCHILD OF rCruiseRetrieveResp IDENTITY sc:Success;
+		-- Assuming the Warnings structure has been created in LocalEnv by this time
+		SET rCruiseRetrieveResp.sc:Warnings = rLocalEnvXMLNSC.sc:Warnings;
+		-- Populate ClientInfo section
+		CREATE LASTCHILD OF rCruiseRetrieveResp AS rOutClientInfo IDENTITY sc:ClientInfo;
+		-- All attributes have to be defaulted to '' if they have null values returned from the Stored Procedure
+		-- Mapping to default value. No explicit mapping found
+		SET rOutClientInfo.(XMLNSC.Attribute)EmergencyFlag = 'false';
+		SET rOutClientInfo.(XMLNSC.Attribute)BirthDate = COALESCE(rEnv.ClientProfileResultSet.BIRTHDAY, '');
+		SET rOutClientInfo.(XMLNSC.Attribute)Comment = COALESCE(rEnv.ClientProfileResultSet.COMMENTS, '');
+		SET rOutClientInfo.(XMLNSC.Attribute)Gender = COALESCE(com.ncl.ais.utils.ConvertSexToGender(rEnv.ClientProfileResultSet.SEX), '');
+		SET rOutClientInfo.(XMLNSC.Attribute)GuestOccupation = COALESCE(rEnv.ClientProfileResultSet.OCCUPATION, '');
+		SET rOutClientInfo.(XMLNSC.Attribute)HouseholdID = COALESCE(rEnv.ClientProfileResultSet.HOUSEHOLD_ID,'');
+		SET rOutClientInfo.(XMLNSC.Attribute)LoyaltyMembershipID = COALESCE(rEnv.ClientProfileResultSet.CLIENT_ID, '');
+		SET rOutClientInfo.(XMLNSC.Attribute)Nationality = COALESCE(rEnv.ClientProfileResultSet.CITIZENSHIP,'');
+		
+ 		-- Populate PersonName section
+		CREATE LASTCHILD OF rOutClientInfo AS rOutPersonName IDENTITY sc:PersonName;
+
+		SET rOutPersonName.sc:NamePrefix = NULLIF(rEnv.ClientProfileResultSet.TITLE, '');
+		SET rOutPersonName.sc:GivenName = NULLIF(rEnv.ClientProfileResultSet.FIRST_NAME, '');
+		SET rOutPersonName.sc:MiddleName = NULLIF(rEnv.ClientProfileResultSet.MIDDLE_NAME, '');
+		SET rOutPersonName.sc:Surname = NULLIF(rEnv.ClientProfileResultSet.LAST_NAME, '');
+		-- Map Native Name Details only if it has been requested
+
+
+		IF nativeSupportFlag THEN
+			SET rOutPersonName.sc:NameTitleNative =NULLIF(rEnv.ClientProfileResultSet.TITLE_NATIVE, '');
+			SET rOutPersonName.sc:GivenNameNative = NULLIF(rEnv.ClientProfileResultSet.FIRST_NAME_NATIVE, '');
+			SET rOutPersonName.sc:MiddleNameNative = NULLIF(rEnv.ClientProfileResultSet.MIDDLE_NAME_NATIVE, '');
+			SET rOutPersonName.sc:SurnameNative = NULLIF(rEnv.ClientProfileResultSet.LAST_NAME_NATIVE, '');
+		END IF;
+		-- IF NOT com.ncl.ais.utils.IsEmpty(rEnv.ClientProfileResultSet.PHONE_NUMBER) THEN
+		-- -- Populate Telephone section
+		-- CREATE LASTCHILD OF rOutClientInfo AS rOutTelephone IDENTITY sc:Telephone;
+		-- SET rOutTelephone.PhoneNumber = rEnv.ClientProfileResultSet.PHONE_NUMBER;
+		-- SET rOutTelephone.PhoneTechType = rEnv.ClientProfileResultSet.PHONE_TYPE;
+		-- --changes done to add Mobile phone details
+		-- SET rOutTelephone.IsPrimaryNumber = rEnv.ClientProfileResultSet.IS_PHONE_PRIMARY;
+		-- SET rOutTelephone.IsSecondaryNumber = rEnv.ClientProfileResultSet.IS_PHONE_SECONDARY;
+		-- SET rOutTelephone.IsFaxNumber = rEnv.ClientProfileResultSet.IS_PHONE_FAX;
+		-- SET rOutTelephone.IsEmergencyNumber = rEnv.ClientProfileResultSet.IS_PHONE_EMERGENCY;
+		-- --
+		-- END IF;
+
+		IF LENGTH(CAST(rEnv.ClientProfileResultSet.HOUSEHOLD_ID AS CHARACTER)) > 0 THEN
+			-- Populate Telephone section
+			--SET Environment.getHouseholdId= PASSTHRU('select * from Client where CLIENT_ID=?',rEnv.ClientProfileResultSet.CLIENT_ID);
+			SET Environment.getPhone.details= PASSTHRU('select PHONE_TYPE,IS_PHONE_PRIMARY,IS_PHONE_FAX,IS_PHONE_EMERGENCY,PHONE_NUMBER,INTL_CODE,PHONE_EXT,COMMENTS from HOUSEHOLD_PHONE where household_id=?',rEnv.ClientProfileResultSet.HOUSEHOLD_ID);
+
+			DECLARE source,locationtype,techtype,usetype,isprimary,isemergency CHARACTER;
+			DECLARE phonecount INTEGER 1;
+			FOR src AS Environment.getPhone.details[] DO
+
+				IF src.PHONE_TYPE='CELLULAR' THEN
+					set usetype='10';
+				
+				ELSEIF src.PHONE_TYPE='BUSINESS' THEN
+					set usetype='2';
+				
+				ELSEIF src.PHONE_TYPE='PRIMARY' THEN
+					set usetype='3';
+					
+				ELSEIF src.PHONE_TYPE='HOME' THEN
+					set usetype='4';
+					
+				ELSEIF src.PHONE_TYPE='FAX' THEN
+					set usetype='8';
+				
+				ELSEIF src.PHONE_TYPE='SECONDARY' THEN
+					set usetype='5';
+					
+				ELSEIF src.PHONE_TYPE='EMERGENCY' THEN
+					set usetype='1';
+					
+				ELSEIF src.PHONE_TYPE='GTB PHONE' THEN
+					set usetype='7';
+					
+				END IF;
+				IF src.IS_PHONE_PRIMARY='Y' THEN
+					set isprimary='true';
+				ELSEIF src.IS_PHONE_PRIMARY='N' THEN
+					set isprimary='false';
+				END IF;		
+				
+				IF src.IS_PHONE_FAX='Y' THEN
+					set techtype='3';
+				ELSEIF src.IS_PHONE_FAX='N' THEN
+					set techtype='1';
+				END IF;
+				
+				IF src.IS_PHONE_EMERGENCY='Y' THEN
+					set isemergency='true'; 
+				ELSEIF src.IS_PHONE_EMERGENCY='N' THEN
+					set isemergency='false';
+				END IF;		
+				CREATE LASTCHILD OF rOutClientInfo AS rOutTelephone IDENTITY sc:Telephone;
+				SET rOutTelephone.(XMLNSC.Attribute)PhoneNumber = Environment.getPhone.details[phonecount].PHONE_NUMBER;
+				SET rOutTelephone.(XMLNSC.Attribute)PhoneTechType = techtype;
+				SET rOutTelephone.(XMLNSC.Attribute)IsPrimary = isprimary;
+				SET rOutTelephone.(XMLNSC.Attribute)PhoneLocationType = locationtype;
+				SET rOutTelephone.(XMLNSC.Attribute)CountryAccessCode = Environment.getPhone.details[phonecount].INTL_CODE;
+				SET rOutTelephone.(XMLNSC.Attribute)PhoneUseType = usetype;
+				SET rOutTelephone.(XMLNSC.Attribute)IsEmergency = isemergency;
+				SET rOutTelephone.(XMLNSC.Attribute)Extension=Environment.getPhone.details[phonecount].PHONE_EXT;
+				SET rOutTelephone.(XMLNSC.Attribute)Comments=Environment.getPhone.details[phonecount].COMMENTS;
+				SET phonecount=phonecount+1;
+
+			END FOR;
+			--
+		END IF;
+		-- Populate Address section
+		SET Environment.getAddress.details= PASSTHRU('select ADDRESS_TYPE,ADDRESS_LINE1,ADDRESS_LINE2,ADDRESS_LINE3,ADDRESS_LINE4,ADDRESS_CITY,ZIP,STATE_CODE,COUNTRY_CODE,ADDRESS_LINE1_NATIVE,ADDRESS_LINE2_NATIVE,ADDRESS_LINE3_NATIVE,ADDRESS_LINE4_NATIVE,ADDRESS_CITY_NATIVE,COMMENTS from HOUSEHOLD_ADDRESS where household_id=?',rEnv.ClientProfileResultSet.HOUSEHOLD_ID);
+		DECLARE addresscount INTEGER 1;
+		
+		FOR addressdetails AS Environment.getAddress.details[] DO
+		CREATE LASTCHILD OF rOutClientInfo AS rOutAddress IDENTITY sc:Address;
+				
+		IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_TYPE) > 0 THEN
+			SET rOutAddress.(XMLNSC.Attribute)Type = Environment.getAddress.details[addresscount].ADDRESS_TYPE;
+		END IF;
+		-- Initiate address line count
+		SET addrLineCnt = 1;
+		IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE1) > 0 THEN
+			SET rOutAddress.sc:AddressLine[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE1;
+			SET addrLineCnt = addrLineCnt+1;
+		END IF;
+		IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE2) > 0 THEN
+			SET rOutAddress.sc:AddressLine[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE2;
+			SET addrLineCnt = addrLineCnt+1;
+		END IF;
+		IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE3) > 0 THEN
+			SET rOutAddress.sc:AddressLine[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE3;
+			SET addrLineCnt = addrLineCnt+1;
+		END IF;
+		IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE4) > 0 THEN
+			SET rOutAddress.sc:AddressLine[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE4;
+			SET addrLineCnt = addrLineCnt+1;
+		END IF;
+
+		IF NOT com.ncl.ais.utils.IsEmpty(Environment.getAddress.details[addresscount].ADDRESS_CITY) THEN
+			SET rOutAddress.sc:CityName = Environment.getAddress.details[addresscount].ADDRESS_CITY;
+		END IF;
+
+		IF NOT com.ncl.ais.utils.IsEmpty(Environment.getAddress.details[addresscount].ZIP) THEN
+			SET rOutAddress.sc:PostalCode = Environment.getAddress.details[addresscount].ZIP;
+		END IF;
+
+		IF NOT com.ncl.ais.utils.IsEmpty(Environment.getAddress.details[addresscount].STATE_CODE) THEN
+			SET rOutAddress.sc:StateProv = Environment.getAddress.details[addresscount].STATE_CODE;
+			SET rOutAddress.sc:StateProv.(XMLNSC.Attribute)StateCode = Environment.getAddress.details[addresscount].STATE_CODE;
+		END IF;
+
+		IF NOT com.ncl.ais.utils.IsEmpty(Environment.getAddress.details[addresscount].COUNTRY_CODE) THEN
+			SET rOutAddress.sc:CountryName.(XMLNSC.Attribute)Code = Environment.getAddress.details[addresscount].COUNTRY_CODE;
+		END IF;
+		-- Map Native Address Details only if it has been requested
+		IF nativeSupportFlag
+			THEN
+			SET addrLineCnt = 1;
+
+			IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE1_NATIVE) > 0 THEN
+				SET rOutAddress.sc:AddressLineNative[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE1_NATIVE;
+				SET addrLineCnt = addrLineCnt+1;
+			END IF;
+
+			IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE2_NATIVE) > 0 THEN
+				SET rOutAddress.sc:AddressLineNative[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE2_NATIVE;
+				SET addrLineCnt = addrLineCnt+1;
+			END IF;
+			IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE3_NATIVE) > 0 THEN
+				SET rOutAddress.sc:AddressLineNative[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE3_NATIVE;
+				SET addrLineCnt = addrLineCnt+1;
+			END IF;
+			IF LENGTH(Environment.getAddress.details[addresscount].ADDRESS_LINE4_NATIVE) > 0 THEN
+				SET rOutAddress.sc:AddressLineNative[addrLineCnt] = Environment.getAddress.details[addresscount].ADDRESS_LINE4_NATIVE;
+				SET addrLineCnt = addrLineCnt+1;
+			END IF;
+
+			IF NOT com.ncl.ais.utils.IsEmpty(Environment.getAddress.details[addresscount].ADDRESS_CITY_NATIVE) THEN
+				SET rOutAddress.sc:CityNameNative = Environment.getAddress.details[addresscount].ADDRESS_CITY_NATIVE;
+			END IF;
+			IF NOT com.ncl.ais.utils.IsEmpty(Environment.getAddress.details[addresscount].COMMENTS) THEN
+				SET rOutAddress.sc:Comments = Environment.getAddress.details[addresscount].COMMENTS;
+			END IF;
+		END IF;
+		SET addresscount=addresscount+1;
+
+			
+		END FOR;
+		
+--		
+--		IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_TYPE) > 0 THEN
+--			SET rOutClientInfo.sc:Address.(XMLNSC.Attribute)Type = rEnv.ClientProfileResultSet.ADDRESS_TYPE;
+--		END IF;
+--		-- Initiate address line count
+--		SET addrLineCnt = 1;
+--		IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE1) > 0 THEN
+--			SET rOutClientInfo.sc:Address.sc:AddressLine[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE1;
+--			SET addrLineCnt = addrLineCnt+1;
+--		END IF;
+--		IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE2) > 0 THEN
+--			SET rOutClientInfo.sc:Address.sc:AddressLine[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE2;
+--			SET addrLineCnt = addrLineCnt+1;
+--		END IF;
+--		IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE3) > 0 THEN
+--			SET rOutClientInfo.sc:Address.sc:AddressLine[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE3;
+--			SET addrLineCnt = addrLineCnt+1;
+--		END IF;
+--		IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE4) > 0 THEN
+--			SET rOutClientInfo.sc:Address.sc:AddressLine[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE4;
+--			SET addrLineCnt = addrLineCnt+1;
+--		END IF;
+--
+--		IF NOT com.ncl.ais.utils.IsEmpty(rEnv.ClientProfileResultSet.ADDRESS_CITY) THEN
+--			SET rOutClientInfo.sc:Address.sc:CityName = rEnv.ClientProfileResultSet.ADDRESS_CITY;
+--		END IF;
+--
+--		IF NOT com.ncl.ais.utils.IsEmpty(rEnv.ClientProfileResultSet.ZIP) THEN
+--			SET rOutClientInfo.sc:Address.sc:PostalCode = rEnv.ClientProfileResultSet.ZIP;
+--		END IF;
+--
+--		IF NOT com.ncl.ais.utils.IsEmpty(rEnv.ClientProfileResultSet.STATE_CODE) THEN
+--			SET rOutClientInfo.sc:Address.sc:StateProv = rEnv.ClientProfileResultSet.STATE_CODE;
+--			SET rOutClientInfo.sc:Address.sc:StateProv.(XMLNSC.Attribute)StateCode = rEnv.ClientProfileResultSet.STATE_CODE;
+--		END IF;
+--
+--		IF NOT com.ncl.ais.utils.IsEmpty(rEnv.ClientProfileResultSet.COUNTRY_CODE) THEN
+--			SET rOutClientInfo.sc:Address.sc:CountryName.(XMLNSC.Attribute)Code = rEnv.ClientProfileResultSet.COUNTRY_CODE;
+--		END IF;
+--		-- Map Native Address Details only if it has been requested
+--		IF nativeSupportFlag
+--			THEN
+--			SET addrLineCnt = 1;
+--
+--			IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE1_NATIVE) > 0 THEN
+--				SET rOutClientInfo.sc:Address.sc:AddressLineNative[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE1_NATIVE;
+--				SET addrLineCnt = addrLineCnt+1;
+--			END IF;
+--
+--			IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE2_NATIVE) > 0 THEN
+--				SET rOutClientInfo.sc:Address.sc:AddressLineNative[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE2_NATIVE;
+--				SET addrLineCnt = addrLineCnt+1;
+--			END IF;
+--			IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE3_NATIVE) > 0 THEN
+--				SET rOutClientInfo.sc:Address.sc:AddressLineNative[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE3_NATIVE;
+--				SET addrLineCnt = addrLineCnt+1;
+--			END IF;
+--			IF LENGTH(rEnv.ClientProfileResultSet.ADDRESS_LINE4_NATIVE) > 0 THEN
+--				SET rOutClientInfo.sc:Address.sc:AddressLineNative[addrLineCnt] = rEnv.ClientProfileResultSet.ADDRESS_LINE4_NATIVE;
+--				SET addrLineCnt = addrLineCnt+1;
+--			END IF;
+--
+--			IF NOT com.ncl.ais.utils.IsEmpty(rEnv.ClientProfileResultSet.ADDRESS_CITY_NATIVE) THEN
+--				SET rOutClientInfo.sc:Address.sc:CityNameNative = rEnv.ClientProfileResultSet.ADDRESS_CITY_NATIVE;
+--			END IF;
+--		END IF;
+		-- Populate Email section
+		IF LENGTH(rEnv.ClientProfileResultSet.EMAIL) > 0 THEN
+			CREATE LASTCHILD OF rOutClientInfo AS rOutEmail IDENTITY sc:Email;
+			SET rOutEmail = rEnv.ClientProfileResultSet.EMAIL;
+		END IF;		
+		-- Populate LoyaltyInfo section
+		CREATE LASTCHILD OF rCruiseRetrieveResp AS rOutLoyaltyInfo IDENTITY sc:LoyaltyInfo;
+
+		SET rOutLoyaltyInfo.(XMLNSC.Attribute)LoyalLevel = rEnv.ClientProfileResultSet.CLIENT_TYPE;
+		SET rOutLoyaltyInfo.(XMLNSC.Attribute)MembershipID = rEnv.ClientProfileResultSet.CLIENT_ID;
+		SET rOutLoyaltyInfo.(XMLNSC.Attribute)ProgramID = rEnv.ClientProfileResultSet.CLIENT_TYPE;
+		SET rOutLoyaltyInfo.(XMLNSC.Attribute)EnrollmentFlag = COALESCE(cEnrolledFlg,'N');
+		SET rOutLoyaltyInfo.(XMLNSC.Attribute)TotalPoints = COALESCE(cTotalPoints, 0);
+		--IF LENGTH(rEnv.ClientProfileResultSet.WEB_LOGIN_NAME) > 0 OR LENGTH(rEnv.ClientProfileResultSet.WEB_PASSWORD) > 0
+		IF EXISTS(rEnv.ClientProfileResultSet.WEB_LOGIN_NAME[]) OR EXISTS(rEnv.ClientProfileResultSet.WEB_PASSWORD[])
+			THEN
+			-- Populate UserLogin section
+			CREATE LASTCHILD OF rCruiseRetrieveResp AS rOutUserLogin IDENTITY crcm:UserLogin;
+			IF rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code = 'NCLWEBC' THEN
+				SET rOutUserLogin.(XMLNSC.Attribute)Password = rEnv.ClientProfileResultSet.WEB_PASSWORD;
+			END IF;
+			SET rOutUserLogin.(XMLNSC.Attribute)UserLoginName = COALESCE(rEnv.ClientProfileResultSet.WEB_LOGIN_NAME, '');
+			SET rOutUserLogin.(XMLNSC.Attribute)UserType = 'CONSUMER';
+		END IF;
+		-- Populate VacationPreference section
+		CREATE LASTCHILD OF rCruiseRetrieveResp AS rVacatPref IDENTITY sc:VacationPreference;
+		SET rVacatPref.(XMLNSC.Attribute)FutureCruisePlan = COALESCE(cFutureCruisePlan, '');
+		SET rVacatPref.(XMLNSC.Attribute)PreferredBookingMode = COALESCE(cPrefBookingMode, '');
+		SET rVacatPref.(XMLNSC.Attribute)PreferredCruiseLength = COALESCE(cPrefCruiseLength, '');
+		SET rVacatPref.(XMLNSC.Attribute)PreferredCruiseTime = COALESCE(cPrefCruiseTime, '');
+		SET rVacatPref.(XMLNSC.Attribute)PreviouslyCruised = COALESCE(cPreviouslyCruised, '');
+		SET rVacatPref.(XMLNSC.Attribute)PreviouslyCruisedNumber = COALESCE(cPreviouslyCruisedNumber, '');
+		-- Check if destination cursor has any values. If it does, map the first 10 to Response message
+		DECLARE loopcount INTEGER 1;
+		DECLARE rDestResult REFERENCE TO rEnv.DestinationResultSet[1];
+		WHILE loopcount <= 10 AND LASTMOVE(rDestResult) DO
+			CREATE LASTCHILD OF rVacatPref IDENTITY sc:DesiredDestination VALUE NULLIF(rDestResult.DESIRED_DESTINATION, '');
+			SET loopcount = loopcount+1;
+			MOVE rDestResult NEXTSIBLING REPEAT TYPE NAME;
+		END WHILE;
+		-- Check if destination cursor has any values. If it does, map the first 10 to Response message
+		SET loopcount = 1;
+		DECLARE rPrevCruiseResult REFERENCE TO rEnv.PreviousCruiseResultSet[1];
+		--DECLARE rPrevCruiseResult REFERENCE TO rEnv.PreviousCruiseResultSet;
+		WHILE loopcount <= 10 AND LASTMOVE(rPrevCruiseResult) DO
+			CREATE LASTCHILD OF rVacatPref IDENTITY sc:PreviousCruiseLines VALUE NULLIF(rPrevCruiseResult.PREVIOUS_CRUISE_LINE, '');
+			SET loopcount = loopcount+1;
+			MOVE rPrevCruiseResult NEXTSIBLING REPEAT TYPE NAME;
+		END WHILE;
+		-- Populate LoyaltyPrograms section
+		CREATE LASTCHILD OF rCruiseRetrieveResp AS rLoyaltyPgms IDENTITY sc:LoyaltyPrograms;
+		SET loopcount = 1;
+		--DECLARE rClientProgramsResult REFERENCE TO rEnv.ClientProgramsResultSet[1];
+		DECLARE rClientProgramsResult REFERENCE TO rEnv.ClientProgramsResultSet;
+		DECLARE FormatZ CHARACTER 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z';
+		WHILE LASTMOVE(rClientProgramsResult) DO
+			DECLARE rLoyaltyInfo REFERENCE TO Environment.Variables;
+			CREATE LASTCHILD OF rLoyaltyPgms AS rLoyaltyInfo IDENTITY sc:LoyaltyInfo;
+			SET rLoyaltyInfo.(XMLNSC.Attribute)MembershipID = rClientProgramsResult.FREQUENT_PGM_ACCOUNT;
+			SET rLoyaltyInfo.(XMLNSC.Attribute)ProgramID = rClientProgramsResult.FREQUENT_PGM_CODE;
+			SET rLoyaltyInfo.(XMLNSC.Attribute)DateFrom = CAST(rClientProgramsResult.DATE_FROM AS CHARACTER FORMAT FormatZ);
+			SET rLoyaltyInfo.(XMLNSC.Attribute)DateTo = CAST(rClientProgramsResult.DATE_TO AS CHARACTER FORMAT FormatZ);
+			SET rLoyaltyInfo.(XMLNSC.Attribute)Comment = rClientProgramsResult.COMMENTS;
+			MOVE rClientProgramsResult NEXTSIBLING REPEAT TYPE NAME;
+		END WHILE;
+
+		SET rEnv.BLOB = ASBITSTREAM(rEnv.XMLNSC CCSID 1208 ENCODING 546);
+		-- Invoke the Encrypt_Decrypt service to decrypt the password field
+		-- Build Response Message from Environment and dispatch
+		CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration';
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0';
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseRetrieveClientRS;
+		SET rOutResp = rEnvXmlNsc.*:NCL_CruiseRetrieveClientRS;
+		-- Add response msg to log event
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveClient response message', 'xml', rEnv);
+		END IF;
+		SET rEnv.XMLNSC=NULL;
+		PROPAGATE TO TERMINAL 'out';
+
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE GetClientProfile(INOUT Option CHARACTER, IN WebUserName CHARACTER, IN ResId INTEGER, IN LastName CHARACTER,
+	IN FirstName CHARACTER, IN ShipCode CHARACTER, IN SailingDate CHARACTER, IN ClientID INTEGER,
+	IN DateofBirth CHARACTER, IN Zipcode CHARACTER, IN Email CHARACTER, IN Phone CHARACTER,
+	IN channel CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_GET_CLIENT_PRO_V7";
+
+	CREATE PROCEDURE GetClientLatitudeData(IN ClientId CHARACTER, OUT EnrolledFlg CHARACTER, OUT TotalPoints DECIMAL, OUT TierLevel CHARACTER,
+	OUT ErrorCode CHARACTER, OUT ErrorMsg CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_LAT_GET_CLIENT_DATA";
+
+	CREATE PROCEDURE GetClientVacationPreference(IN ClientId INTEGER, OUT PrefCruiseLength CHARACTER, OUT Future_Cruise_Plan CHARACTER,
+	OUT Pref_Cruise_Time CHARACTER, OUT Previously_Cruised CHARACTER,
+	OUT Previously_Cruised_Number CHARACTER, OUT Pref_Booking_Mode CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 2
+	EXTERNAL NAME "NCLSEA.NCL_WESB_GET_CLIENT_VACAT_PREF";
+
+	CREATE PROCEDURE GetClientPrograms(IN ClientId CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_GET_CLIENT_PROGRAMS";
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : PrepareResponseMessage
+* Description : This module updates the web password with the decrypted version
+* and dispatches the response message
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* 1.2
+*
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClient_PrepareResponseMessage
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv, rOutResp REFERENCE TO Environment.Variables;
+		DECLARE rLocalEnv REFERENCE TO OutputLocalEnvironment;
+		DECLARE bPayload BLOB;
+
+		CREATE LASTCHILD OF rLocalEnv DOMAIN('XMLNSC') NAME 'XMLNSC';
+		DECLARE rLocalEnvXMLNSC REFERENCE TO rLocalEnv.XMLNSC;
+
+		SET rLocalEnvXMLNSC = InputRoot.XMLNSC;
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--SET OutputRoot.Properties.CodedCharSetId = 819;
+		-- SET OutputRoot.Properties.CodedCharSetId = 1208;
+		-- SET OutputRoot.Properties.Encoding = 546;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+		-- Set the MQMD header details from the Environment
+		SET OutputRoot.MQMD = Environment.MQMD;
+		-- SET OutputRoot.MQMD.CodedCharSetId = 1208;
+		-- SET OutputRoot.MQMD.Encoding = 546;
+		--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') PARSE(rEnv.BLOB CCSID 1208 ENCODING 546);
+		-- If control has come here from SOAP Fault or Failure terminals, there won't be any password to replace
+		IF NOT EXISTS (rEnv.SOAPFail[]) AND NOT com.ncl.ais.utils.IsEmpty(InputRoot.XMLNSC.*:processEncryptDecryptResponse.*:Encrypt_Decrypt.*:DecryptString) THEN
+			DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:processEncryptDecryptResponse;
+			-- Replace the encrypted password stored in the env with the decrypted version
+			SET rEnv.XMLNSC.*:NCL_CruiseRetrieveClientRS.*:UserLogin.(XMLNSC.Attribute)Password = rIn.*:Encrypt_Decrypt.*:DecryptString;
+			-- Mask password before logging
+			--SET rLocalEnvXMLNSC.*:processEncryptDecryptResponse.*:Encrypt_Decrypt.*:DecryptString = 'xxxxxxxxxx';
+			--SET bPayload = ASBITSTREAM(rLocalEnvXMLNSC CCSID 1208 ENCODING 546);
+			--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'EncryptDecrypt service response message', 'xml', rEnv);
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from EncryptDecrypt service ...', rEnv);
+		END IF;
+		-- Prepare output MQ message and dispatch
+		CREATE NEXTSIBLING OF OutputRoot.MQMD DOMAIN('XMLNSC') NAME 'XMLNSC';
+		--CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration';
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0';
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'ISO-8859-1';
+
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseRetrieveClientRS;
+		--CALL com.ncl.ais.utils.CopyAttributes(rIn, rOutResp);
+		SET rOutResp = rEnv.XMLNSC.*:NCL_CruiseRetrieveClientRS;
+		-- Mask password information before logging. Mask in Env and use Env variable content for logging
+		IF EXISTS (rEnv.XMLNSC.*:NCL_CruiseRetrieveClientRS.*:UserLogin[]) THEN
+			SET rEnv.XMLNSC.*:NCL_CruiseRetrieveClientRS.*:UserLogin.(XMLNSC.Attribute)Password = 'xxxxxxxxxx';
+		END IF;
+		-- Add response msg to log event
+		SET bPayload = ASBITSTREAM(rEnv.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveClient response message', 'xml', rEnv);
+		END IF;
+		-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		/*IF rEnv.callableReq
+		THEN
+		PROPAGATE TO LABEL 'CallableOut';
+		ELSE
+		PROPAGATE;
+		END IF;*/
+
+		PROPAGATE;
+		RETURN FALSE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : HandleException
+* Description : This module logs the request message that has failed at
+* MQInput Node, using the logging framework
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClient_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CALL CopyMessageHeaders();
+		-- Set Message expiry
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		DECLARE rEnv, rOutResp, rOutWarnings REFERENCE TO Environment.Variables;
+		DECLARE errorMsg CHARACTER 'Unknown Error in Request';
+		DECLARE bPayload BLOB;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.rInmsg.XMLNSC.*:NCL_CruiseRetrieveClientRQ;
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		-- Check if the request has come from callable node or MQ
+		IF NOT EXISTS(rEnv.callableReq[])
+			THEN
+			-- This could've failed even before hitting the first compute node. So check if localenv variable exists
+			IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[])
+				THEN
+				SET rEnv.callableReq = TRUE;
+			ELSE
+				SET rEnv.callableReq = FALSE;
+			END IF;
+		END IF;
+
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+			SET errorMsg = 'Invalid Request Message';
+
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Invalid CruiseRetrieveClient request message', 'xml', rEnv);
+			END IF;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB', rEnv);
+		END IF;
+		-- Send the error response and end flow
+		CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration';
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0';
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseRetrieveClientRS;
+		CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg, rOutResp);
+		CREATE LASTCHILD OF rOutResp IDENTITY sc:Success;
+		CREATE LASTCHILD OF rOutResp AS rOutWarnings IDENTITY sc:Warnings;
+
+		SET rOutWarnings.sc:Warning = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)Code = '9917';
+		SET rOutWarnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'Unexpected Err 5';
+		-- Add response msg to log event
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveClient response message', 'xml', rEnv);
+		END IF;
+		/*IF rEnv.callableReq
+		THEN
+		PROPAGATE TO LABEL 'CallableOut' DELETE NONE;
+		ELSE
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+		END IF; */
+
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+		-- Copy Exception List etc before sending it to error handler
+		CALL CopyEntireMessage();
+
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : HandleSeawareFailure
+* Description : This module handles any failed invocation of Seaware service
+*
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClient_HandleSeawareFailure
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rWarn, rNewWarnings REFERENCE TO Environment.Variables;
+		CREATE FIELD rEnv.Temp;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') PARSE(rEnv.BLOB CCSID 1208 ENCODING 546);
+		DECLARE rResp REFERENCE TO rEnv.Temp.XMLNSC.sc:NCL_CruiseRetrieveClientRS;
+		-- Set a Flag to inform next compute node that this is a failure
+		SET rEnv.SOAPFail = TRUE;
+		-- Add Log Event to mark this
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Failed to invoke Seaware Encrypt_Decrypt service', rEnv);
+
+		IF EXISTS(rResp.sc:Warnings[])
+			THEN
+			DECLARE rWarnings REFERENCE TO rResp.sc:Warnings;
+			CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY sc:Warning;
+			SET rWarn.(XMLNSC.Attribute)Code = '9916';
+			SET rWarn.(XMLNSC.Attribute)ShortText = 'Seaware is not available';
+		ELSE
+			-- Create the Warnings element structure
+			-- Warnings element has to be created after the 'Success' element that is probably already created.
+			-- So create the next sibling of Success element
+			DECLARE rSuccess REFERENCE TO rResp.sc:Success;
+			CREATE NEXTSIBLING OF rSuccess AS rNewWarnings IDENTITY sc:Warnings;
+
+			SET rNewWarnings.sc:Warning.(XMLNSC.Attribute)Code = '9916';
+			SET rNewWarnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'Seaware is not available';
+		END IF;
+		SET rEnv.Temp=NULL;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveClient
+* MODULE NAME : HandleSeawareFault
+* Description : This module handles SOAP Faults from Seaware service
+*
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClient_HandleSeawareFault
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rWarn REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.SOAP CCSID 1208 ENCODING 546);
+		-- Add Log Event to mark this
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Seaware Encrypt_Decrypt SOAP Fault response message', 'xml', rEnv);
+		END IF;
+		CREATE FIELD rEnv.Temp;
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') PARSE(rEnv.BLOB CCSID 1208 ENCODING 546);
+		DECLARE rResp REFERENCE TO rEnv.Temp.XMLNSC.sc:NCL_CruiseRetrieveClientRS;
+		-- Set a Flag to inform next compute node that this is a failure
+		SET rEnv.SOAPFail = TRUE;
+
+		IF EXISTS(rResp.sc:Warnings[])
+			THEN
+			DECLARE rWarnings REFERENCE TO rResp.sc:Warnings;
+			CREATE LASTCHILD OF rWarnings AS rWarn IDENTITY sc:Warning;
+			SET rWarn.(XMLNSC.Attribute)Code = '9919';
+			SET rWarn.(XMLNSC.Attribute)ShortText = 'swResObj timed out 1';
+		ELSE
+			-- Create the Warnings element structure
+			SET rResp.sc:Warnings.sc:Warning.(XMLNSC.Attribute)Code = '9919';
+			SET rResp.sc:Warnings.sc:Warning.(XMLNSC.Attribute)ShortText = 'swResObj timed out 1';
+		END IF;
+		SET rEnv.Temp=NULL;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveClient_RouteToCaller
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		-- CALL CopyEntireMessage();
+		SET OutputRoot.MQMD = Environment.Variables.Temp.Headers.MQMD;
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+		IF rEnv.callableReq = TRUE
+			THEN
+
+			RETURN TRUE;
+		ELSE
+
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+
+
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;

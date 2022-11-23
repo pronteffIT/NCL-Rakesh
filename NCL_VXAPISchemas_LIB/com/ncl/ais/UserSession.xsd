@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:simpleType name="ContextType">
+		<xs:restriction base="Code">
+			<xs:enumeration value="Common"/>
+			<xs:enumeration value="Main"/>
+			<xs:enumeration value="Temp"/>
+			<xs:enumeration value="Cloned"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="UserInfoInt">
+		<xs:choice>
+			<xs:element name="TravelAgent">
+				<xs:annotation>
+					<xs:documentation>Travel Agent - should be previously registered in the AGENT table in Seaware.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Username" type="Username"/>
+						<xs:element name="Password" type="Password" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Consumer">
+				<xs:annotation>
+					<xs:documentation>Direct consumer. Username and password are optional to allow initial anonymous shopping, but they will be required for making a booking. Providing correct Country and Currency is strongly recommended for correct availability and pricing results.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Username" type="Username" minOccurs="0"/>
+						<xs:element name="Password" type="Password" minOccurs="0"/>
+						<xs:element name="Country" type="CountryCode" minOccurs="0"/>
+						<xs:element name="Currency" type="CurrencyCode" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ResAgent">
+				<xs:annotation>
+					<xs:documentation>Employee of the Cruise Line (Sales Rep). He/she is supposed to have direct Oracle login. Username and Password provided here will be verified via Oracle.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="Username" type="OracleUsername"/>
+						<xs:element name="Password" type="Password" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Partner">
+				<xs:annotation>
+					<xs:documentation>Used to consumer login from partner''s WEB-site</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="AgencyID" type="RecordID"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Internal">
+				<xs:annotation>
+					<xs:documentation>Used by internal utilities only</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:all minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>not implemented</xs:documentation>
+						</xs:annotation>
+						<xs:element name="Username" type="Username"/>
+						<xs:element name="Password" type="Password" minOccurs="0"/>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:element name="UserSession">
+		<xs:annotation>
+			<xs:documentation>Full User Session definition that is used to store session information in RES_LOCK table</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="SessionGUID" type="GUID"/>
+				<xs:element name="Version" type="xs:positiveInteger"/>
+				<xs:element name="UserInfo">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="UserInfoInt">
+								<xs:attribute name="EMail" type="AddressLine"/>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="OfficeCode" type="OfficeCode"/>
+				<xs:element name="Terminal" type="Terminal"/>
+				<xs:element name="IntSequence" type="xs:integer"/>
+				<xs:element name="TimeOut">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Total" type="xs:integer" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Maximum Session duration (minutes).</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="Inactivity" type="xs:integer" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Maximum Inactivity duration (minutes).</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ExtSystemInfo" type="ExternalSystemInfo"/>
+				<xs:element name="AgencyID" type="RecordID"/>
+				<xs:element name="AgentID" type="RecordID" minOccurs="0"/>
+				<xs:element name="MainAgencyID" type="RecordID" minOccurs="0"/>
+				<xs:element name="ClientID" type="RecordID" minOccurs="0"/>
+				<xs:element name="DocSection" type="DocSection" minOccurs="0"/>
+				<xs:element name="DistributionChannel" type="LongCode" minOccurs="0"/>
+				<xs:element name="OfficeLocation" type="OfficeLocation" minOccurs="0"/>
+				<xs:element name="OrigSessionInfo" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Exists for impersonated sessions</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="UserInfo" type="UserInfoInt"/>
+							<xs:element name="OfficeCode" type="OfficeCode"/>
+							<xs:element name="AgencyID" type="RecordID" minOccurs="0"/>
+							<xs:element name="AgentID" type="RecordID" minOccurs="0"/>
+							<xs:element name="MainAgencyID" type="RecordID" minOccurs="0"/>
+							<xs:element name="ClientID" type="RecordID" minOccurs="0"/>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:sequence minOccurs="0" maxOccurs="unbounded">
+					<xs:element name="ContextInfo">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="ContextType" type="ContextType"/>
+								<xs:element name="ContextID" type="xs:integer"/>
+								<xs:element name="Objects">
+									<xs:complexType>
+										<xs:sequence minOccurs="0" maxOccurs="unbounded">
+											<xs:element name="UH">
+												<xs:annotation>
+													<xs:documentation>Uniheader internal XML implementation</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="SavedResponse" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence maxOccurs="unbounded">
+							<xs:element name="Verb">
+								<xs:simpleType>
+									<xs:restriction base="xs:string">
+										<xs:maxLength value="30"/>
+										<xs:whiteSpace value="collapse"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:element>
+							<xs:element name="LastID" type="RecordID"/>
+							<xs:choice>
+								<xs:element name="AvailPrimPackages" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="AvailPackage" type="PkgDefinition" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="AvailLandPackages" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="AvailPackage" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:sequence>
+														<xs:element name="GuestRefs" type="GuestRefs"/>
+														<xs:element name="Definition" type="PkgDefinition"/>
+														<xs:element name="IsSelected" type="Boolean"/>
+														<xs:element name="PriceTotals" minOccurs="0">
+															<xs:complexType>
+																<xs:sequence>
+																	<xs:element name="PriceTotal" type="Money"/>
+																	<xs:element name="PriceInc" type="Money">
+																		<xs:annotation>
+																			<xs:documentation>Booking price increment.</xs:documentation>
+																		</xs:annotation>
+																	</xs:element>
+																	<xs:element name="GuestTotal" maxOccurs="unbounded">
+																		<xs:complexType>
+																			<xs:sequence>
+																				<xs:element name="GuestSeqN" type="GuestSeqN"/>
+																				<xs:element name="PriceTotal" type="Money"/>
+																				<xs:element name="PriceInc" type="Money"/>
+																			</xs:sequence>
+																		</xs:complexType>
+																	</xs:element>
+																</xs:sequence>
+															</xs:complexType>
+														</xs:element>
+													</xs:sequence>
+												</xs:complexType>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:choice>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ExtItems" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence maxOccurs="unbounded">
+							<xs:element name="ExtItem">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Key" type="ExtKey"/>
+										<xs:element name="Data" type="ExtData"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="PrintRequests" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence maxOccurs="unbounded">
+							<xs:element name="PrintRequest">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="QueueItemID" type="RecordID"/>
+										<xs:element name="Delivery">
+											<xs:complexType>
+												<xs:choice>
+													<xs:element name="Printer">
+														<xs:annotation>
+															<xs:documentation>Printer type and name (local delivery)</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="Type" type="DeviceType" minOccurs="0">
+																	<xs:annotation>
+																		<xs:documentation>If not set system will use default printer type defined in the settings.</xs:documentation>
+																	</xs:annotation>
+																</xs:element>
+																<xs:element name="Name" minOccurs="0">
+																	<xs:simpleType>
+																		<xs:restriction base="xs:string">
+																			<xs:maxLength value="250"/>
+																		</xs:restriction>
+																	</xs:simpleType>
+																</xs:element>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="File">
+														<xs:annotation>
+															<xs:documentation>Save to file or output XML</xs:documentation>
+														</xs:annotation>
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="FileName" minOccurs="0">
+																	<xs:annotation>
+																		<xs:documentation>File name with a full path (if not provided, default folder is used). May contain macro variables that are used by instance's macro-processor (surrounded by "%" brackets)  and final macro-substitution process (started from "&amp;" symbol).</xs:documentation>
+																	</xs:annotation>
+																	<xs:simpleType>
+																		<xs:restriction base="xs:string">
+																			<xs:maxLength value="255"/>
+																			<xs:whiteSpace value="collapse"/>
+																		</xs:restriction>
+																	</xs:simpleType>
+																</xs:element>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+												</xs:choice>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="FileID" type="RecordID" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Provided for processed requests</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ErrorMessage" minOccurs="0">
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="preserve"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ConversionMode" type="Boolean" default="N" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

@@ -1,0 +1,74 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+CREATE FILTER MODULE UnlockAndLogout_CheckForResId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UnlockAndLogout_UnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		
+		IF rEnvInMsg.*:Mode = 'Edit' OR rEnvInMsg.*:Mode = 'Update'
+		THEN
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		
+		--IF (LENGTH(rInResInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 AND (NOT LENGTH(rEnvInMsg.*:SessionId.*:SessionToken) > 0))
+		--IF (LENGTH(rInResInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 AND (NOT LENGTH(rEnvInMsg.*:SessionId.*:SessionToken) > 0))
+		--IF (rEnvInMsg.*:Mode = 'Store' AND LENGTH(rEnvInMsg.*:SessionId.*:SessionToken) > 0)
+		
+		-- always we have to unlock and logout in case of stateless
+		-- OR Unlock if Mode is store and stateful
+		/*IF ((rEnvInMsg.*:Mode = 'Store' AND (NOT EXISTS(rEnvInMsg.*:SessionId.*:SessionToken[])))
+				OR (EXISTS(rEnv.ResID[]) AND (NOT EXISTS(rEnvInMsg.*:SessionId.*:SessionToken[]))))*/
+		IF rEnvInMsg.*:Mode = 'Store' OR rEnv.Temp.State = 'STATELESS' OR rEnv.StatelessReq = TRUE OR rEnv.Stateless = TRUE 
+		THEN
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.sessionID;		
+			SET rOut.ResID = rEnv.ResID;
+			
+			RETURN TRUE;
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UnlockAndLogout_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+
+		-- Logout only if the Mode is not Store
+		-- Logout if it is stateless		
+		--IF NOT (COALESCE(rEnvInMsg.*:Mode,'') = 'Store')
+		IF rEnv.Temp.State = 'STATELESS' OR rEnv.StatelessReq = TRUE
+		THEN
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+		
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.sessionID;
+			
+			RETURN TRUE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;

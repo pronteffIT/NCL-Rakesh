@@ -1,0 +1,368 @@
+BROKER SCHEMA com.ncl.ais
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruisePayWithCoupons
+ * MODULE NAME       :     AgencyCheck
+ * Description       :     This module is used for checking the response obtained from the load agency service call and route to the respective path.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruisePayWithCoupons_AgencyCheck
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE manageAccIn REFERENCE TO OutputRoot.XMLNSC.ManageAccTrans_IN.Create.Payments;
+		
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:CouponPaymentDetails;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:CouponPaymentDetails AS rIn;
+		DECLARE reqInputAmount CHARACTER TRIM(FIELDVALUE(rIn.*:PaymentInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount));
+		CASE
+			
+		WHEN EXISTS(InputRoot.XMLNSC.VerifyAgencyResponse.agencyID[]) THEN
+			-- MaxTansaction 
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+--			SET OutputRoot.XMLNSC.ManageAccTrans_IN.MsgHeader.Version = VersonixAPIVersion;
+--			SET OutputRoot.XMLNSC.ManageAccTrans_IN.MsgHeader.SessionGUID = InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID;
+			CREATE FIELD OutputRoot.XMLNSC.ManageAccTrans_IN AS rOut;	
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,rOut);
+			CREATE FIELD rOut.Create.Payments AS manageAccIn;		
+			IF (reqInputAmount) <> '' AND (reqInputAmount) IS NOT NULL THEN
+				SET manageAccIn.Amount = CAST(reqInputAmount AS DECIMAL)/100;
+			ELSE
+				SET manageAccIn.Amount = FIELDVALUE(rIn.*:PaymentInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount)/100;
+			END IF;
+			SET manageAccIn.Currency = CAST(FIELDVALUE(rIn.*:PaymentInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)CurrencyCode) AS CHARACTER);
+			SET manageAccIn.Payment.SrcEntity.ClientID = CAST(FIELDVALUE(rIn.*:SrcEntity.(XMLNSC.Attribute)ID) AS INTEGER);
+			SET manageAccIn.Payment.DestEntity.ResID = CAST(FIELDVALUE(rIn.*:DestEntity.(XMLNSC.Attribute)ID) AS INTEGER);
+			IF (reqInputAmount) <> '' AND (reqInputAmount) IS NOT NULL THEN
+				SET manageAccIn.Payment.Amount =  CAST(reqInputAmount AS DECIMAL)/100;
+			ELSE
+				SET manageAccIn.Payment.Amount =  FIELDVALUE(rIn.*:PaymentInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)Amount)/100;
+			END IF;
+			SET manageAccIn.Payment.Currency = CAST(FIELDVALUE(rIn.*:PaymentInfo.*:PaymentOptions.*:PaymentOption.*:PaymentAmount.(XMLNSC.Attribute)CurrencyCode) AS CHARACTER);
+			SET manageAccIn.Payment.FormOfTrans = 'CPN';
+			SET manageAccIn.Payment.TransFormInfo.CouponID = CAST(FIELDVALUE(rIn.*:PaymentInfo.*:PaymentOptions.*:PaymentOption.*:Voucher.(XMLNSC.Attribute)SeriesCode) AS INTEGER);			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Pay with coupons Invoking account payment service...', rEnv);
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		
+		WHEN EXISTS(InputRoot.XMLNSC.Body.Errors[]) THEN
+			-- Generic Warning
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.Body.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePaywithCouponsRS';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Pay with coupons Calling generic warning subflow...', rEnv);
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		
+		ELSE
+			-- Agency not found
+			SET OutputRoot = InputRoot;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Pay with coupons Propagating to Agency not found...', rEnv);
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+		END CASE;
+		RETURN TRUE;
+	
+	END;
+
+END MODULE;
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruisePayWithCoupons
+ * MODULE NAME       :     AgencyNotFound
+ * Description       :     This module is used for creating the agency not found response.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruisePayWithCoupons_AgencyNotFound
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns3:NCL_CruisePaywithCouponsRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns3:NCL_CruisePaywithCouponsRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ AS rIn;
+	
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET rOut.ns3:Warnings.ns3:Warning.(XMLNSC.Attribute)Code = '12805';
+		SET rOut.ns3:Warnings.ns3:Warning.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file';
+		SET rOut.ns3:Warnings.ns3:Warning.(XMLNSC.Attribute)Type = '3';
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Pay With Coupons agency not found payload...', 'xml', rEnv);
+		END IF;
+--		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		RETURN FALSE;
+	END;
+	
+END MODULE;
+
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruisePayWithCoupons
+ * MODULE NAME       :     CheckSearchError
+ * Description       :     This module is used for checking the response from dbSearch service call and return the response to output .
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+
+CREATE COMPUTE MODULE NCL_CruisePayWithCoupons_CheckSearchError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns3:NCL_CruisePaywithCouponsRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns3:NCL_CruisePaywithCouponsRS AS rOut;
+		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.DbSearch_OUT.AccTransactions.AccTransaction;
+		CREATE FIELD InputRoot.XMLNSC.DbSearch_OUT.AccTransactions.AccTransaction AS rIn;
+		DECLARE rOutCouponPaymentDetails REFERENCE TO rOut.ns3:CouponPaymentDetails;
+		DECLARE rInAttributes REFERENCE TO rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ AS rInAttributes;
+
+		CASE
+			
+		WHEN EXISTS(InputRoot.XMLNSC.DbSearch_OUT.Errors.Error.ErrorMessage[]) THEN
+			
+			-- if errors exist in response then propagate to the generic warning node to handle the error.
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.DbSearch_OUT.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePaywithCouponsRS';
+			
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Pay with coupons Calling generic warning subflow...', rEnv);
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		
+		ELSE 
+			-- if the response is success then go to below block
+			-- Create SetCoupons Response below
+			
+			CALL com.ncl.ais.utils.CopyAttributes(rInAttributes,rOut);
+			
+			CREATE FIELD rOut.ns3:Success; 
+			
+			CREATE LASTCHILD OF rOut AS rOutCouponPaymentDetails NAMESPACE 'ns3' NAME 'CouponPaymentDetails';
+			-- use foreach loop here to iterate the response
+			FOR source AS InputRoot.XMLNSC.DbSearch_OUT.AccTransactions.AccTransaction[] DO
+
+				IF source.SrcEntityID = CAST(rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:CouponPaymentDetails.*:SrcEntity.(XMLNSC.Attribute)ID AS INTEGER ) AND
+					source.FormOfTrans = 'CPN' AND
+					source.Status = 'OK'
+				THEN
+					SET rOutCouponPaymentDetails.(XMLNSC.Attribute)ID = source.TransID;
+					SET rOutCouponPaymentDetails.(XMLNSC.Attribute)PaymentDate = source.Timestamp;
+					SET rOutCouponPaymentDetails.ns3:SrcEntity.(XMLNSC.Attribute)ID = source.SrcEntityID;
+					SET rOutCouponPaymentDetails.ns3:SrcEntity.(XMLNSC.Attribute)SrcType = 'ClientID';
+					SET rOutCouponPaymentDetails.ns3:DestEntity.(XMLNSC.Attribute)DestType = 'ResID';
+					SET rOutCouponPaymentDetails.ns3:DestEntity.(XMLNSC.Attribute)ID = source.DestEntityID;
+					
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:FormOfPayment = 'CPN';
+
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:Currency.(XMLNSC.Attribute)Amount = ROUND(CAST(source.Amount AS DECIMAL) * 100, 0);
+
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:Currency.(XMLNSC.Attribute)CurrencyCode = source.Currency;
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:Status = source.Status;
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:Comments = source.Comments;
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:TransType = source.Type;
+
+					SET rOutCouponPaymentDetails.ns3:CouponPaymentInfo.ns3:CCTransID = CAST(source.CCInfo.CCTrans.CCTransID AS CHARACTER);
+				END IF;
+			END FOR;			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Pay with coupons success response Payload...', 'xml', rEnv);
+			END IF;
+			-- Propagate to the success terminal and send response
+			--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+			
+			PROPAGATE TO TERMINAL 'out';
+			
+		
+		END CASE;
+		IF LENGTH(COALESCE(rEnv.XMLNSC.SessionGUID,'')) > 0 THEN
+			-- After sending the success response logout the user.
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.XMLNSC.SessionGUID;
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		END IF;
+	END;
+
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruisePayWithCoupons
+ * MODULE NAME       :     GenericWarning
+ * Description       :     This module is used for checking the response from generic warning subflow and send response to output and call logout service.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruisePayWithCoupons_GenericWarning
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Pay with coupons Generic Warning subflow Payload...', 'xml', rEnv);
+		END IF;
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		PROPAGATE TO TERMINAL 'out';
+		
+		IF FIELDVALUE(rEnv.XMLNSC.SessionGUID) IS NOT NULL THEN
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.XMLNSC.SessionGUID;
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		
+		RETURN FALSE;
+	END;	
+END MODULE;
+
+
+
+
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruisePayWithCoupons
+* MODULE NAME : SearchAccPaymentReq
+* Description : This module is used for creating the request for the dbSerch service.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruisePayWithCoupons_SearchAccPaymentReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+--		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+--		IF (LogPayload) THEN
+--		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Pay with coupons Payload obtained by calling account payment service...', 'xml', rEnv);
+--		END IF;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+		DECLARE dbSearchIn REFERENCE TO OutputRoot.XMLNSC.DbSearch_IN;
+		CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS dbSearchIn;
+		
+		CASE
+		WHEN EXISTS(InputRoot.XMLNSC.ManageAccTrans_OUT.Errors.Error[]) THEN
+
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.ManageAccTrans_OUT.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruisePaywithCouponsRS';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Pay with coupons Calling generic warning subflow...', rEnv);
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		ELSE
+--			SET dbSearchIn.MsgHeader.Version = VersonixAPIVersion;
+--			SET dbSearchIn.MsgHeader.SessionGUID = InputRoot.XMLNSC.ManageAccTrans_OUT.MsgHeader.SessionGUID;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,dbSearchIn);
+			SET dbSearchIn.Options.MaxRows = 30;
+			SET dbSearchIn.AccTransactions.DestEntityType = 'RES';
+			SET dbSearchIn.AccTransactions.DestEntityID = CAST(FIELDVALUE(rEnv.XMLNSC.*:NCL_CruisePaywithCouponsRQ.*:CouponPaymentDetails.*:DestEntity.(XMLNSC.Attribute)ID) AS INTEGER);
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Pay with coupons Invoking the dbSearch service...', rEnv);
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+
+		END CASE;
+
+		RETURN TRUE;
+
+	END;
+
+
+END MODULE;
+
+
+

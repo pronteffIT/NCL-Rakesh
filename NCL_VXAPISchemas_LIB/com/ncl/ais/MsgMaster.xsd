@@ -1,0 +1,1607 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xhtml="http://www.w3.org/1999/xhtml" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="Client.xsd"/>
+	<xs:include schemaLocation="Agency.xsd"/>
+	<xs:annotation>
+		<xs:documentation>This schema contains definition of XML API calls to manage such master data as: Clients, Households, Agencies and Agents. Also there are requests to update some SeaWare setup data and to manage SwBatch queue items.</xs:documentation>
+	</xs:annotation>
+	<!--=============================================== Client/household cache-->
+	<xs:element name="ManageClients_IN">
+		<xs:annotation>
+			<xs:documentation>
+				<xhtml:p>
+					<xhtml:b>Client</xhtml:b> is a real person who is supposed to purchase some of company’s (cruise line) resolver. This is a customer from company’s point of view and a main subject of usual CRM (Customer Relationship Management) system. <xhtml:b>Household</xhtml:b> is a concept to define family in SeaWare. Each client must belong to some household object (even if it is the only member of that household) so household must be created first if it doesn't exist yet. It is possible to create household together with all it's clients with one call (this should be a preferred way).</xhtml:p>
+				<xhtml:p>Client and Household objects in SeaWare are transactional ones. This means that they should be updated within transaction context in order to guarantee data consistency. Transactional support in SeaWare is implemented basing on concept of temporary objects together with object locking feature. The following set of calls should be done in order to CREATE Clent or Household:  <xhtml:ul>
+						<xhtml:li>Create - create client or household (or both) in temporary storage</xhtml:li>
+						<xhtml:li>Store - store created objects into database</xhtml:li>
+						<xhtml:li>Unlock - remove client data from temporary storage and make stored objects available for others to update</xhtml:li>
+					</xhtml:ul>
+				</xhtml:p>
+				<xhtml:p>The following set of calls should be done in order to UPDATE Clent or Household:  <xhtml:ul>
+						<xhtml:li>Lock - load client or household (or both) objects into temporary storage and lock it</xhtml:li>
+						<xhtml:li>Update - update loaded objects in temporary storage</xhtml:li>
+						<xhtml:li>Store - update changed objects in database</xhtml:li>
+						<xhtml:li>Unlock - remove client data from temporary storage and make stored objects and make stored object available for others to update</xhtml:li>
+					</xhtml:ul>
+				</xhtml:p>
+			</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="RemoveUnreferenced" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If 'Y' - all clients/households not referenced in the message and active reservation shells will be removed from the session cache.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="ReturnState" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If 'Y' - current client state data will be returned in the response message.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="ReturnAll" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If 'N' - only data for clients/households referenced in the message will be returned. If 'Y' - data for all cached clients/households will be returned.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="ReturnImages" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>'Y' - the existing image elements (like CheckInPhoto) associated with client will be populated.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:choice maxOccurs="unbounded">
+					<xs:element name="Create" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Create new Client(s) and/or Household(s) in temporary storage</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="Clients" minOccurs="0">
+									<xs:annotation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Client" type="Client" maxOccurs="unbounded">
+												<xs:annotation>
+													<xs:documentation>Client data to create</xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Households" minOccurs="0">
+									<xs:annotation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Household" type="Household" maxOccurs="unbounded">
+												<xs:annotation>
+													<xs:documentation>Household data to create</xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:all>
+							<xs:attribute name="ReadDefaultValues" type="Boolean" default="N">
+								<xs:annotation>
+									<xs:documentation>If Y - the record will be initialized with default values set in he database by users. The input message will be treated as an update after that. Note, these user defaults may depend on some login information, for example, on Office Code.</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Load" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Load Client(s) and/or Household(s) into session's internal cache.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="ClientIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of client IDs to load</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="HouseholdIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of household IDs to load</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Update" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Update Client(s) and/or Household(s) in temporary storage</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="Clients" minOccurs="0">
+									<xs:annotation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Client" type="Client" maxOccurs="unbounded">
+												<xs:annotation>
+													<xs:documentation>Client data to update. Not nillable data fields that are not presented in this object are supposed to be preserved in DB (neither changed nor removed). For nillable fields corresponding data will be removed if nil="true", otherwise will be preserved.</xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Households" minOccurs="0">
+									<xs:annotation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Household" type="Household" maxOccurs="unbounded">
+												<xs:annotation>
+													<xs:documentation>Household data to update. Data fields that are not presented in this object are supposed to be preserved in DB (neither changed nor removed).</xs:documentation>
+													<xs:appinfo source="Versonix">
+														<XMLBridge>Implemented</XMLBridge>
+													</xs:appinfo>
+												</xs:annotation>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Lock" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Load and Lock Client(s) and/or Household(s) into session's internal cache. If an object has been locked before, no additional actions will be taken.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="ClientIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of client IDs to lock</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="HouseholdIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of household IDs to load</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Unlock" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Unlock Client(s) and/or Household(s). If an object has been unlocked before, no additional actions will be taken. Corresponding objects will be deleted from temporary storage as a result of this operation.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="ClientIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of client IDs to unlock</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="HouseholdIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of household IDs to load</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Store" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Store previously locked Client(s) and/or Household(s). Data is read from internal cache and written to the database.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="CreateClubAccounts" type="Boolean" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>If "Y" than corresponding club accounts will be created (if do not exist) for each client to store</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="ClientIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of client IDs to store. ID values could be either positive (for old clients) or negative (for newly created clients)</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="HouseholdIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of household IDs to store. ID values could be either positive (for old households) or negative (for newly created households)</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Delete" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Delete Clients(s) and/or Household(s) from DB</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="ClientIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of client IDs to delete. Positive values are allowed only since this call deletes data from database, not internal cache</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="HouseholdIDs" minOccurs="0" type="RecordIDList">
+									<xs:annotation>
+										<xs:documentation>Whitespace separated list of household IDs to delete. Positive values are allowed only since this call deletes data from database, not internal cache</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageClients_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ManageClients_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Clients" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Client" type="Client" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Households" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Household" type="Household" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ValidateClients_IN">
+		<xs:annotation>
+			<xs:documentation>Validation and check for duplicates.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:choice>
+					<xs:element name="ResShellRef" type="RecordID"/>
+					<xs:element name="ClientIDs" type="RecordIDList"/>
+					<xs:element name="Household" type="Household">
+						<xs:annotation>
+							<xs:documentation>Temporarily created household that can't refer to any existing household and/or clients</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+				</xs:choice>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ExtensiveSearch" type="Boolean" default="N" minOccurs="0"/>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ValidateClients_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ValidateClients_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="ClientResult" minOccurs="0" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:choice>
+								<xs:element name="ClientID" type="RecordID"/>
+								<xs:element name="Client" type="Client"/>
+							</xs:choice>
+							<xs:element name="SimilarityScore" type="xs:integer"/>
+							<xs:element name="Clients" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>List of existing clients found by the duplicates check.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Client" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="Client">
+														<xs:attribute name="SimilarityScore" type="xs:integer" use="required">
+															<xs:annotation>
+																<xs:appinfo source="Versonix">
+																	<XMLBridge>ToBeImplemented</XMLBridge>
+																</xs:appinfo>
+															</xs:annotation>
+														</xs:attribute>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Households" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Household" type="Household" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ClientMerge_IN">
+		<xs:annotation>
+			<xs:documentation>
+				<xhtml:span class="versiondiff">040808 version only.</xhtml:span> Merging two client records, setting 'source' client as inactive and transferring its links to target client.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="SourceClientID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Refers to a client record which will be merged with the main client and become inactive.  
+							Bookings, etc., linked to Source Client will be transferred to Target Client
+						</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TargetClientID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Refers to the main client record which will absorb the source client.  
+							Bookings, etc., linked to Source Client will be transferred to Target Client.
+						</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="CombineHouseholds" type="Boolean" default="N" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>
+							If 'Y' - household information, including addresses and phones, of the source client will be copied over to
+							household information of the main client.
+						</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="CopyFields" default="NO" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Copy values of certain Client data of the source client to main client.  Options: NO, ALL.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:maxLength value="20"/>
+							<xs:enumeration value="ALL"/>
+							<xs:enumeration value="NO"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ReturnState" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>
+										If 'Y' - target client state data will be returned in the response message.
+									</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ClientMerge_OUT">
+		<xs:annotation>
+			<xs:documentation>
+				<xhtml:span class="versiondiff">040808 version only.</xhtml:span> Response message for ClientMerge_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Client" type="Client" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Main client after the merge</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageClubAccounts_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:choice>
+							<xs:element name="CommitPerAccount" type="Boolean"/>
+							<xs:sequence>
+								<xs:element name="CommitPerCard" type="Boolean" minOccurs="0"/>
+								<xs:element name="CommitPerTrans" type="Boolean" minOccurs="0"/>
+							</xs:sequence>
+						</xs:choice>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Accounts">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Create" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="ClubAccount" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:all>
+													<xs:element name="AccountNumber" type="ClubAccountNumber"/>
+													<xs:element name="AccountData">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="TierLevelInfo">
+																	<xs:complexType>
+																		<xs:all>
+																			<xs:element name="TierLevel" type="TierLevel"/>
+																			<xs:element name="Reason">
+																				<xs:simpleType>
+																					<xs:restriction base="xs:string">
+																						<xs:maxLength value="100"/>
+																						<xs:whiteSpace value="collapse"/>
+																					</xs:restriction>
+																				</xs:simpleType>
+																			</xs:element>
+																		</xs:all>
+																	</xs:complexType>
+																</xs:element>
+																<xs:element name="IsActive" type="Boolean" minOccurs="0"/>
+																<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="ClubType" type="ClubType"/>
+													<xs:element name="Transactions" minOccurs="0">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="Create" minOccurs="0">
+																	<xs:complexType>
+																		<xs:sequence>
+																			<xs:element name="Transaction" type="ClubAccountTransaction" minOccurs="0" maxOccurs="unbounded"/>
+																		</xs:sequence>
+																	</xs:complexType>
+																</xs:element>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+												</xs:all>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Update" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="ClubAccount" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:all>
+													<xs:element name="AccountNumber" type="ClubAccountNumber"/>
+													<xs:element name="Transactions" minOccurs="0">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="Create" minOccurs="0">
+																	<xs:complexType>
+																		<xs:sequence>
+																			<xs:element name="Transaction" type="ClubAccountTransaction" minOccurs="0" maxOccurs="unbounded"/>
+																		</xs:sequence>
+																	</xs:complexType>
+																</xs:element>
+																<xs:element name="Update" minOccurs="0">
+																	<xs:complexType>
+																		<xs:sequence>
+																			<xs:element name="Transaction" type="ClubAccountTransaction" minOccurs="0" maxOccurs="unbounded"/>
+																		</xs:sequence>
+																	</xs:complexType>
+																</xs:element>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="ClubCards" minOccurs="0">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="Create" minOccurs="0">
+																	<xs:complexType>
+																		<xs:sequence>
+																			<xs:element name="ClubCard" type="ClubCard" minOccurs="0" maxOccurs="unbounded"/>
+																		</xs:sequence>
+																	</xs:complexType>
+																</xs:element>
+																<xs:element name="Update" minOccurs="0">
+																	<xs:complexType>
+																		<xs:sequence>
+																			<xs:element name="ClubCard" type="ClubCard" minOccurs="0" maxOccurs="unbounded"/>
+																		</xs:sequence>
+																	</xs:complexType>
+																</xs:element>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="AccountData" minOccurs="0">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="TierLevelInfo" minOccurs="0">
+																	<xs:complexType>
+																		<xs:all>
+																			<xs:element name="TierLevel" type="TierLevel"/>
+																			<xs:element name="Reason">
+																				<xs:simpleType>
+																					<xs:restriction base="xs:string">
+																						<xs:maxLength value="100"/>
+																						<xs:whiteSpace value="collapse"/>
+																					</xs:restriction>
+																				</xs:simpleType>
+																			</xs:element>
+																		</xs:all>
+																	</xs:complexType>
+																</xs:element>
+																<xs:element name="IsActive" type="Boolean" minOccurs="0"/>
+																<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+												</xs:all>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Load" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="ClubAccount" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:all>
+													<xs:element name="AccountNumber" type="ClubAccountNumber"/>
+													<xs:element name="Transactions" minOccurs="0">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="ExtRef" minOccurs="0">
+																	<xs:simpleType>
+																		<xs:restriction base="xs:string">
+																			<xs:maxLength value="30"/>
+																			<xs:whiteSpace value="collapse"/>
+																		</xs:restriction>
+																	</xs:simpleType>
+																</xs:element>
+																<xs:element name="DateRange" type="DateRange" minOccurs="0"/>
+															</xs:all>
+															<xs:attribute name="IncludeToResult" type="Boolean" default="Y">
+																<xs:annotation>
+																	<xs:documentation>If N - Transactions will be not included to result.</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+														</xs:complexType>
+													</xs:element>
+												</xs:all>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageClubAccounts_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Accounts" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="ClubAccount" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="AccountInfo" type="ClubAccountInfo"/>
+										<xs:element name="Transactions" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Shown only in case of Load directive to prevent an abnormal quantity of nodes</xs:documentation>
+											</xs:annotation>
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Transaction" type="ClubAccountTransaction" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--=============================================== Travel Agency/agent-->
+	<xs:element name="LoadAgency_IN">
+		<xs:annotation>
+			<xs:documentation>Loads an existing Agency</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="PriceAgreements" minOccurs="0">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="HeadersOnly" type="Boolean" default="N" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If Y - the PriceAgreement.Body element will not be loaded.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="LoadBodies" minOccurs="0" type="RecordIDList">
+											<xs:annotation>
+												<xs:documentation>Specifies Agreement IDs (PriceAgreement.AgreementID) for which bodies need to be loaded.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="AgencyShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgencyID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+						<xs:documentation>If AgencyID is missing in the input message - the response will be populated with user defined defaults, which may depend on login information, for example, on Office Code.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadAgency_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for LoadAgency_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Agency" type="Agency" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAgency_IN">
+		<xs:annotation>
+			<xs:documentation>Add or update travel agency profile.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgencyShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Agency" type="Agency">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAgency_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdateAgency_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Agency" type="Agency" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAgency_IN">
+		<xs:annotation>
+			<xs:documentation>Deletes an existing Agency</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgencyID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAgency_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for DeleteAgency_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadAgent_IN">
+		<xs:annotation>
+			<xs:documentation>Loads an existing Travel Agent</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgentShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgentID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+						<xs:documentation>If AgentID is missing in the input message - the response will be populated with user defined defaults, which may depend on login information, for example, on Office Code.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="LoadAgent_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for LoadAgent_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Agent" type="TravelAgent" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAgent_IN">
+		<xs:annotation>
+			<xs:documentation>Add or update travel agent profile.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgentShellOptions" type="ResShellOptions" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Agent" type="TravelAgent">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateAgent_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for UpdateAgent_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Agent" type="TravelAgent" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAgent_IN">
+		<xs:annotation>
+			<xs:documentation>Deletes an existing Travel Agent</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgentID" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="DeleteAgent_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for DeleteAgent_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<xs:element name="SetupUpdate_IN">
+		<xs:annotation>
+			<xs:documentation>Update of some Setup tables</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="PkgClassification">
+					<xs:annotation>
+						<xs:documentation>Package Classification Link update</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Item" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="PackageID" type="RecordID"/>
+										<xs:element name="PkgClassType" type="LongCode">
+											<xs:annotation>
+												<xs:documentation>Package Classification Type</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="PkgClassCode" type="LongCode">
+											<xs:annotation>
+												<xs:documentation>Current Package Classification Code. </xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="Action">
+											<xs:complexType>
+												<xs:choice>
+													<xs:element name="Update">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="EffectiveTo" type="xs:dateTime">
+																	<xs:annotation>
+																		<xs:documentation>To close the current Package Classification Code in PACKAGE_CLASS_LINK</xs:documentation>
+																	</xs:annotation>
+																</xs:element>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="Insert">
+														<xs:complexType>
+															<xs:all>
+																<xs:element name="Effective" type="DateTimeRange"/>
+															</xs:all>
+														</xs:complexType>
+													</xs:element>
+												</xs:choice>
+											</xs:complexType>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SetupUpdate_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for SetupUpdate_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!--=============================================== Collection-->
+	<xs:element name="ShowCollectionAccInfo_IN">
+		<xs:annotation>
+			<xs:documentation>Show accounting info for the collection</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="CollectionID" type="RecordID"/>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowCollectionAccInfo_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ShowCollectionAccInfo_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Info" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="Total" type="Money"/>
+							<xs:element name="Paid" type="Money"/>
+							<xs:element name="Refunds" type="Money"/>
+							<xs:element name="Transfers" type="Money"/>
+							<xs:element name="PaidToRes" type="Money">
+								<xs:annotation>
+									<xs:documentation>Amount directly paid to bookings</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="TotalDue" type="Money"/>
+							<xs:element name="CurrentDue" type="Money">
+								<xs:annotation>
+									<xs:documentation>Due amount as of today</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="NextDueDate" type="xs:date" minOccurs="0"/>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--=============================================== Queuing-->
+	<xs:element name="AddQueueItem_IN">
+		<xs:annotation>
+			<xs:documentation>Add an item into SW queue</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:annotation>
+					<xs:documentation>if DateTime not provided, an item will be scheduled to be processed immediately</xs:documentation>
+				</xs:annotation>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="QueueItem" type="QueueItem"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="AddQueueItem_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for AddQueueItem_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Item" type="QueueItem" minOccurs="0"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SelectQueueItems_IN">
+		<xs:annotation>
+			<xs:documentation>Select items of the certain SW queue</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="LockItems" type="Boolean" default="N" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Mark selected items as 'IN PROCESS' (no need to issue  MarkQueueItem with Action = LOCK)</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice>
+					<xs:element name="RecordID" type="RecordID"/>
+					<xs:sequence>
+						<xs:element name="QueueName" type="QueueName"/>
+						<xs:element name="SubqueueName" type="SubQueueName" minOccurs="0"/>
+						<xs:choice>
+							<xs:element name="QueuedQty" type="xs:nonNegativeInteger">
+								<xs:annotation>
+									<xs:documentation>Quantity of first queued items (if subqueue is not provided, default subqueue is used)</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:sequence>
+								<xs:element name="ModInt" type="xs:integer" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>numeric part of modificator</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="IncludeItems" minOccurs="0">
+									<xs:annotation/>
+									<xs:complexType>
+										<xs:all>
+											<xs:element name="Processing" type="Boolean" default="N" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Currently processing</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="Deferred" type="Boolean" default="N" minOccurs="0">
+												<xs:annotation/>
+											</xs:element>
+											<xs:element name="Waiting" type="Boolean" default="N" minOccurs="0"/>
+											<xs:element name="Scheduled" default="Y" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Scheduled to be processed within ScheduledRange minutes</xs:documentation>
+												</xs:annotation>
+												<xs:complexType>
+													<xs:simpleContent>
+														<xs:extension base="Boolean">
+															<xs:attribute name="All" type="Boolean" default="N">
+																<xs:annotation>
+																	<xs:documentation>Y: all future items will be included (ScheduledRange is not used)</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+														</xs:extension>
+													</xs:simpleContent>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="ScheduledRange" type="xs:positiveInteger" default="60" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation>Defines range in minutes to retrieve future items</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+										</xs:all>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="OwnerID" type="RecordID" minOccurs="0"/>
+								<xs:element name="ModStr" type="ShortComment" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>string part of modificator</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:sequence>
+						</xs:choice>
+					</xs:sequence>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SelectQueueItems_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for SelectQueueItems_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Items" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Item" type="QueueItem" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="MarkQueueItems_IN">
+		<xs:annotation>
+			<xs:documentation>Mark SW Queue items as processed, deferred or rescheduled</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Options" minOccurs="0">
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ProcessDeleted" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Y: items with DELETED status will be processed</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Items" type="RecordIDList">
+					<xs:annotation>
+						<xs:documentation>List of RecordIDs  of queue items to be processed the same way</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Action">
+					<xs:annotation>
+						<xs:documentation>LOCK - start item's processing; DELETE - delete the item after successful processing; REPEAT - repeat item's processing in "Interval" minutes; DEFER - mark the item for manual intervention after unrecoverable error</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:maxLength value="20"/>
+							<xs:enumeration value="DELETE"/>
+							<xs:enumeration value="DEFER"/>
+							<xs:enumeration value="REPEAT"/>
+							<xs:enumeration value="LOCK"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="Interval" type="xs:positiveInteger" default="1" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines minutes to calculate time of item's processing (for Action = REPEAT)</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ErrorMessage" type="ShortComment" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="MarkQueueItems_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for MarkQueueItems_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Items" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Item" type="QueueItem" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--===============================================  Calculated Invoice Details-->
+	<xs:element name="GetInvDetails_IN">
+		<xs:annotation>
+			<xs:documentation>Load calculated invoice detail parameters for bookings</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Params" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>List of parameters that should be exposed (if omitted - all parameters will be shown)</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:list itemType="LongCode"/>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="ResIDs" minOccurs="0" type="RecordIDList"/>
+				<xs:element name="GroupIDs" minOccurs="0" type="RecordIDList"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetInvDetails_OUT">
+		<xs:annotation>
+			<xs:documentation>Response for GetInvDetails_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Entity" minOccurs="0" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:choice>
+								<xs:element name="ResID" type="RecordID"/>
+								<xs:element name="GroupID" type="RecordID"/>
+							</xs:choice>
+							<xs:element name="Param" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Name" type="LongCode"/>
+										<xs:element name="Value" type="Money"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateExternalData_IN">
+		<xs:annotation>
+			<xs:appinfo source="Versonix"/>
+			<xs:documentation>Add or update External Data</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExternalData" type="ExternalDataInfo" minOccurs="1"> </xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ReturnData" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If 'Y' - Data will be returned in the response message.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateExternalData_OUT">
+		<xs:annotation>
+			<xs:appinfo source="Versonix"/>
+			<xs:documentation>Response message for UpdateExternalData_IN</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExternalData" type="ExternalDataInfo" minOccurs="0"> </xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+</xs:schema>

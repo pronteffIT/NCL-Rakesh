@@ -1,0 +1,209 @@
+BROKER SCHEMA com.ncl.ais
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     PrepareAmenityGuestInfoRequest
+ * Description       :     This module prepares the request message to invoke the callable 
+ *							helper flow which enriches Guest information
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_EnrichGuestInformation_PrepareAmenityGuestInfoRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOutHelper, rOutAmenity, rOutResp, rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rEnvOut REFERENCE TO rEnv.OutMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRS;
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE bPayload BLOB;	
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutHelper IDENTITY sc:addAmenityGuestInfo;
+		CREATE LASTCHILD OF rOutHelper AS rOutAmenity IDENTITY sc:amenityOrder;		
+		
+		-- Tree copy
+		SET rOutAmenity = rEnvOut.*:AmenityOrder;		
+		
+		-- Add the two extra fields for sessionID and reservationID		
+		CREATE LASTCHILD OF rOutHelper IDENTITY sc:sessionGUID VALUE rEnv.sessionID;
+		CREATE LASTCHILD OF rOutHelper IDENTITY sc:reservationID VALUE 	rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID;	
+		-- Flag to inform the Helper to extract only the Guest Name details
+		CREATE LASTCHILD OF rOutHelper IDENTITY sc:GuestNameOnly;	
+		SET rOutHelper.Endpoint  = rEnv.Temp.Endpoint;
+		-- Log the AmenityHelper Request message
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AddAmenityGuestInfo request message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking AddAmenityGuestInfo service...', rEnv);	
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     ProcessHelperResp
+ * Description       :     This module processes the helper response 
+ *							and generates the final response message from the flow and
+ *							invokes the Logout API to close the seaware session
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_EnrichGuestInformation_ProcessHelperResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutMsg, rOutAmenityOrder, rOutWarnings,rOutWarning,rOutErrors, rOutError REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		--DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addAmenityGuestInfoResponse;
+		DECLARE bPayload BLOB;	
+		
+		-- Log the AmenityHelper Response message
+		--SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);	
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'AddAmenityGuestInfo response message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from AddAmenityGuestInfo service...', rEnv);
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+		-- Set the MQMD header details from the Environment
+		SET OutputRoot.MQMD = Environment.MQMD;
+		--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+		--CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutMsg IDENTITY sc:NCL_CruiseCreateAmenityOrderItemsRS;		
+		-- Copy root level attributes from environment
+		CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rOutMsg);	
+						
+		-- Process Helper Response
+		IF EXISTS(InputRoot.XMLNSC.*:addGuestInfoFault_warning[]) 
+		THEN
+			DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addGuestInfoFault_warning;				
+			CREATE LASTCHILD OF rOutMsg AS rOutWarnings IDENTITY sc:Warnings;
+			CREATE LASTCHILD OF rOutWarnings AS rOutWarning IDENTITY sc:Warning;		
+			SET rOutWarning = FIELDVALUE(rIn);
+			SET rOutWarning.(XMLNSC.Attribute)Code = rIn.(XMLNSC.Attribute)Code;
+			SET rOutWarning.(XMLNSC.Attribute)ShortText = rIn.(XMLNSC.Attribute)ShortText;
+			SET rOutWarning.(XMLNSC.Attribute)Type = rIn.(XMLNSC.Attribute)Type;
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			
+		--ELSEIF EXISTS(InputRoot.XMLNSC.*:addGuestInfoFault[]) 
+		ELSEIF EXISTS(InputRoot.XMLNSC.*:addAmenityGuestInfoFault[])
+		THEN
+			DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addAmenityGuestInfoFault;				
+			CREATE LASTCHILD OF rOutMsg AS rOutErrors IDENTITY sc:Errors;
+			CREATE LASTCHILD OF rOutErrors AS rOutError IDENTITY sc:Error;		
+			SET rOutError = FIELDVALUE(rIn);
+			SET rOutError.(XMLNSC.Attribute)Code = rIn.(XMLNSC.Attribute)Code;
+			SET rOutError.(XMLNSC.Attribute)ShortText = rIn.(XMLNSC.Attribute)ShortText;
+			SET rOutError.(XMLNSC.Attribute)Type = rIn.(XMLNSC.Attribute)Type;
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		ELSE
+			CREATE LASTCHILD OF rOutMsg IDENTITY sc:Success;	
+			
+			DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:addAmenityGuestInfoResponse;
+			-- Build success message from the helper response message		
+			CREATE LASTCHILD OF rOutMsg AS rOutAmenityOrder IDENTITY sc:AmenityOrder;		
+			-- Tree copy
+			SET rOutAmenityOrder = rIn.*:amenityOrder;			
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		END IF;	
+		
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateAmenityOrderItems response message', 'xml', rEnv);
+		
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;		
+		
+		PROPAGATE TO TERMINAL 'out';
+		
+		-- Build the Logout Message and invoke Versonix Logout API to close the session
+		--CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';			
+		--SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.sessionID;
+		-- Logout of the session
+		PROPAGATE TO TERMINAL 'out1';
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     ProcessHelperError
+ * Description       :     This module processes the exception message if there is one 
+ *							generated while calling the helper flow and generates
+ *							the final error response message to the caller
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/20/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_EnrichGuestInformation_ProcessHelperError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rEnv,rOutMsg,rOutErrors, rOutError REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB;	
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		-- Extract the exception message if one exists
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error calling AddAmenityGuestInfo service ...', rEnv);
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('MQMD') NAME 'MQMD';
+		-- Set the MQMD header details from the Environment
+		SET OutputRoot.MQMD = Environment.MQMD;		
+		--SET OutputRoot.MQMD.Format = MQFMT_STRING;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';	
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutMsg IDENTITY sc:NCL_CruiseCreateAmenityOrderItemsRS;		
+		-- Copy root level attributes from environment
+		CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rOutMsg);	
+				
+		CREATE LASTCHILD OF rOutMsg AS rOutErrors IDENTITY sc:Errors;
+		CREATE LASTCHILD OF rOutErrors AS rOutError IDENTITY sc:Error;		
+		SET rOutError = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		SET rOutError.(XMLNSC.Attribute)Code = '12228';
+		SET rOutError.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutError.(XMLNSC.Attribute)Type = 3;
+		
+		-- Log the response message payload
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateAmenityOrderItems response message', 'xml', rEnv);
+		--RETURN TRUE;
+		PROPAGATE TO TERMINAL 'out';
+		
+		-- Logout of the session
+   		PROPAGATE TO TERMINAL 'out1'; 
+   		
+   		RETURN FALSE;
+	END;
+END MODULE;
+

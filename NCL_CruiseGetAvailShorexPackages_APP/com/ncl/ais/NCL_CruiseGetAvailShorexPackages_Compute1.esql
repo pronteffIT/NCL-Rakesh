@@ -1,0 +1,122 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailShorexPackages_Compute1
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOutShorex,rOutPackages,rOutGuest REFERENCE TO Environment.Variables;
+		DECLARE rInShorex REFERENCE TO rEnv.InpReq;
+		DECLARE rInShorexResp REFERENCE TO InputRoot.XMLNSC.*:GetAvailShorex_OUT;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		IF EXISTS(rInShorexResp.Errors.Error[]) THEN
+			---Generate warnings
+			SET OutputRoot.XMLNSC.Body.Errors.Error = rInShorexResp.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseGetAvailShorexPackagesRS';
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;			
+			PROPAGATE TO TERMINAL 'out';
+			
+		ELSEIF EXISTS(InputRoot.Exception.RecoverableException[]) THEN
+
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;			
+			CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseGetAvailShorexPackagesRS AS rOutShorex;
+			DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+			--CALL getExceptionDetails(rEnv, InputExceptionList);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, InputExceptionList);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			-- copy input attributes to outputroot
+
+			CALL com.ncl.ais.utils.CopyAttributes(rInShorex,rOutShorex);
+			SET rOutShorex.ns4:Errors.ns4:Error = cErrorText;
+			SET rOutShorex.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOutShorex.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Type = '3';
+			
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE ---- This will check for the Errors from Shorex response If exists the it will pass to generate warnings subflow otherwise it prepares the request As getavail shorex rrsponse.
+					
+			CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+			CREATE FIELD rEnv.Temp.Message.ns4:NCL_CruiseGetAvailShorexPackagesRS AS rOutShorex;
+			CALL com.ncl.ais.utils.CopyAttributes(rInShorex,rOutShorex);
+			CREATE FIELD rOutShorex.ns4:Success;
+			CREATE FIELD rOutShorex.ns4:Packages;
+			
+			-- This for loop getting package class type
+			DECLARE PackageIds CHARACTER '';
+			FOR refPackages AS rInShorexResp.*:AvailPackages.*:AvailPackage[] DO	
+				IF EXISTS(refPackages.*:Definition.*:PackageID[]) THEN				
+					SET PackageIds = PackageIds || ',' || refPackages.*:Definition.*:PackageID;
+				END IF; 
+			END FOR;
+			
+			IF LENGTH(PackageIds) > 0 THEN
+				SET PackageIds = SUBSTRING(PackageIds FROM 2);
+				SET rEnv.Temp.PackageClassType[] = PASSTHRU('SELECT A.PACKAGE_ID, A.PACKAGE_CLASS_TYPE FROM sea.package_class_link  A WHERE A.package_id IN(' || PackageIds || ')');
+			END IF; 
+
+			FOR inRefAvailPackgs AS rInShorexResp.*:AvailPackages.*:AvailPackage[] DO
+				CREATE LASTCHILD OF rOutShorex.ns4:Packages AS rOutPackages NAMESPACE ns4 NAME 'Package';
+				SET rOutPackages.(XMLNSC.Attribute)ID = inRefAvailPackgs.*:Definition.*:PackageID;
+				SET rOutPackages.Type = inRefAvailPackgs.*:Definition.*:Components.*:Component.*:Type;
+				SET rOutPackages.Name = inRefAvailPackgs.*:Definition.*:PkgComment;
+				SET rOutPackages.Code = inRefAvailPackgs.*:Definition.*:Type;
+				DECLARE fromDateTime TIMESTAMP CAST(inRefAvailPackgs.*:Definition.*:Vacation.*:From AS TIMESTAMP FORMAT 'IU');
+				DECLARE toDateTime TIMESTAMP CAST(inRefAvailPackgs.*:Definition.*:Vacation.*:To AS TIMESTAMP FORMAT 'IU');
+				SET rOutPackages.DateRange.PackageStartDate = CAST(fromDateTime AS CHARACTER FORMAT 'IU');
+				SET rOutPackages.DateRange.PackageEndDate = CAST(toDateTime AS CHARACTER FORMAT 'IU');
+
+				FOR inRefGuestTotal AS inRefAvailPackgs.PriceTotals.GuestTotal[] DO
+					CREATE LASTCHILD OF rOutPackages.Price AS rOutGuest NAMESPACE ns4 NAME 'Guest';
+					SET rOutGuest.GuestRefNumber = inRefGuestTotal.*:GuestSeqN;
+					SET rOutGuest.PackagePrice.(XMLNSC.Attribute)Amount = CAST(CAST(inRefGuestTotal.*:PriceTotal AS DECIMAL) AS INTEGER)*100; --- Custom java code
+					SET rOutGuest.PackagePrice.(XMLNSC.Attribute)CurrencyCode = inRefAvailPackgs.Currency;
+				END FOR;
+	
+				SET rOutPackages.Location.From.Code = inRefAvailPackgs.*:Definition.*:Location.*:From.*:Code;
+				SET rOutPackages.Location.From.Type = inRefAvailPackgs.*:Definition.*:Location.*:From.*:Type;
+				SET rOutPackages.Location.From.Name = inRefAvailPackgs.*:Definition.*:Destination;
+				SET rOutPackages.Location.To.Code = inRefAvailPackgs.*:Definition.*:Location.*:To.*:Code;
+				SET rOutPackages.Location.To.Type = inRefAvailPackgs.*:Definition.*:Location.*:To.*:Type;
+				SET rOutPackages.Location.To.Name = inRefAvailPackgs.*:Definition.*:Destination;
+				
+				-- calling package calss Type
+				SET rOutPackages.PackageClassType = THE(SELECT ITEM P.PACKAGE_CLASS_TYPE FROM rEnv.Temp.PackageClassType[] AS P WHERE P.PACKAGE_ID = inRefAvailPackgs.*:Definition.*:PackageID);
+				
+			END FOR;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(rEnv.Temp.Message CCSID 1208 ENCODING 546);
+			
+			IF LogPayload THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Get Avail Shorex Response..', 'xml', rEnv);
+			END IF;
+			
+			SET rEnv.Temp.Message = NULL;
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;	
+			SET OutputRoot.BLOB.BLOB = bPayload;
+			
+
+			PROPAGATE TO TERMINAL 'out1';
+			
+			--------- Prepare log out request
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.endPoint;
+			
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+			DECLARE RefOutLogOut REFERENCE TO OutputRoot.XMLNSC;
+			SET RefOutLogOut.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			IF rEnv.SessionGUID IS NOT NULL THEN
+				SET RefOutLogOut.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			END IF;
+			--PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+		END IF;
+		--
+		-- DECLARE temdate,tempVar TIMESTAMP CURRENT_TIMESTAMP;
+		-- DECLARE temp2 CHARACTER CAST(temdate AS TIMESTAMP);
+		-- DECLARE pattern1 CHARACTER 'YYYY-MM-DDTHH:mm:ss';
+		-- SET tempVar = CAST(temp2 AS TIMESTAMP FORMAT pattern1);
+
+		RETURN TRUE;
+	END;
+
+END MODULE;

@@ -1,0 +1,302 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE RQTimeout_Mins EXTERNAL INTEGER 9;
+
+CREATE COMPUTE MODULE NCL_GetRQCreationStatus_GetRQStatus
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetRQCreationStatusRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetRQCreationStatusRS;
+		DECLARE rCollInfo REFERENCE TO rOut.ns:CollectionInfo;
+		DECLARE rRowCat REFERENCE TO Environment;
+		
+		DECLARE bPayload BLOB;
+		DECLARE DB ROW;
+		DECLARE cQuery CHARACTER '';
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rqCategoryCreationCnt INTEGER 0;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.ID, COALESCE(rIn.*:POS.*:Source.PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.Code, ''),
+												COALESCE(rIn.*:CollectionName, '') || '-' || COALESCE(rIn.*:CollectionID, ''),
+												'',
+												'',
+											 	rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get RQ creation status request message', 'xml', rEnv);
+		END IF;
+
+		-- application logic starts here		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Getting RQ status from res_header ...', rEnv);
+
+		-- get RQ count from database
+		SET cQuery = 'select count(1) as rqCount, cabin_category from res_header where collection_id = ? group by cabin_category';
+		SET DB.RQ.Count[] = PASSTHRU(cQuery VALUES(rIn.*:CollectionID));
+		
+		FOR rRQ AS DB.RQ.Count[] DO
+			SET DB.Cabin.{rRQ.CABIN_CATEGORY} = rRQ.RQCOUNT;
+		END FOR;
+		
+		SET DB.RQ = NULL;
+
+		-- build response
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetRQCreationStatusRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn, rOut);
+		
+		CREATE FIELD rOut.ns:Success;
+		CREATE FIELD rOut.ns:Warnings; -- place holder
+		
+		CREATE FIELD rOut.ns:CollectionInfo AS rCollInfo;
+		SET rCollInfo.ns:CollectionID = rIn.*:CollectionID;
+		SET rCollInfo.ns:CollectionName = rIn.*:CollectionName;
+		
+		SET rCollInfo.ns:CategoryOptions.ns:CategoryOption[] = rIn.*:CategoryOptions.*:CategoryOption[];
+		
+		CREATE LASTCHILD OF DB DOMAIN('XMLNSC') NAME 'RQ';
+		
+		FOR rCatOpt AS rCollInfo.*:CategoryOptions.*:CategoryOption[] DO
+			DECLARE iCreatedRQCnt, iReqRQCnt INTEGER 0;
+			
+			SET rCatOpt.ns:RequestedRQTotal = rCatOpt.*:RQTotal;
+			SET rCatOpt.ns:RQTotal = NULL;
+			
+			CREATE FIELD DB.RQ.Category AS rRowCat;
+			
+			CALL CheckRQCategoryStatus(rRowCat, rIn.*:CollectionID, rCatOpt.*:Category);
+			
+			IF rRowCat.Status.RequestedRQTotal = 0 THEN
+				SET rRowCat.Status.RequestedRQTotal = rCatOpt.*:RequestedRQTotal;
+			END IF;
+			
+			IF EXISTS(DB.Cabin.{rCatOpt.*:Category}[]) THEN
+				SET iCreatedRQCnt = DB.Cabin.{rCatOpt.*:Category};
+				SET rRowCat.Status.CreatedRQTotal = iCreatedRQCnt;
+				
+				SET iReqRQCnt = rRowCat.Status.RequestedRQTotal;
+				
+				IF iCreatedRQCnt = iReqRQCnt THEN
+					SET rRowCat.Status.RQCreationStatus = 'SUCCESS';
+				END IF;
+			END IF;
+			
+			IF iCreatedRQCnt > 0 THEN
+				SET rqCategoryCreationCnt = rqCategoryCreationCnt + 1;
+			END IF;
+
+			SET rCatOpt.ns:ActualAvailability = rRowCat.Status.ActualAvailability;
+			SET rCatOpt.ns:RequestedRQTotal = rRowCat.Status.RequestedRQTotal;
+			SET rCatOpt.ns:CreatedRQTotal = rRowCat.Status.CreatedRQTotal;
+			SET rCatOpt.ns:RQCreationStatus = rRowCat.Status.RQCreationStatus;
+			SET rCatOpt.ns:Warnings = rRowCat.Status.Warnings;
+			
+			-- reset for next iteration
+			SET DB.RQ.Category = NULL;
+		END FOR;
+		
+		IF rqCategoryCreationCnt = 0 THEN
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '91003';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Details not available for collectionName ' || rIn.*:CollectionName;
+		END IF;
+		
+		-- remove warnings root tag if no warnings are present
+		IF NOT EXISTS(rOut.ns:Warnings.ns:Warning[]) THEN
+			SET rOut.ns:Warnings = NULL;
+		END IF;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get RQ creation status response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+	
+	CREATE PROCEDURE CheckRQCategoryStatus(INOUT rRowCat REFERENCE, IN CollectionId CHARACTER, IN Category CHARACTER)
+	BEGIN
+		DECLARE rWarn REFERENCE TO Environment;
+		
+		DECLARE iAvailCabin, iCalcRQCount, iReqCount, iExistRQCount, iTimeDiff, iCatCount INTEGER 0;
+		DECLARE iActualAvail INTEGER 0;
+		DECLARE rqCreatedCount INTEGER 0;
+		DECLARE allGenerated BOOLEAN TRUE;
+		DECLARE errorMsg CHARACTER '';
+		DECLARE reqTs TIMESTAMP;
+		
+		SET rRowCat.Header[] = SELECT RQ.* FROM Database.NCLSEA.NCL_AIS_FS_GROUP_HEADER AS RQ 
+									WHERE RQ.COLLECTION_ID = CollectionId AND RQ.CATEGORY = Category;
+		
+		-- if category entry is in header table							
+		IF EXISTS(rRowCat.Header[]) THEN
+			SET iAvailCabin = COALESCE(rRowCat.Header.AVAILABILITY, 0);
+			SET iCalcRQCount = COALESCE(rRowCat.Header.CALCULATED_RQ_COUNT, 0);
+			SET iReqCount = COALESCE(rRowCat.Header.REQ_QTY, 0);
+			SET iExistRQCount = COALESCE(rRowCat.Header.EXISTING_RQ_COUNT, 0);
+			SET reqTs = rRowCat.Header.REQUEST_TS;
+			SET iTimeDiff = (CURRENT_TIMESTAMP - reqTs) MINUTE;
+			
+			IF iCalcRQCount = 0 THEN
+				CREATE LASTCHILD OF rRowCat.Status.Warnings AS rWarn NAMESPACE ns NAME 'Warning';
+				
+				SET rWarn.(XMLNSC.Attribute)Code = '91001';
+				SET rWarn.(XMLNSC.Attribute)Type = '2';
+				SET rWarn.(XMLNSC.Attribute)ShortText = 'Not all the requested RQ''s for Category ' || Category || ' could be created';
+			ELSE
+				SET rRowCat.Detail[] = SELECT RQ.* FROM Database.NCLSEA.NCL_AIS_FS_GROUP_DETAIL AS RQ 
+											WHERE RQ.COLLECTION_ID = CollectionId AND RQ.CATEGORY = Category;
+				
+				SET iCatCount = CARDINALITY(rRowCat.Detail[]);
+				
+				-- if all the requested RQ's are not created
+				IF iCatCount <> iCalcRQCount THEN
+					IF iTimeDiff > RQTimeout_Mins THEN
+						CREATE LASTCHILD OF rRowCat.Status.Warnings AS rWarn NAMESPACE ns NAME 'Warning';
+						
+						SET rWarn.(XMLNSC.Attribute)Code = '91005';
+						SET rWarn.(XMLNSC.Attribute)Type = '2';
+						SET rWarn.(XMLNSC.Attribute)ShortText = 'Timeout due to Internal System Error';
+					ELSE
+						SET allGenerated = FALSE;
+					END IF;
+				END IF;
+				
+				-- loop thru the created RQ's for a given category
+				FOR rRqDetail AS rRowCat.Detail[] DO
+					-- check for errors
+					IF rRqDetail.ERROR_MSG IS NULL THEN
+						SET rqCreatedCount = rqCreatedCount + 1;
+					ELSE
+						CREATE LASTCHILD OF rRowCat DOMAIN 'XMLNSC' PARSE(rRqDetail.ERROR_MSG CCSID 1208 ENCODING 546);
+						
+						IF NOT CONTAINS(errorMsg, FIELDVALUE(rRowCat.XMLNSC.*:NCL_CruiseCreateRQBookingRS.*:Warnings.*:Warning)) THEN
+							CREATE LASTCHILD OF rRowCat.Status.Warnings AS rWarn NAMESPACE ns NAME 'Warning';
+							SET rWarn = rRowCat.XMLNSC.*:NCL_CruiseCreateRQBookingRS.*:Warnings.*:Warning;
+							SET rWarn.(XMLNSC.Attribute)RecordID = Category;
+							
+							SET errorMsg = errorMsg || FIELDVALUE(rRowCat.XMLNSC.*:NCL_CruiseCreateRQBookingRS.*:Warnings.*:Warning) || '##';
+						END IF;
+					END IF;
+				END FOR;
+			END IF;
+			
+			IF iAvailCabin >= iExistRQCount THEN
+				SET iActualAvail = iAvailCabin - iExistRQCount;
+			ELSE
+				SET iActualAvail = 0;
+			END IF;
+			
+			SET rRowCat.Status.ActualAvailability = iActualAvail;
+			SET rRowCat.Status.CreatedRQTotal = rqCreatedCount;
+			SET rRowCat.Status.RequestedRQTotal = iReqCount;
+			
+			IF allGenerated THEN
+				IF iReqCount = rqCreatedCount THEN
+					SET rRowCat.Status.RQCreationStatus = 'SUCCESS';
+				ELSEIF iReqCount > rqCreatedCount AND rqCreatedCount > 0 THEN
+					SET rRowCat.Status.RQCreationStatus = 'PARTIAL';
+				ELSEIF rqCreatedCount = 0 THEN
+					SET rRowCat.Status.RQCreationStatus = 'FAIL';
+				END IF;
+			ELSE
+				SET rRowCat.Status.RQCreationStatus = 'INPROCESS';
+			END IF;
+		ELSE -- if category entry not in header table
+			SET rRowCat.Status.RQCreationStatus = 'FAIL';
+			SET rRowCat.Status.ActualAvailability = 0;
+			SET rRowCat.Status.CreatedRQTotal = 0;
+			SET rRowCat.Status.RequestedRQTotal = 0;
+			
+			SET rRowCat.Status.Warnings.ns:Warning.(XMLNSC.Attribute)Code = '91000';
+			SET rRowCat.Status.Warnings.ns:Warning.(XMLNSC.Attribute)Type = '2';
+			SET rRowCat.Status.Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Category requested ' || Category || ' is invalid or unavailable';
+		END IF;		
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_GetRQCreationStatus_RuntimeErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetRQCreationStatusRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseGetRQCreationStatusRS;
+
+		DECLARE bPayload BLOB;
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseCreateRQBookingRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get RQ creation status response message', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_GetRQCreationStatus_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;		
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+

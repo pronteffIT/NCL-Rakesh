@@ -1,0 +1,383 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE vagncy NAMESPACE 'http://NCL_ValidateBookingLib';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_REMOVE_AMENITY_ORDER_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRemoveAmenityOrder
+* MODULE NAME : Login_req
+* Description : This module handles any failed invocation of Seaware service
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_Login_req
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+        CALL CopyMessageHeaders();
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cErrorCode, cErrorMsg CHARACTER ' ';
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, uuid);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRemoveAmenityOrderRQ;
+		
+		-- Check if the request has come from callable node or MQ
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[])
+		THEN
+			SET rEnv.callableReq = TRUE;
+			SET cLocalTranId = UUIDASCHAR;
+		ELSE
+			SET rEnv.callableReq = FALSE;
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, 'X ''', '') FROM 2);
+		END IF;		
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--add metadataset
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationID.(XMLNSC.Attribute)ID, ''),
+												'',
+												'',
+											 	rEnv);
+		--add payload
+		IF (LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Remove Amentiy request message', 'xml', rEnv);
+		END IF;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		
+		SET rEnv.AmenityOrderID = rIn.*:AmenityOrderID.(XMLNSC.Attribute)ID;
+		SET rEnv.ReservationID = rIn.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseRemoveAmenityOrderRQ;
+		
+		-- add audit trail
+  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Validate Booking Source Service...', rEnv);
+	-- Building resquest to callable flow
+		SET rOut.vagncy:VerifyAgencyRequest.source.vagncy:BookingChannel.vagncy:CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rOut.vagncy:VerifyAgencyRequest.source.vagncy:RequestorID.ID = rIn.ns:POS.ns:Source.ns:RequestorID.(XMLNSC.Attribute)ID;
+		SET rOut.vagncy:VerifyAgencyRequest.source.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRemoveAmenityOrder
+* MODULE NAME : LookUpAmenity
+* Description : This module handles lookup Amenity Header from Seaware service
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_LookUpAmenity
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rDeltAmentOrder REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		DECLARE rInLA REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE rOut,rLoadAm REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRemoveAmenityOrderRS;
+		
+        SET OutputRoot.MQMD = rEnv.MQMD;
+		SET rEnv.AgencyId = InputRoot.XMLNSC.VerifyAgencyResponse.agencyID;
+		SET rEnv.sessionGUID = InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID;
+		SET rEnv.Endpoint = COALESCE(rInLA.*:endpoint,'');
+		
+		--Checking Error
+		IF EXISTS(rInLA.loginError.(XMLNSC.Attribute)Code[])OR EXISTS(rInLA.runtimeError.(XMLNSC.Attribute)Code[] ) THEN
+			IF EXISTS(rInLA.loginError[]) THEN
+				SET OutputRoot.XMLNSC.Body.Errors.Error = rInLA.loginError ;
+			ELSE
+				SET OutputRoot.XMLNSC.Body.Errors.Error = rInLA.runtimeError;
+			END IF;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseRemoveAmenityOrderRS';
+			PROPAGATE TO TERMINAL 'out2';
+
+		ELSEIF (rEnv.AgencyId <>'') THEN
+			SET rEnv.resultset[]= PASSTHRU('select a.agency_id,a.res_id from am_order_header a  where am_order_id = (?)',rEnv.*:AmenityOrderID);
+			SET rEnv.amenityHeaderReq.agencyId = rEnv.resultset.AGENCY_ID ;
+			SET rEnv.amenityHeaderReq.reservationId = rEnv.resultset.RES_ID;
+			
+			-- add audit trail
+  			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Remove Amenity Service...', rEnv);
+  			
+  			--CREATE FIELD OutputRoot.XMLNSC.DeleteAmenityOrder_IN AS rDeltAmentOrder;
+  			
+			IF (rEnv.resultset.RES_ID = rEnv.*:ReservationID) THEN
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+
+				--SET OutputRoot.XMLNSC.DeleteAmenityOrder_IN.MsgHeader.Version = VersonixAPIVersion;
+				--SET OutputRoot.XMLNSC.DeleteAmenityOrder_IN.MsgHeader.SessionGUID = rEnv.*:sessionGUID ;
+				--SET OutputRoot.XMLNSC.DeleteAmenityOrder_IN.OrderID = CAST(rEnv.*:AmenityOrderID AS INTEGER);
+				
+--				SET OutputRoot.XMLNSC.LoadAmenityOrder_IN.MsgHeader.Version = VersonixAPIVersion;
+--				SET OutputRoot.XMLNSC.LoadAmenityOrder_IN.MsgHeader.SessionGUID = rEnv.*:sessionGUID ;
+				CREATE FIELD OutputRoot.XMLNSC.LoadAmenityOrder_IN AS rLoadAm;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.*:sessionGUID,rLoadAm);
+				SET rLoadAm.MsgHeader.ValidateMode = 'Y';
+				SET rLoadAm.Options.Lock = 'Y';
+				SET rLoadAm.OrderID = CAST(rEnv.*:AmenityOrderID AS INTEGER);
+
+				PROPAGATE TO TERMINAL 'out';
+			ELSE
+                CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRemoveAmenityOrderRS AS rOut;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+				--  concatination
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'The Amenity order '|| rEnv.*:AmenityOrderID ||' Does not belong to reservation '||rEnv.*:ReservationID;
+							
+			-- add response msg to log event
+			IF (LogPayLoad) THEN
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Remove Amenity Response for Reservation ID', 'xml', rEnv);
+			END IF;
+			
+				PROPAGATE TO TERMINAL 'out3';
+			END IF;
+		ELSE
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRemoveAmenityOrderRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rInLA.agencyNotFound.(XMLNSC.Attribute)Code;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rInLA.agencyNotFound.(XMLNSC.Attribute)ShortText;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = rInLA.agencyNotFound.(XMLNSC.Attribute)Type;
+			-- add response msg to log event
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Remove Amenity response message', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+		    SET OutputRoot.BLOB.BLOB = bPayload;
+			PROPAGATE TO TERMINAL 'out3' ;
+		END IF;
+        RETURN FALSE;	
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRemoveAmenityOrder
+* MODULE NAME : Response
+* Description : This module generates Response
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseRemoveAmenityOrderRS;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+			
+		IF EXISTS(InputRoot.XMLNSC.CancelAmenityOrder_OUT.Errors.Error[]) THEN
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.CancelAmenityOrder_OUT.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseRemoveAmenityOrderRS';
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			--Propagate TO ERROR;
+			PROPAGATE TO TERMINAL 'out2';
+		ElSE
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRemoveAmenityOrderRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET rOut.Success = '';
+			-- add response msg to log event
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayLoad) THEN
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Remove Amenity response message', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+		    SET OutputRoot.BLOB.BLOB = bPayload;
+			PROPAGATE TO TERMINAL 'out';
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRemoveAmenityOrder
+* MODULE NAME : LogOut
+* Description : This module handles Session LogOut
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_LogOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version= com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.*:sessionGUID;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRemoveAmenityOrder
+* MODULE NAME : Exception
+* Description : This module handles Exceptions
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/13/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Retrive NameList Invalid request message', 'xml', rEnv);
+		END IF;
+	END IF;
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.Variables.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_RouteToDestination
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CALL CopyEntireMessage();
+		
+		IF rEnv.callableReq	
+		THEN
+			PROPAGATE TO LABEL 'CallableOut';
+		ELSE						
+			PROPAGATE TO LABEL 'MQOut';
+		END IF; 
+		
+		RETURN FALSE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseRemoveAmenityOrder_PrepareCancelAmenirity
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN		
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:LoadAmenityOrder_OUT;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		
+		IF EXISTS(rOut.Errors.Error[]) THEN			
+			SET OutputRoot.XMLNSC.Body.Errors.Error = rOut.Errors.Error.ErrorMessage;			
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseRemoveAmenityOrderRS';
+			PROPAGATE TO TERMINAL 'out1';
+		ELSE
+--			SET OutputRoot.XMLNSC.CancelAmenityOrder_IN.MsgHeader.Version = VersonixAPIVersion;
+--			SET OutputRoot.XMLNSC.CancelAmenityOrder_IN.MsgHeader.SessionGUID = rEnv.*:sessionGUID ;
+			CREATE FIELD OutputRoot.XMLNSC.CancelAmenityOrder_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.*:sessionGUID,rOut);
+			SET rOut.MsgHeader.ValidateMode = 'Y';
+			SET rOut.Options.Store = 'Y';
+			SET rOut.OrderID = CAST(rEnv.*:AmenityOrderID AS INTEGER); 			
+		END IF;
+END;
+
+END MODULE;
+

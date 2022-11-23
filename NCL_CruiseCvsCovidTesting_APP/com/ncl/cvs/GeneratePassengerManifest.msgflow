@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmFileOutput.msgnode="ComIbmFileOutput.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQOutput.msgnode="ComIbmMQOutput.msgnode" xmlns:NCL_CruiseNewRelicEvent_LIB_Log_NewRelicInsightEvent.subflow="NCL_CruiseNewRelicEvent_LIB/Log_NewRelicInsightEvent.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow"
+    xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="com/ncl/cvs/GeneratePassengerManifest.msgflow" nsPrefix="com_ncl_cvs_GeneratePassengerManifest.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.COMPANY_CODE" name="COMPANY_CODE" defaultValueLiteral="619446">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.CLIENT_CO_NAME" name="CLIENT_CO_NAME" defaultValueLiteral="Norwegian Cruise Line Holdings Ltd">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.PATIENT_INDICATOR" name="PATIENT_INDICATOR" defaultValueLiteral="PASSENGER">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OFFER_PRETRAVEL_TESTING" name="OFFER_PRETRAVEL_TESTING" defaultValueLiteral="N">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OFFER_EMBARK_TESTING" name="OFFER_EMBARK_TESTING" defaultValueLiteral="Y">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.OFFER_DEBARK_TESTING" name="OFFER_DEBARK_TESTING" defaultValueLiteral="N">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.PRETRAVEL_LEAD_TIME" name="PRETRAVEL_LEAD_TIME" defaultValueLiteral="0">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.SHIP_BRAND" name="SHIP_BRAND" defaultValueLiteral="Norwegian Cruise Line">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.COMPANY_PREFIX" name="COMPANY_PREFIX" defaultValueLiteral="NCL">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_FROM" name="EMAIL_FROM" defaultValueLiteral="esbmon_cvs@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.EMAIL_TO_ERROR" name="EMAIL_TO_ERROR" defaultValueLiteral="rdasari@ncl.com">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.FILE_NAME_TEMPLATE" name="FILE_NAME_TEMPLATE" defaultValueLiteral="NCLH_#SAILID#_GUESTELIG_Test_#TIMESTAMP#.txt">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.LOG_TO_NEWRELIC" name="LOG_TO_NEWRELIC" lowerBound="1" defaultValueLiteral="true">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EBoolean"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.FILE_DIRECTORY" name="FILE_DIRECTORY" defaultValueLiteral="/var/mqm/ftpdata/">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="GeneratePassengerManifest" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseCvsCovidTesting_APP/icons/full/obj16/GeneratePassengerManifest.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseCvsCovidTesting_APP/icons/full/obj30/GeneratePassengerManifest.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="101,80" queueName="NCL_CRUISE_CVS_MANIFEST_REQ" messageDomainProperty="XMLNSC" logicalOrder="false">
+        <translation xmi:type="utility:ConstantString" string="MQ Input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="195,156" dataSource="NCLSEAT" computeExpression="esql://routine/com.ncl.cvs#GeneratePassengerManifest_Compute.Main" computeMode="all">
+        <translation xmi:type="utility:ConstantString" string="GenerateManifest"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_5" location="801,208" computeExpression="esql://routine/com.ncl.cvs#GeneratePassengerManifest_Error.Main" computeMode="all">
+        <translation xmi:type="utility:ConstantString" string="HandleError"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_7" location="995,158" queueName="NCL_EMAILNOTIFICATION_IN">
+        <translation xmi:type="utility:ConstantString" string="EmailNotificationQ"/>
+      </nodes>
+      <nodes xmi:type="ComIbmFileOutput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_6" location="347,264" outputDirectory="/tmp" outputFilename="cvs_file.txt" outputMode="archiveAndReplace" failedFileAction="moveToFailure" remoteTransferType="SFTP" fileFtpServer="CVSFTPSERVER" fileFtpUser="CVSFTP" fileFtpDirectory="To_HDMS">
+        <translation xmi:type="utility:ConstantString" string="SFTP_MANIFEST"/>
+      </nodes>
+      <nodes xmi:type="NCL_CruiseNewRelicEvent_LIB_Log_NewRelicInsightEvent.subflow:FCMComposite_1" xmi:id="FCMComposite_1_8" location="1111,259">
+        <translation xmi:type="utility:ConstantString" string="Log_NewRelicInsightEvent"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_9" location="1002,260" computeExpression="esql://routine/com.ncl.cvs#GeneratePassengerManifest_NREvent.Main" computeMode="all">
+        <translation xmi:type="utility:ConstantString" string="BuildNREvent"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_5" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_6" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_7" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_5" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_11" targetNode="FCMComposite_1_9" sourceNode="FCMComposite_1_6" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_12" targetNode="FCMComposite_1_8" sourceNode="FCMComposite_1_9" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_9" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_2" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_1" targetNode="FCMComposite_1_6" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.COMPANY_CODE">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.COMPANY_CODE" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.CLIENT_CO_NAME">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.CLIENT_CO_NAME" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.PATIENT_INDICATOR">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.PATIENT_INDICATOR" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OFFER_PRETRAVEL_TESTING">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.OFFER_PRETRAVEL_TESTING" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OFFER_EMBARK_TESTING">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.OFFER_EMBARK_TESTING" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.OFFER_DEBARK_TESTING">
+                  <propertyName xmi:type="utility:TranslatableString" key="Property.OFFER_DEBARK_TESTING" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                  <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.PRETRAVEL_LEAD_TIME">
+                    <propertyName xmi:type="utility:TranslatableString" key="Property.PRETRAVEL_LEAD_TIME" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                    <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.SHIP_BRAND">
+                      <propertyName xmi:type="utility:TranslatableString" key="Property.SHIP_BRAND" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.COMPANY_PREFIX">
+                        <propertyName xmi:type="utility:TranslatableString" key="Property.COMPANY_PREFIX" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_FROM">
+                          <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_FROM" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.EMAIL_TO_ERROR">
+                            <propertyName xmi:type="utility:TranslatableString" key="Property.EMAIL_TO_ERROR" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.FILE_NAME_TEMPLATE">
+                              <propertyName xmi:type="utility:TranslatableString" key="Property.FILE_NAME_TEMPLATE" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.LOG_TO_NEWRELIC">
+                                <propertyName xmi:type="utility:TranslatableString" key="Property.LOG_TO_NEWRELIC" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                                <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.FILE_DIRECTORY">
+                                  <propertyName xmi:type="utility:TranslatableString" key="Property.FILE_DIRECTORY" bundleName="com/ncl/cvs/GeneratePassengerManifest" pluginId="NCL_CruiseCvsCovidTesting_APP"/>
+                                </propertyDescriptor>
+                              </propertyDescriptor>
+                            </propertyDescriptor>
+                          </propertyDescriptor>
+                        </propertyDescriptor>
+                      </propertyDescriptor>
+                    </propertyDescriptor>
+                  </propertyDescriptor>
+                </propertyDescriptor>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

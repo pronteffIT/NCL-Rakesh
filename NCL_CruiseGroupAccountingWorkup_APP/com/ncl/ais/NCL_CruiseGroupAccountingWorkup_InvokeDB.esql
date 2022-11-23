@@ -1,0 +1,160 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_GRP_ACC_WORKUP_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+
+CREATE COMPUTE MODULE NCL_CruiseGroupAccountingWorkup_InvokeDB
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CALL CopyMessageHeaders();
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGroupAccountingWorkupRQ;
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+	--	CALL com.ncl.iib.log.CreateMetaData('BookingChannel', COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''), 'Channel', rEnv);
+	--	CALL com.ncl.iib.log.CreateMetaData('EntityId', COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''), 'Requestor Id', rEnv);
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',	'','',rEnv);
+		IF (LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel,'Cruise Group Accounting Workup Request', 'xml', rEnv); 
+		END IF;
+		-- save MQMD header which is used when sending reply
+		SET OutputRoot.MQMD.Expiry = MsgExpiry;
+		SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking GroupAccounting SP...', rEnv);
+		
+		DECLARE Mail,Error CHARACTER;
+		DECLARE GroupId INTEGER;
+		SET Mail  = rIn.*:Email;
+		SET GroupId = CAST(rIn.*:GroupInfo.(XMLNSC.Attribute)GroupCode AS INTEGER);
+		
+		CALL GroupAccounting(GroupId,Mail,Error);
+		
+		CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseGroupAccountingWorkupRS AS rOut;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier =  rIn.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOut.(XMLNSC.Attribute)Version =  rIn.(XMLNSC.Attribute)Version;
+		IF Error IS NULL THEN
+			CREATE FIELD rOut.Success;
+		ELSE
+			CREATE FIELD rOut.Warnings;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code =  Error;
+			IF Error = '9925' THEN
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText =  'Invalid GroupCode';
+			ELSE
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText =  'Invalid GroupAccount Details';
+			END IF;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type =  '3';	
+		END IF;	
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+	
+	CREATE PROCEDURE GroupAccounting(IN GroupID INTEGER, IN Email CHARACTER, OUT Error CHARACTER)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_WESB_GROUP_ACCTG_WS" ;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseGroupAccountingWorkup_Exception_Hanlder
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOutResp,rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGroupAccountingWorkupRQ;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+		CALL CopyMessageHeaders();
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET OutputRoot.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;		
+
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad) THEN
+				--creating IIB Log Event
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GroupAccounting WorkUp Request', 'xml', rEnv);
+			END IF;	
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB : Internal IIB Error', rEnv);
+		END IF;
+
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseGroupAccountingWorkupRS AS rOutResp;
+		
+		SET rOutResp.(XMLNSC.Attribute)TransactionIdentifier =  rIn.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOutResp.(XMLNSC.Attribute)Version =  rIn.(XMLNSC.Attribute)Version;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+
+		SET rOutResp.ns:Errors.ns:Error = cErrorText;
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutResp.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';	
+		
+		IF (LogPayLoad) THEN		
+			-- Add response msg to log event
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GroupAccounting WorkUp Response message', 'xml', rEnv);
+		END IF;	
+
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;				
+
+
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		
+	END;
+END MODULE;

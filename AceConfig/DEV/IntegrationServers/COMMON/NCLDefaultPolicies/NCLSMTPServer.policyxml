@@ -1,0 +1,7 @@
+<?xml version="1.1" encoding="UTF-8" standalone="yes"?>
+<policies>
+  <policy policyType="SMTP" policyName="NCLSMTPServer">
+    <securityIdentity></securityIdentity>
+    <smtpServer>forwarder.nclmiami.ncl.com:25</smtpServer>
+  </policy>
+</policies>

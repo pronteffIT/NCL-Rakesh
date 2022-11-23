@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:mbmonitor="http://www.ibm.com/wbi/2008/eflow_mbmonitor" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="com/ncl/iib/NCL_Logging.subflow" nsPrefix="com_ncl_iib_NCL_Logging.subflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1" useDefaults="true" udpSupport="true">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <translation xmi:type="utility:TranslatableString" key="NCL_Logging" bundleName="com/ncl/iib/NCL_Logging" pluginId="NCL_CommonFramework_LIB"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CommonFramework_LIB/icons/full/obj16/NCL_Logging.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CommonFramework_LIB/icons/full/obj30/NCL_Logging.gif"/>
+    <shortDescription xmi:type="utility:ConstantString" string="Publish metadata and payload log monitoring events"/>
+    <longDescription xmi:type="utility:ConstantString" string="This subflow constructs metadata and payload log event messages. These are published as monitoring events to GTM.&#xD;&#xA;&#xD;&#xA;1) Receive Logging Message(Input) node will receive AuditLog and  PayloadLog events message.&#xD;&#xA;&#xD;&#xA;2) Construct Audit Log Event(Compute) node used to construct AuditLog event messages and emit the monitoring events with base64 content encoding by using event correlation.The event correlation would be $Environment/Variables/MQA/LogEvent/TransactionId.&#xD;&#xA;&#xD;&#xA;3) Construct Payload Log Event(Compute) node used to construct PayloadLog event messages and emit the monitoring events with base64 content encoding by using event correlation.The event correlation would be $Environment/Variables/MQA/LogEvent/TransactionId."/>
+    <composition>
+      <nodes xmi:type="eflow:FCMSource" xmi:id="InTerminal.Input" location="14,34">
+        <translation xmi:type="utility:TranslatableString" key="InTerminal.ReceiveLogMsg" bundleName="com/ncl/iib/NCL_Logging" pluginId="NCL_CommonFramework_LIB"/>
+        <shortDescription xmi:type="utility:ConstantString" string="This node will receive AuditLog and  PayloadLog events message."/>
+        <longDescription xmi:type="utility:ConstantString" string="This node will receive AuditLog and  PayloadLog events message."/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="125,34" computeExpression="esql://routine/com.ncl.iib#Logging_CreateMetadataLog.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="CreateMetadataLog"/>
+        <shortDescription xmi:type="utility:ConstantString" string="This node used to construct AuditLog event messages and emit the monitoring events with base64 content encoding by using event correlation.The event correlation would be $Environment/Variables/MQA/LogEvent/TransactionId."/>
+        <longDescription xmi:type="utility:ConstantString" string="This node used to construct AuditLog event messages and emit the monitoring events with base64 content encoding by using event correlation.The event correlation would be $Environment/Variables/MQA/LogEvent/TransactionId."/>
+        <monitorEvents eventSourceDescription="Out terminal" eventSourceName="CreateMetadataLog.terminal.out" eventIdentity="CreateMetadataLog.OutTerminal">
+          <eventXMLDoc xmi:type="mbmonitor:MonitorEvent" eventUOW="independent">
+            <globalTransactionCorrelator dataLocation="$Environment/Variables/GTM/LogEvent/GlobalTransactionId" eventCorrelation="dataLocation"/>
+            <parentTransactionCorrelator dataLocation="$Environment/Variables/GTM/LogEvent/ParentTransactionId" eventCorrelation="dataLocation"/>
+            <localTransactionCorrelator dataLocation="$Environment/Variables/GTM/LogEvent/LocalTransactionId" eventCorrelation="dataLocation"/>
+            <bitStreamData encoding="base64Binary" bitstreamContent="body"/>
+            <eventName literal="CreateMetadataLog.OutTerminal"/>
+            <eventFilter dataLocation="true()" isXPath="true"/>
+          </eventXMLDoc>
+        </monitorEvents>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="254,35" computeExpression="esql://routine/com.ncl.iib#Logging_CreatePayloadLog.Main" computeMode="destinationAndMessage">
+        <translation xmi:type="utility:ConstantString" string="CreatePayloadLog"/>
+        <shortDescription xmi:type="utility:ConstantString" string="This node used to construct PayloadLog event messages and emit the monitoring events with base64 content encoding by using event correlation.The event correlation would be $Environment/Variables/MQA/LogEvent/TransactionId."/>
+        <longDescription xmi:type="utility:ConstantString" string="This node used to construct PayloadLog event messages and emit the monitoring events with base64 content encoding by using event correlation.The event correlation would be $Environment/Variables/MQA/LogEvent/TransactionId."/>
+        <monitorEvents eventSourceDescription="Out terminal" eventSourceName="CreatePayloadLog.terminal.out" eventIdentity="CreatePayloadLog.OutTerminal">
+          <eventXMLDoc xmi:type="mbmonitor:MonitorEvent" eventUOW="independent">
+            <globalTransactionCorrelator dataLocation="$Environment/Variables/GTM/LogEvent/GlobalTransactionId" eventCorrelation="dataLocation"/>
+            <parentTransactionCorrelator dataLocation="$Environment/Variables/GTM/LogEvent/ParentTransactionId" eventCorrelation="dataLocation"/>
+            <localTransactionCorrelator dataLocation="$Environment/Variables/GTM/LogEvent/LocalTransactionId" eventCorrelation="dataLocation"/>
+            <bitStreamData encoding="base64Binary" bitstreamContent="body"/>
+            <eventName literal="CreatePayloadLog.OutTerminal"/>
+            <eventFilter dataLocation="true()" isXPath="true"/>
+          </eventXMLDoc>
+        </monitorEvents>
+      </nodes>
+      <nodes xmi:type="eflow:FCMSink" xmi:id="OutTerminal.Output" location="371,36">
+        <translation xmi:type="utility:TranslatableString" key="OutTerminal.Output" bundleName="com/ncl/iib/NCL_Logging" pluginId="NCL_CommonFramework_LIB"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_3" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_10" targetNode="FCMComposite_1_2" sourceNode="InTerminal.Input" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="OutTerminal.Output" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+    </composition>
+    <propertyOrganizer/>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

@@ -1,0 +1,56 @@
+BROKER SCHEMA com.ncl.ais
+
+/*DECLARE XC10BaseUrl EXTERNAL CHARACTER '';
+DECLARE CacheGrid EXTERNAL CHARACTER '';
+DECLARE CacheMap EXTERNAL CHARACTER '';
+DECLARE XC10User EXTERNAL CHARACTER '';
+DECLARE XC10Pwd EXTERNAL CHARACTER '';*/
+
+CREATE COMPUTE MODULE SaveSessionInCache_CacheRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.PutSessionIn;
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = XC10BaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rEnv.Temp.PutSessionIn.ReservationId;
+		--SET OutputLocalEnvironment.Destination.HTTP.RequestURL = XC10BaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rIn.ReservationId;
+		
+		SET OutputRoot.HTTPRequestHeader.Authorization = 'Basic ' || BASE64ENCODE(XC10User || ':' || XC10Pwd);
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'application/xml';
+		--SET OutputRoot.DFDL.Record.field = rIn.SessionToken;
+		SET OutputRoot.DFDL.Record.field = rEnv.Temp.PutSessionIn.SessionToken;
+		
+		PROPAGATE;
+		
+		SET OutputLocalEnvironment.Destination.HTTP.RequestURL = XC10BaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rEnv.Temp.PutSessionIn.SessionToken;
+		--SET OutputLocalEnvironment.Destination.HTTP.RequestURL = XC10BaseUrl || '/resources/datacaches/' || CacheGrid || '/' || CacheMap || '/' || rIn.SessionToken;
+		
+		SET OutputRoot.HTTPRequestHeader.Authorization = 'Basic ' || BASE64ENCODE(XC10User || ':' || XC10Pwd);
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'application/xml';
+		--SET OutputRoot.DFDL.Record.field = rIn.Endpoint;
+		SET OutputRoot.DFDL.Record.field = rEnv.Temp.PutSessionIn.Endpoint;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE SaveSessionInCache_SaveCacheResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET rEnv.Temp.PutSessionOut.Value = 'ERROR: ' || COALESCE(rEnv.ErrorSummary.ErrorText, 'ERROR:');
+		ELSE
+			SET rEnv.Temp.PutSessionOut.Value = CAST(InputRoot.BLOB.BLOB AS CHARACTER CCSID 1208 ENCODING 546);
+		END IF;
+		
+		--SET OutputRoot.XMLNSC.PutSessionOut.Value = rEnv.Temp.PutSessionOut.Value;
+				
+		RETURN TRUE;
+	END;
+END MODULE;
+

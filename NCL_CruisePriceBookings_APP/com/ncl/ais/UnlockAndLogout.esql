@@ -1,0 +1,78 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE FILTER MODULE UnlockAndLogout_CheckForResId
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRQ;
+
+		--IF LENGTH(rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 AND LENGTH(rOrgMsg.*:SessionId.*:SessionToken) > 0 THEN
+		IF LENGTH(rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 AND rEnv.Stateless <> TRUE THEN
+			-- do nothing
+		ELSEIF LENGTH(rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 THEN
+			RETURN TRUE;
+		ELSEIF CAST(rEnv.Temp.HeldResId AS INTEGER) < 0 THEN
+			RETURN TRUE;	
+		ELSEIF CAST(rEnv.Temp.ReservationId AS INTEGER) < 0  THEN
+			RETURN TRUE;
+		ELSEIF CAST(rEnv.Temp.collectionResId AS INTEGER) > 0  THEN
+			RETURN TRUE;			
+		ELSE
+			RETURN FALSE;
+		END IF;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UnlockAndLogout_UnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRQ;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unlocking booking ...', rEnv);
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rOut;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rOut);
+--		SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--		SET rOut.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+		--SET rOut.Options.Send.StateKey= rEnv.Temp.StateKey;
+		--SET rOut.Options.Send.AllowUserPickup= 'N';
+		IF CAST(rEnv.Temp.HeldResId AS INTEGER) < 0 THEN
+			SET rOut.Options.Send.StateKey= rEnv.Temp.StateKey;
+			SET rOut.Options.Send.AllowUserPickup= 'N';
+		END IF;	
+		IF LENGTH(rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 THEN
+			SET rOut.ResID = rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID;
+		ELSE
+			SET rOut.ResID = rEnv.Temp.ReservationId;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UnlockAndLogout_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRQ;
+
+		-- if session token not passed, then logout		
+		IF COALESCE(rOrgMsg.*:SessionId.*:SessionToken, '') = '' THEN
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of session ...', rEnv);
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint; 
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			
+			RETURN TRUE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+END MODULE;

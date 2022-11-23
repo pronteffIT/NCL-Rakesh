@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<MessagePool xmlns="http://wwww.ibm.com/iib/test/1.0.0">
+    <MQInputMessage timestamp="1619798723042" nodeId="FCMComposite_1_1" name="new message 1" id="1619798723042-49">
+        <plainText>REF_ID%7CSAIL_ID%7CSTATUS%7CDROPPED+REASON%0D%0ANCL-162257326%7C45592%7CDropped%7CNot+Registered%0D%0ANCL-162257327%7C45592%7CDropped%7CInfant%0D%0ANCL-163809823%7C45592%7CDropped%7CNot+Registered%0D%0ANCL-163809824%7C45592%7CDropped%7CNot+Registered%0D%0ANCL-163809825%7C45592%7CNot+Dropped%7C%0D%0ANCL-163809826%7C45592%7CDropped%7CNot+Registered%0D%0ANCL-164746232%7C45592%7CDropped%7CNot+Registered%0D%0ANCL-164746233%7C45592%7CDropped%7CNot+Registered%0D%0ANCL-164746234%7C45592%7CNot+Dropped%7C%0D%0A</plainText>
+        <MessageHeader backoutCount="0" characterSet="0" encoding="0" expiry="-1" feedback="0" messageFlags="0" messageType="8" messageSequenceNumber="1" offset="0" originalLength="-1" persistence="2" priority="-1" putApplicationType="0" report="0"/>
+    </MQInputMessage>
+    <MQInputMessage timestamp="1621022309843" nodeId="FCMComposite_1_1" name="new message 2" id="1621022309843-19">
+        <plainText>45592</plainText>
+        <MessageHeader backoutCount="0" characterSet="0" encoding="0" expiry="-1" feedback="0" messageFlags="0" messageType="8" messageSequenceNumber="1" offset="0" originalLength="-1" persistence="2" priority="-1" putApplicationType="0" report="0"/>
+    </MQInputMessage>
+</MessagePool>

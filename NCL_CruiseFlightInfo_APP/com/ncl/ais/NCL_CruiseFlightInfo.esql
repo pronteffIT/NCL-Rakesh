@@ -1,0 +1,290 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE nsAma NAMESPACE 'http://ContextSearchWS.amadeus.com';
+DECLARE DEFAULT_ReplyToQ EXTERNAL CHARACTER 'NCL_CRUISE_FLIGHT_INFO_RESP';
+DECLARE MsgExpiry EXTERNAL INTEGER 1500; 
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE AmadeusAPIVersion EXTERNAL CHARACTER '';
+DECLARE AmadeusUserID EXTERNAL CHARACTER '';
+DECLARE AmadeusPwd EXTERNAL CHARACTER '';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseFlightInfo
+ * MODULE NAME       :     NCL_CruiseFlightInfo_Exception
+ * Description       :     This module handles the exception at all levels for Cruise Flight Info
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/01/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseFlightInfo_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+			DECLARE rEnv REFERENCE TO Environment.Variables;
+			DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+			
+
+			SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+
+			IF NOT EXISTS(Environment.Variables[]) THEN
+				CREATE FIELD Environment.Variables AS rEnv;
+			END IF;
+			
+			IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+				SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+			END IF;
+			
+			IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+				CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+				
+				IF LogPayLoad THEN
+					DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);		
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload,NodeLabel,'Cruise Flight Info IIB Exception..','xml',rEnv);
+				END IF;
+				
+			END IF;
+
+			SET OutputRoot = InputRoot;
+			
+			PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+
+		    RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseFlightInfo
+ * MODULE NAME       :     NCL_CruiseFlightInfo_AmadeusReq
+ * Description       :     Builds Amadeus Request
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/01/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+CREATE COMPUTE MODULE NCL_CruiseFlightInfo_AmadeusReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rInFlghtIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseFlightInfoRQ;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		
+		IF NOT EXISTS (Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		DECLARE Requestor,BookingChannel,ReservationId,ClientId CHARACTER;
+		
+		SET Requestor = COALESCE(FIELDVALUE(rInFlghtIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),COALESCE(FIELDVALUE(rInFlghtIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode),''));
+		SET BookingChannel = COALESCE(FIELDVALUE(rInFlghtIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code),'');
+		SET ReservationId = COALESCE(FIELDVALUE(rInFlghtIn.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID),'');
+		SET ClientId = COALESCE(FIELDVALUE(rInFlghtIn.*:ReservationInfo.*:GuestDetails.*:GuestDetail.*:ContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID),'');
+		
+		--add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(Requestor,BookingChannel,ReservationId,ClientId,'',rEnv);
+		
+		SET rEnv.TempHeaders.MQMD = InputRoot.MQMD;
+		SET rEnv.TempHeaders.MQMD.Expiry = MsgExpiry;
+		SET rEnv.TempHeaders.MQMD.Format = MQFMT_STRING;
+		
+		IF COALESCE(InputRoot.MQMD.ReplyToQ,'')='' THEN
+			SET rEnv.TempHeaders.MQMD.ReplyToQ = DEFAULT_ReplyToQ;
+		END IF;
+					
+							--Assigning Input Request to Environment
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InReq';
+		SET rEnv.InReq = InputRoot.XMLNSC.*:NCL_CruiseFlightInfoRQ;
+			
+		IF LogPayLoad THEN	
+			--Assigning Input Request to Environment for Logging
+			CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'FlightInfo';
+			SET rEnv.FlightInfo.Req = InputRoot.XMLNSC;			
+			
+			DECLARE bPayload BLOB ASBITSTREAM(rEnv.FlightInfo.Req CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Flight Info Request', 'xml', rEnv);
+		END IF;
+		
+		DECLARE rOut REFERENCE TO Environment.Variables;		
+		
+		SET rEnv.BookChannel.CompanyCode = BookingChannel;--FIELDVALUE(rInPay.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rEnv.GuestDetails.LoyaltyID = ClientId;--FIELDVALUE(rInPay.*:ReservationInfo.*:GuestDetails.*:GuestDetail.*:ContactInfo[1].(XMLNSC.Attribute)LoyaltyMembershipID);
+		SET rEnv.ReqID.CompanyCode = FIELDVALUE(rInFlghtIn.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code);
+		
+		
+	-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Amadeus Flight verification Service...', rEnv);
+		
+		SET OutputRoot.HTTPRequestHeader.Authorization = 'Basic ' || BASE64ENCODE(AmadeusUserID || ':' || AmadeusPwd);	
+		CREATE FIELD OutputRoot.XMLNSC.nsAma:FlightVerification_IN AS rOut;
+		SET rOut.(XMLNSC.Attribute)version = AmadeusAPIVersion;
+		SET rOut.MsgHeader.APIVersion = AmadeusAPIVersion;		
+		SET rOut.MsgHeader.CustomerId = 'NCL01';		
+		SET rOut.MsgHeader.MessageID = cLocalTranId;	
+		SET rOut.FlightRequestInfo.ProviderCode = rInFlghtIn.*:Airline;
+		SET rOut.FlightRequestInfo.FlightNumber = rInFlghtIn.*:FlightNo;
+		SET rOut.FlightRequestInfo.Departure.Airport = rInFlghtIn.*:DepartureAirport;
+		SET rOut.FlightRequestInfo.Departure.DateTime = SUBSTRING(rInFlghtIn.*:DepartureDateTime FROM 1 FOR 16);
+		SET rOut.FlightRequestInfo.Arrival.Airport = rInFlghtIn.*:ArrivalAirport;
+		SET rOut.FlightRequestInfo.Arrival.DateTime = SUBSTRING(rInFlghtIn.*:ArrivalDateTime FROM 1 FOR 16);
+			
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseFlightInfo
+ * MODULE NAME       :     NCL_CruiseFlightInfo_AmadeusResp
+ * Description       :     This module builds Response for Amadeus Req
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/01/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+ 
+ CREATE COMPUTE MODULE NCL_CruiseFlightInfo_AmadeusResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN	
+		
+		DECLARE rEnv,rOut,rOutFlights REFERENCE TO Environment.Variables;
+		DECLARE rInReq REFERENCE TO rEnv.InReq;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFlightInfoRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rInReq,rOut);
+		CREATE FIELD rOut.ns:Success;
+		DECLARE rInAmaFlghtVer,rOutWarning REFERENCE TO InputRoot.XMLNSC.*:FlightVerification_OUT;
+		
+		IF EXISTS(rInAmaFlghtVer.*:SystemMessages[]) THEN
+				
+				FOR msgRef AS rInAmaFlghtVer.*:SystemMessages.*:Message[] DO
+					CREATE LASTCHILD OF rOut.ns:Warnings AS rOutWarning IDENTITY ns:Warning;
+					DECLARE ErrorDesc CHARACTER SUBSTRING(msgRef.*:MessageDescription FROM 1 FOR 64);
+				
+					SET rOutWarning = ErrorDesc;
+					SET rOutWarning.(XMLNSC.Attribute)Code = 12228;
+					SET rOutWarning.(XMLNSC.Attribute)ShortText = COALESCE(msgRef.*:MessageDescription,'System error from backend Try Later');
+					SET rOutWarning.(XMLNSC.Attribute)Type = '3';
+			
+			END FOR;	
+		ELSE
+		
+			CREATE FIELD rOut.Flights;
+			FOR flightRef AS rInAmaFlghtVer.*:FlightList.*:Flight[] DO
+				CREATE LASTCHILD OF rOut.Flights AS rOutFlights NAME 'Flight';
+				DECLARE flightDur INTEGER EXTRACT(MINUTE FROM (CAST(REPLACE(flightRef.*:Arrival.*:DateTime,'T',' ')||':00' AS TIMESTAMP)-CAST(REPLACE(flightRef.*:Departure.*:DateTime,'T',' ')||':00' AS TIMESTAMP)) MINUTE);
+				DECLARE days INTEGER flightDur/1440;
+				DECLARE hrs INTEGER (flightDur-days*1440)/60;
+				DECLARE min INTEGER flightDur-1440*days-hrs*60;
+				SET rOutFlights.Airline=flightRef.*:ProviderCode;			
+				SET rOutFlights.FlightNo=flightRef.*:FlightNumber;	
+				SET rOutFlights.DepartureDateTime=flightRef.*:Departure.*:DateTime||':00';	
+				SET rOutFlights.DepartureAirport=flightRef.*:Departure.*:Airport;	
+				SET rOutFlights.ArrivalDateTime=flightRef.*:Arrival.*:DateTime||':00';	
+				SET rOutFlights.ArrivalAirport=flightRef.*:Arrival.*:Airport;	
+				SET rOutFlights.ArrivalTerminal=flightRef.*:ArrivalTerminal;	
+				SET rOutFlights.FlyingTime='P'||CAST(days AS CHAR)||'D'||'T'||CAST(hrs AS CHAR)||'H'||CAST(min as CHAR)||'M';	--P0DT3H4M
+				SET rOutFlights.NumberOfStops=flightRef.*:NumberOfStops;	
+				SET rOutFlights.OperatedByAirline=flightRef.*:OperatedByAirline;
+			END FOR;
+		END IF;	
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		IF LogPayLoad THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Flight Info Response..', 'xml', rEnv);
+		END IF;
+		
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+	
+	
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseFlightInfo
+ * MODULE NAME       :     NCL_CruiseFlightInfo_RunTimeException
+ * Description       :     This module builds Handles Runtime Exception
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               10/01/2018   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseFlightInfo_RunTimeException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE cErrorText CHARACTER;
+		DECLARE rInReq REFERENCE TO rEnv.InReq;
+		
+		SET OutputRoot.MQMD = rEnv.TempHeaders.MQMD;
+		SET OutputRoot.MQMD.ReplyToQ = rEnv.TempHeaders.MQMD.ReplyToQ;
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFlightInfoRS AS rOut;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[])  THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking Flight Info api', rEnv);
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+				SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+				
+				CALL com.ncl.ais.utils.CopyAttributes(rInReq,rOut);		
+				CREATE FIELD rOut.ns:Success;
+				SET rOut.ns:Warnings.ns:Warning = cErrorText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+		END IF;		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+ 

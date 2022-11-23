@@ -1,0 +1,268 @@
+
+
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_RTRV_AGENCY_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgency
+* MODULE NAME : NCL_CruiseRetrieveAgency_Call_Procedure
+* Description : This module retrieves Agency details from seaware
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/06/2017 Prolifics Initial version
+* 1.1
+*------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgency_Call_Procedure
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Varibles;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAgencyRS;
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		DECLARE p_AgencyId INTEGER;
+		DECLARE p_ErrorCode CHARACTER;
+		DECLARE rOutDetails REFERENCE TO rOut.ns:AgencyInfo;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InputReq';
+
+		SET rEnv.InputReq = InputRoot.XMLNSC.*:NCL_CruiseRetrieveAgencyRQ;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- add metadata to log event
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.InputReq.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		'',
+		'',
+		'',
+		rEnv);
+		-- create IIB log event
+	
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'RetrieveAgency request message', 'xml', rEnv);
+		END IF;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+
+		SET p_AgencyId = CAST(rEnv.InputReq.*:AgencyInfo.*:RequestorID.(XMLNSC.Attribute)ID AS INTEGER);
+		----get agency_Ifo by using agencyId
+		CALL NCL_WESB_AR_Get_Agency_Info(p_AgencyId,p_ErrorCode,rEnv.p_CursorAgencyInfO[]);
+
+		IF EXISTS(rEnv.p_CursorAgencyInfO[]) THEN
+			CALL NCL_WESB_AR_Get_Agency_Phone(p_AgencyId,rEnv.p_CursorPhone[]);
+			-- CALL NCL_WESB_AR_Get_Agency_Email(p_AgencyId,rEnv.p_CursorEmail[]);
+			CALL NCL_WESB_AR_Get_Agc_Cont_prf(p_AgencyId,rEnv.p_CursorContact[]);
+		ELSE
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAgencyRS AS rOut;
+			SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.InputReq.(XMLNSC.Attribute)TransactionIdentifier;
+			SET rOut.ns:Success = '';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code='9915';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText= 'agency not found';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAgencyRS AS rOut;
+		SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rEnv.InputReq.(XMLNSC.Attribute)TransactionIdentifier;
+		SET rOut.ns:Success = '';
+		--AgencyInfo
+		-- FOR p_Cursor4 AS rEnv.p_CursorAgencyInfO[] DO
+		--CREATE LASTCHILD OF OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAgencyRS AS rOut NAMESPACE ns NAME 'AgencyInfo';
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)AgencyClassificationCode = COALESCE(rEnv.p_CursorAgencyInfO.AGENCY_CLASSIFICATION_CODE,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)AgencyClassificationName = COALESCE(rEnv.p_CursorAgencyInfO.AGENCY_CLASSIFICATION_NAME,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)AgencyType = COALESCE(rEnv.p_CursorAgencyInfO.AGENCY_TYPE,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)ARCNumber = COALESCE(rEnv.p_CursorAgencyInfO.ARC_NUMBER,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)CLIANumber = COALESCE(rEnv.p_CursorAgencyInfO.CLIA_NUMBER,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)FinalDocsDeliveryPref = COALESCE(rEnv.p_CursorAgencyInfO.DRS_DELIVERY_PREF_FINAL,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)IATANumber = COALESCE(rEnv.p_CursorAgencyInfO.TAXPAYER_NUMBER,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)IdentificationNumber = COALESCE(rEnv.p_CursorAgencyInfO.TAXPAYER_NUMBER,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)IATANumber = COALESCE(rEnv.p_CursorAgencyInfO.IATA_NUMBER,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)LegalName = COALESCE(rEnv.p_CursorAgencyInfO.AGENCY_NAME,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)OfficeCode = COALESCE(rEnv.p_CursorAgencyInfO.OFFICE_CODE,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)PrekitDocsDeliveryPref = COALESCE(rEnv.p_CursorAgencyInfO.DRS_DELIVERY_PREF_PREKIT,'');
+		SET rOut.ns:AgencyInfo.(XMLNSC.Attribute)DefaultCurrencyCode = COALESCE(rEnv.p_CursorAgencyInfO.DEFAULT_CURRENCY,'');
+		SET rOut.ns:AgencyInfo.ns:RequestorID.(XMLNSC.Attribute)ID = COALESCE(rEnv.p_CursorAgencyInfO.AGENCY_ID,'');
+		--Telephone
+		FOR p_Cursor5 AS rEnv.p_CursorPhone[] DO
+			CREATE LASTCHILD OF rOut.ns:AgencyInfo AS rOutDetails NAMESPACE ns NAME 'Telephone';
+			SET rOutDetails.(XMLNSC.Attribute)PhoneLocationType = COALESCE(p_Cursor5.PHONE_TYPE,'');
+			SET rOutDetails.(XMLNSC.Attribute)PhoneNumber = COALESCE(p_Cursor5.PHONE_NUMBER,'');
+			SET rOutDetails.(XMLNSC.Attribute)PhoneTechType = COALESCE(p_Cursor5.IS_PHONE_FAX,'');
+			SET rOutDetails.(XMLNSC.Attribute)PhoneUseType = COALESCE(p_Cursor5.IS_PHONE_PRIMARY,'');
+		END FOR;
+		--Address
+		SET rEnv.Address[] = PASSTHRU('SELECT ad.AGENCY_ID,ad.SEQ_NUMBER, decode(ad.ADDRESS_TYPE,''SECONDARY'',''4'',''3'') AS ATYPE,
+		ad.ADDRESS_LINE1, ad.ADDRESS_LINE2,ad.ADDRESS_CITY,ad.STATE_CODE, ad.ZIP, ad.COUNTRY_CODE,
+		decode(ad.IS_ADDRESS_MAILING,''Y'',''Yes'',''No'') AS AMAIL, decode(ad.IS_ADDRESS_SHIPPING,''Y'',''Yes'',''No'')
+		AS ASHIP, ad.COMMENTS, ad.AGENCY_ADDR_ID, ad.ADDRESS_LINE3, ad.ADDRESS_LINE4, ad.ADDRESS_ESSENTIAL
+		FROM AGENCY_ADDRESS ad WHERE ad.AGENCY_ID = ? AND ad.ADDRESS_TYPE IN (?, ?)',p_AgencyId,'SECONDARY','PRIMARY');
+
+		FOR p_Cursor2 AS rEnv.Address[] DO
+			CREATE LASTCHILD OF rOut.ns:AgencyInfo AS rOutDetails NAMESPACE ns NAME 'Address';
+			SET rOutDetails.(XMLNSC.Attribute)ShareMarketInd = COALESCE(p_Cursor2.AMAIL,'');
+			SET rOutDetails.(XMLNSC.Attribute)ShareSynchInd = COALESCE(p_Cursor2.ASHIP ,'');
+			SET rOutDetails.(XMLNSC.Attribute)Type = COALESCE(p_Cursor2.ATYPE,'');
+			SET rOutDetails.AddressLine[1] = COALESCE(p_Cursor2.ADDRESS_LINE1,'');
+			SET rOutDetails.AddressLine[2] = COALESCE(p_Cursor2.ADDRESS_LINE2,'');
+			SET rOutDetails.AddressLine[3] =COALESCE(p_Cursor2.ADDRESS_LINE3,'');
+			SET rOutDetails.AddressLine[4]= COALESCE(p_Cursor2.ADDRESS_LINE4,'');
+			SET rOutDetails.CityName = COALESCE(p_Cursor2.ADDRESS_CITY,'');
+			SET rOutDetails.PostalCode = COALESCE(p_Cursor2.ZIP,'');
+			SET rOutDetails.StateProv.(XMLNSC.Attribute)StateCode = COALESCE(p_Cursor2.STATE_CODE,'');
+			SET rOutDetails.CountryName.(XMLNSC.Attribute)Code = COALESCE(p_Cursor2.COUNTRY_CODE,'');
+		END FOR;
+		---Email
+		SET rEnv.p_CursorEmail[]= PASSTHRU('SELECT ad.AGENCY_ID,ad.SEQ_NUMBER,ad.ADDRESS_TYPE,ad.ADDRESS_LINE1, ad.ADDRESS_LINE2,ad.ADDRESS_CITY,ad.STATE_CODE, ad.ZIP,
+		ad.COUNTRY_CODE,decode(ad.IS_ADDRESS_MAILING,''Y'',''Yes'',''No'') AS AMAIL ,decode(ad.IS_ADDRESS_SHIPPING,''Y'',''Yes'',''No'') AS ASHIP,
+		ad.COMMENTS,ad.AGENCY_ADDR_ID, ad.ADDRESS_LINE3, ad.ADDRESS_LINE4,ad.ADDRESS_ESSENTIAL
+		FROM AGENCY_ADDRESS ad WHERE ad.AGENCY_ID = ? AND ad.ADDRESS_TYPE = ''E MAIL''',p_AgencyId);
+		FOR p_Cursor3 AS rEnv.p_CursorEmail[] DO
+			CREATE LASTCHILD OF rOut.ns:AgencyInfo AS rOutDetails NAMESPACE ns NAME 'Email';
+			SET rOutDetails = COALESCE(p_Cursor3.ADDRESS_LINE1,'');
+			SET rOutDetails.(XMLNSC.Attribute)ShareMarketInd = COALESCE(p_Cursor3.AMAIL,'');
+			SET rOutDetails.(XMLNSC.Attribute)ShareSynchInd = COALESCE(p_Cursor3.ASHIP,'');
+
+		END FOR;
+		FOR p_Cursor AS rEnv.p_CursorContact[] DO
+			CREATE LASTCHILD OF rOut.ns:AgencyInfo AS rOutDetails NAMESPACE ns NAME 'ContactPreferences';
+			SET rOutDetails.(XMLNSC.Attribute)ContactPreference = COALESCE(p_Cursor.NOTIF_DFLT_DISTR_TYPE,'');
+		END FOR;
+		-- END FOR;
+		PROPAGATE TO TERMINAL 'out1';
+		-- add response msg to log even
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseRetrieveAgency response message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE NCL_WESB_AR_Get_Agc_Cont_prf(IN p_AgencyId INTEGER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_AR_Get_Agc_Cont_prf";
+
+	CREATE PROCEDURE NCL_WESB_AR_Get_Agency_Email(IN p_AgencyId INTEGER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_AR_Get_Agency_Email";
+
+	CREATE PROCEDURE NCL_WESB_AR_Get_Agency_Info(IN p_AgencyId INTEGER, OUT p_ErrorCode CHARACTER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_AR_Get_Agency_Info";
+
+	CREATE PROCEDURE NCL_WESB_AR_Get_Agency_Phone(IN p_AgencyId INTEGER)
+	LANGUAGE DATABASE
+	DYNAMIC RESULT SETS 1
+	EXTERNAL NAME "NCLSEA.NCL_WESB_AR_Get_Agency_Phone";
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgency
+* MODULE NAME : NCL_CruiseRetrieveAgency_Exception
+* Description : This module handles exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/06/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgency_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEn
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CriuseRetrieve Agency Invalid request message IIB exception...', 'xml', rEnv);
+		END IF;
+	END IF;
+		SET OutputRoot = InputRoot;
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseRetrieveAgency
+* MODULE NAME : NCL_CruiseRetrieveAgency_Compute
+* Description : This module handles fault
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/06/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseRetrieveAgency_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE cErrorText CHARACTER;
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAgencyRS;		
+
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0
+			THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrieveAgencyRS AS runTimeErr;
+
+		SET runTimeErr.Errors.Error = cErrorText;
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET runTimeErr.Errors.Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,13 @@
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_StatefulPriceBooking_SortPayment
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rPayment REFERENCE TO Environment.Variables;
+		CREATE LASTCHILD OF rEnv AS rPayment DOMAIN 'XMLNSC' NAME 'SortedPayment';
+		SET rPayment = InputRoot.XMLNSC.PaymentSchedule;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

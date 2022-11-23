@@ -1,0 +1,363 @@
+BROKER SCHEMA com.ncl.ais
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseApplyCouponsAsDiscount
+* MODULE NAME : LoadBkgReq
+* Description : This module is used for creating the load booking request for the load booking service.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_LoadBkgReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE loadBookingIn REFERENCE TO OutputRoot;
+
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking loadBooking service...', rEnv);
+
+		-- MaxTansaction
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+		
+		CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS loadBookingIn;
+		
+--		SET loadBookingIn.MsgHeader.Version = VersonixAPIVersion;
+--		SET loadBookingIn.MsgHeader.SessionGUID = rEnv.XMLNSC.SessionGUID;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,loadBookingIn);
+		SET loadBookingIn.Options.Lock = 'Y';
+		SET loadBookingIn.ResShellOptions.IncludeElements = 'ResHeader Coupons';
+		SET loadBookingIn.ResID = CAST(rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+
+		RETURN TRUE;
+		
+		/*CASE
+
+		WHEN EXISTS(InputRoot.XMLNSC.VerifyAgencyResponse.agencyID[]) THEN
+			-- MaxTansaction			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS loadBookingIn;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,loadBookingIn);
+--			SET loadBookingIn.MsgHeader.Version = VersonixAPIVersion;
+--			SET loadBookingIn.MsgHeader.SessionGUID = InputRoot.XMLNSC.VerifyAgencyResponse.sessionGUID;
+			SET loadBookingIn.Options.Lock = 'Y';
+			SET loadBookingIn.ResShellOptions.IncludeElements = 'ResHeader';
+			SET loadBookingIn.ResID = CAST(rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking loadBooking service...', rEnv);
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+
+		WHEN EXISTS(InputRoot.XMLNSC.Body.Errors[]) THEN
+			-- Generic Warning
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.Body.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseApplyCouponsAsDiscountRS';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling generic warning subflow from load booking...', rEnv);
+			PROPAGATE TO TERMINAL 'out2';
+			RETURN FALSE;
+
+		ELSE
+			-- Agency not found
+			SET OutputRoot = InputRoot;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Propagating to Agency not found from load booking...', rEnv);
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END CASE; */
+		
+		--RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseApplyCouponsAsDiscount
+* MODULE NAME : UpdateBkg
+* Description : This module is used for creating the request for the UpdateBooking service.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_UpdateBkg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE ResID,LoyaltyMembershipID CHARACTER;
+		
+		SET ResID = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET LoyaltyMembershipID = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:Coupons.*:Coupon.*:Guest.(XMLNSC.Attribute)LoyaltyMembershipID;
+		
+		CASE
+
+		WHEN EXISTS(InputRoot.XMLNSC.LoadBooking_OUT.Errors.Error[]) THEN
+
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.LoadBooking_OUT.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseApplyCouponsAsDiscountRS';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling generic warning subflow from update booking...', rEnv);
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+
+		ELSE
+			DECLARE rOut REFERENCE TO OutputRoot;
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+			CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rOut;
+			
+		--	SET rOut.MsgHeader = InputRoot.XMLNSC.LoadBooking_OUT.MsgHeader;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,rOut);			
+			SET rOut.ResShell.ResHeader = InputRoot.XMLNSC.LoadBooking_OUT.ResShell.ResHeader;
+			SET rOut.ResShell.Coupons = InputRoot.XMLNSC.LoadBooking_OUT.ResShell.Coupons;				
+			DECLARE rOutResp REFERENCE TO rOut.ResShell.Coupons;
+			CREATE FIELD rOut.ResShell.Coupons AS rOutResp;
+			DECLARE outputResp REFERENCE TO rOutResp;
+			
+			-- Implement the for loop for the input coupons in the request
+			FOR source AS rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:Coupons.*:Coupon[] DO
+				CREATE LASTCHILD OF rOutResp AS outputResp NAME 'Coupon';						
+				SET outputResp.CouponID = CAST(source.(XMLNSC.Attribute)ID AS INTEGER);
+				CALL guestLookup(LoyaltyMembershipID,ResID,rEnv);
+				--Check if exception Exists
+				SET outputResp.GuestSeqN = COALESCE(CAST(rEnv.Temp.LookupResp.GUEST_SEQN AS INTEGER),0);
+				SET outputResp.CouponClass = source.*:CouponClass;					
+
+				IF CAST(rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:Coupons.*:Coupon.*:AmountTobeApplied.(XMLNSC.Attribute)DecimalPlaces AS INTEGER) > 0 THEN
+					SET outputResp.Amount = CAST(FIELDVALUE(source.*:AmountTobeApplied.(XMLNSC.Attribute)Amount) AS DECIMAL) / 
+												CAST(POWER(10, CAST(FIELDVALUE(source.*:AmountTobeApplied.(XMLNSC.Attribute)DecimalPlaces) AS INTEGER)) AS DECIMAL);					
+				ELSE
+					SET outputResp.Amount = CAST(FIELDVALUE(source.*:AmountTobeApplied.(XMLNSC.Attribute)Amount) AS DECIMAL) / 100;
+				END IF;
+				
+			END FOR;
+
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking updateBooking service...', rEnv);
+
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+		END CASE;
+
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+
+CREATE PROCEDURE guestLookup(IN LoyaltyMembershipID CHARACTER,IN ID CHARACTER,INOUT rEnv REFERENCE )
+BEGIN
+
+	DECLARE query CHARACTER;
+
+	SET query = 'select rg.guest_seqn,rg.guest_id,c.client_Id,c.last_name,c.first_name,rg.full_name, c.middle_name ' || 'from res_guest rg,client c ' ||'where rg.client_ID = c.client_ID and '
+	|| 'rg.client_id = ? and rg.res_id = ? ';
+
+	SET rEnv.Temp.LookupResp[] = PASSTHRU( query Values(LoyaltyMembershipID,ID));	
+
+
+END;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseApplyCouponsAsDiscount
+* MODULE NAME : StoreBkg
+* Description : This module is used for creating the request for the store booking service call.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_StoreBkg
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE isFatalErr CHARACTER 'N';
+		CREATE FIELD Environment.Variables AS rEnv;	
+		IF EXISTS(SELECT E.* FROM InputRoot.XMLNSC.UpdateBooking_OUT.Errors.Error[] AS E 
+						WHERE (E.ErrorSeverity IN ('E','F','OPERATION','EXCEPTION','FATAL') OR
+								COALESCE(E.BookingValidation.CanBeStored, '') ='N' )) THEN
+			SET isFatalErr = 'Y';			
+		END IF;	
+		IF (rEnv.Temp.State = 'STATELESS' AND isFatalErr = 'Y') 
+			OR ( rEnv.Temp.State <> 'STATELESS' AND EXISTS(InputRoot.XMLNSC.UpdateBooking_OUT.Errors.Error[])) THEN
+			SET OutputRoot.XMLNSC.Body.Errors = InputRoot.XMLNSC.UpdateBooking_OUT.Errors;
+			SET OutputRoot.XMLNSC.Body.Code = rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET OutputRoot.XMLNSC.Body.FlowName = 'NCL_CruiseApplyCouponsAsDiscountRS';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling generic warning subflow from store booking...', rEnv);
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			IF rEnv.Temp.State = 'STATELESS' THEN
+				DECLARE rOut REFERENCE TO OutputRoot;
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+				CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS rOut;
+				--SET rOut.MsgHeader = InputRoot.XMLNSC.UpdateBooking_OUT.MsgHeader;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,rOut);
+				SET rOut.Options.Unlock = 'Y';
+				SET rOut.ResID = CAST(InputRoot.XMLNSC.UpdateBooking_OUT.ResShell.ResHeader.ResID AS INTEGER);
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking storeBooking service...', rEnv);
+				
+				RETURN TRUE;
+			ELSE
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+			END IF;
+		END IF;
+	END;
+
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     UnlockBooking
+ * Description       :     This module is used to create the request for the unlock booking service call.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_UnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+	
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		-- add audit trail
+
+		IF rEnv.Temp.State = 'STATELESS' THEN
+	  		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Unlock Booking...', rEnv);
+	  		
+	  		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.XMLNSC.EndPoint;
+--	  		SET OutputRoot.XMLNSC.UnlockBooking_IN.MsgHeader.Version =  VersonixAPIVersion;
+--			SET OutputRoot.XMLNSC.UnlockBooking_IN.MsgHeader.SessionGUID = rEnv.XMLNSC.SessionGUID;
+			CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.XMLNSC.SessionGUID,rOut);
+			SET rOut.ResID = CAST(rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ.*:ReservationID.(XMLNSC.Attribute)ID AS INTEGER);
+			
+			IF EXISTS(OutputRoot.XMLNSC.UnlockBooking_IN.ResID[]) THEN
+				PROPAGATE TO TERMINAL 'out';
+				RETURN FALSE;
+			ELSE
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+		END IF;
+		
+		RETURN FALSE;	
+	END;
+
+END MODULE;
+
+
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseApplyCouponsAsDiscount
+ * MODULE NAME       :     SetRuntimeError
+ * Description       :     This module is used to create the runtime error response.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_SetRuntimeError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns4:NCL_CruiseApplyCouponsAsDiscountRS AS rOut;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseApplyCouponsAsDiscountRQ AS rIn;
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		--CALL getExceptionDetails(rEnv, InputExceptionList);
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, InputExceptionList);
+		SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET rOut.ns4:Errors.ns4:Error = cErrorText;
+		SET rOut.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns4:Errors.ns4:Error.(XMLNSC.Attribute)Type = '3';
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Apply coupons as discount, set runtime exception Payload...', 'xml', rEnv);				
+		END IF;
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		PROPAGATE TO TERMINAL 'out';
+	
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseApplyCouponsAsDiscount_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.XMLNSC.EndPoint;
+		IF EXISTS(InputRoot.XMLNSC[]) THEN
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		ELSE
+			SET OutputRoot.BLOB = InputRoot.BLOB;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+

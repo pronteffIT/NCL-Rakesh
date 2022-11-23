@@ -1,0 +1,215 @@
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseUpdateOnlineCheckInCruiseHistory
+* MODULE NAME : Login
+* Description : This module is used to update and isert value for recordId ,build response.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/23/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateOnlineCheckInCruiseHistory_updateHistory
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateOnlineCheckInCruiseHistoryRS;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		DECLARE curr_Date TIMESTAMP ;
+		DECLARE bPayloadIn BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		
+		DECLARE intseq INTEGER;
+		SET curr_Date = CAST(CURRENT_TIMESTAMP AS TIMESTAMP FORMAT 'yyyy-mm-dd hh24:mi:ss') ;
+
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'InputReq';
+
+		SET rEnv.TempHeader.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.TempHeader.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.TempHeader.Expiry = MSG_EXPIRY;
+		SET rEnv.InputReq = InputRoot.XMLNSC.*:NCL_CruiseUpdateOnlineCheckInCruiseHistoryRQ;
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.InputReq.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.InputReq.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rEnv.InputReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		'',
+		'',
+		'',
+		rEnv);
+
+		--add payload
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayloadIn, NodeLabel, 'UpdateOnlineCheckInCruiseHistory request message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.MQMD =rEnv.TempHeader.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateOnlineCheckInCruiseHistoryRS AS rOut;
+		-------select statement to get record Id
+		SET rEnv.ResultSet.Record[] =SELECT A.RECORD_ID FROM Database.ncl_online_checkin_cruise_hist AS A WHERE A.guest_Id = rEnv.InputReq.*:GuestId;
+		---check whether select is succesfull
+		IF SQLCODE = 0 THEN
+
+			IF EXISTS(rEnv.ResultSet.Record.RECORD_ID[]) THEN
+				-------If record exsist updtae it with new values
+				PASSTHRU('UPDATE ncl_online_checkin_cruise_hist  P
+				SET first_ncl_cruise_cd = ?,first_cruise_cd = ?,last_vendor_nam = ?,updated_at = sysdate where P.guest_id = ?',
+				rEnv.InputReq.*:FirstCruiseCode,rEnv.InputReq.*:FirstNCLCruiseCode,rEnv.InputReq.*:LastVendorName,
+				rEnv.InputReq.*:GuestId);
+			ELSE
+				-------If record not exsist----------
+				SET rEnv.SQLBox[] = PASSTHRU('SELECT NCL_OCI_CRUISE_HIST_SEQ.NEXTVAL FROM DUAL') ;
+
+				SET intseq =CAST(rEnv.SQLBox.NEXTVAL AS INTEGER);
+				INSERT INTO Database.ncl_online_checkin_cruise_hist (RECORD_ID ,GUEST_ID ,FIRST_CRUISE_CD,FIRST_NCL_CRUISE_CD,LAST_VENDOR_NAM,CREATED_AT,UPDATED_AT,SOURCE_CD)
+				VALUES (intseq ,rEnv.InputReq.*:GuestId,rEnv.InputReq.*:FirstCruiseCode,rEnv.InputReq.*:FirstNCLCruiseCode,
+				rEnv.InputReq.*:LastVendorName,curr_Date,curr_Date,'OCI');
+			END IF;
+			-------Check whether insert is succesfull
+			IF SQLCODE = 0 THEN
+				------retrive details from Database
+				SET rEnv.ResultSet[] = PASSTHRU('SELECT  CH.GUEST_ID, CH.FIRST_CRUISE_CD, CH.FIRST_NCL_CRUISE_CD,
+				CH.LAST_VENDOR_NAM, CH.CREATED_AT,CH.UPDATED_AT, CH.SOURCE_CD
+				FROM nclsea.ncl_online_checkin_cruise_hist CH where CH.GUEST_ID = ?',rEnv.InputReq.*:GuestId) ;
+
+				IF EXISTS(rEnv.ResultSet[]) THEN
+					---------build Response
+					SET rOut.ns:GuestID = rEnv.ResultSet.GUEST_ID;
+					SET rOut.ns:FirstCruiseCode = COALESCE(rEnv.InputReq.*:FirstCruiseCode ,NULL);
+					SET rOut.ns:FirstNCLCruiseCode =COALESCE(rEnv.InputReq.*:FirstNCLCruiseCode, NULL);
+					SET rOut.LastVendorName = COALESCE(rEnv.ResultSet.LAST_VENDOR_NAM, NULL);
+					SET rOut.ns:CreatedDateTime = COALESCE(CAST(CAST(rEnv.ResultSet.CREATED_AT AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss.SSS') AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss'),NULL) ;
+					SET rOut.ns:UpdatedDateTime = COALESCE(CAST(CAST(rEnv.ResultSet.UPDATED_AT AS TIMESTAMP FORMAT 'yyyy-MM-dd HH:mm:ss.SSS' ) AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss'),NULL) ;
+					SET rOut.ns:SourceCode = COALESCE(rEnv.ResultSet.SOURCE_CD,NULL);
+					-----add payload
+					DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					IF (LogPayLoad) THEN
+						CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Online CheckIn history message', 'xml', rEnv);
+					END IF;
+					SET OutputRoot.XMLNSC = NULL;
+					SET OutputRoot.BLOB.BLOB = bPayload;
+				END IF;
+
+			ELSE
+				CALL com.ncl.ais.utils.CopyAttributes(rEnv.InputReq ,rOut);
+				SET rOut.ns:Success = '';
+				----call procedur for SQLCODE
+				CALL SQLCODE_ERROR(rOut,rEnv);
+			END IF;
+		ELSE
+			CALL com.ncl.ais.utils.CopyAttributes(rEnv.InputReq ,rOut);
+			SET rOut.ns:Success = '';
+			---call procedure
+			CALL SQLCODE_ERROR(rOut,rEnv);
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+------procedure for SQLError code
+CREATE PROCEDURE SQLCODE_ERROR ( INOUT refOut REFERENCE ,IN EnvRef REFERENCE )
+BEGIN
+	SET EnvRef.Error = CAST(SQLNATIVEERROR AS CHARACTER);
+	SET refOut.ns:Warnings.ns:Warning = SQLERRORTEXT || ' error code: , ' || EnvRef.Error;
+	SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code='12228';
+	SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText= 'Record Not Found';
+	SET refOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type ='3';
+END;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseUpdateOnlineCheckInCruiseHistory
+* MODULE NAME : Login
+* Description : This module is used to update and isert value for recordId ,build response.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/23/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseUpdateOnlineCheckInCruiseHistory_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'UpdateOnlineCheckInHistory Invalid request message', 'xml', rEnv);
+		END IF;
+	END IF ;
+		SET OutputRoot = InputRoot;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseUpdateOnlineCheckInCruiseHistory
+* MODULE NAME : Login
+* Description : This module is used to update and isert value for recordId ,build response.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 1/23/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseUpdateOnlineCheckInCruiseHistory_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.InputReq;
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseUpdateOnlineCheckInCruiseHistoryRS;
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseUpdateOnlineCheckInCruiseHistoryRS AS runTimeErr;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,runTimeErr);
+		SET runTimeErr.ns:Errors.ns:Error = cErrorText;
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System backend error Please try again later';
+		SET runTimeErr.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		RETURN TRUE;
+	END;
+END MODULE;

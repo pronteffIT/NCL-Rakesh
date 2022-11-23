@@ -1,0 +1,119 @@
+BROKER SCHEMA com.ncl.log
+
+
+CREATE COMPUTE MODULE NCL_Event_Log_Flow_Logging
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		DECLARE inRootRef REFERENCE To InputRoot.XMLNSC.*:event;
+		DECLARE epdRef REFERENCE TO inRootRef.*:eventPointData;
+		DECLARE complexRef REFERENCE TO inRootRef.*:applicationData.*:complexContent;
+		DECLARE bsDataRef REFERENCE TO inRootRef.*:bitstreamData;
+		DECLARE DecodeData BLOB BASE64DECODE(bsDataRef.*:bitstream);
+		
+		DECLARE OriginalRequestBlob, BackendRequestBlob, BackendRespBlob, FinalRespBlob, ErrorDescAsBLOB, EventsLogAsBLOB, FinalRespAsBLOB, MetaDataAsBLOB BLOB;
+		DECLARE eventLogType, OrignalReqAsChar, BackendReqAsChar, BackendRespAsChar, FinalRespAsChar, ResponseMsg, StatusCode, ErrorDescAsChar, eventMonitongFlag, EventsLogAsChar, MetaDataAsChar, MetaDataFlag CHARACTER;
+		SET ResponseMsg = complexRef.LogEvent.ResponseMsg;
+		SET StatusCode = complexRef.LogEvent.StatusCode;
+		
+		DECLARE localTransactionId CHARACTER epdRef.*:eventData.*:eventCorrelation.*:localTransactionId;
+		DECLARE creationTime CHARACTER epdRef.*:eventData.*:eventSequence.*:creationTime;
+		DECLARE eventName CHARACTER epdRef.*:eventData.*:eventIdentity.*:eventName;
+		DECLARE integrationServer CHARACTER epdRef.*:messageFlowData.*:integrationServer.*:name;
+		DECLARE application CHARACTER epdRef.*:messageFlowData.*:application.*:name;
+		DECLARE messageFlow CHARACTER epdRef.*:messageFlowData.*:messageFlow.*:name;
+		
+		IF EXISTS(complexRef.LogEvent.MetaDataSet[]) THEN
+			Create FIRSTCHILD of Environment DOMAIN 'XMLNSC' Name 'MetaDataList';
+			SET Environment.MetaDataList.MetaDataLogs = complexRef.LogEvent.MetaDataSet;
+			SET MetaDataAsBLOB = ASBITSTREAM(Environment.MetaDataList CCSID 1208 ENCODING 546);
+			SET MetaDataAsChar = CAST(MetaDataAsBLOB AS CHARACTER CCSID 1208 ENCODING 546);
+			
+			SET MetaDataFlag='Y';
+		END IF;
+		
+		
+		IF(EXISTS(complexRef.LogEvent.EventMessages[]))THEN
+			Create FIRSTCHILD of Environment DOMAIN 'XMLNSC' Name 'EventMessages';
+			SET Environment.EventMessages.EventLogs = complexRef.LogEvent.EventMessages;
+			SET EventsLogAsBLOB = ASBITSTREAM(Environment.EventMessages CCSID 1208 ENCODING 546);
+			SET EventsLogAsChar = CAST(EventsLogAsBLOB AS CHARACTER CCSID 1208 ENCODING 546);
+			
+			SET eventMonitongFlag='Y';
+		
+			FOR payFor AS complexRef.LogEvent.EventMessages.EventMessage[]  DO
+--				IF EXISTS(payFor.LogMessage[]) THEN
+					IF CONTAINS(UCASE(payFor.LogDescription), ' REQUEST') THEN
+						SET OriginalRequestBlob=payFor.LogMessage;
+						SET OrignalReqAsChar = CAST(OriginalRequestBlob AS CHARACTER CCSID 1208 ENCODING 546);
+						IF LENGTH(OrignalReqAsChar)<>0 THEN
+							SET eventLogType = 'OriginalRequest';
+							INSERT INTO Database.NCLSEA.NCL_EVNT_LOG (EVENT_LOG_TYPE, SERVICE_NAME, FLOW_NAME, TRANSACTION_ID, LOGGING_TIME, EVENT_NAME, SERVER_NAME, STATUS_CODE, EVENT_LOG_FLAG, EVENT_LOGS, LOG_MESSAGE, METADATA_FLAG, METADATA_LOGS, FINAL_RESP_MSG) VALUES (
+												eventLogType, application, messageFlow, localTransactionId, creationTime, eventName,integrationServer, COALESCE(StatusCode,'NULL'),COALESCE(eventMonitongFlag,'N'),COALESCE(EventsLogAsChar,'NULL'),OrignalReqAsChar, COALESCE(MetaDataFlag,'N'), COALESCE(MetaDataAsChar,'NULL'), COALESCE(ResponseMsg,'NULL'));
+							COMMIT;
+						END IF;
+					END IF;
+					IF CONTAINS(UCASE(payFor.LogDescription), 'BACKENDREQUEST') THEN
+						SET BackendRequestBlob=payFor.LogMessage;
+						SET BackendReqAsChar = CAST(BackendRequestBlob AS CHARACTER CCSID 1208 ENCODING 546);
+						
+						IF LENGTH(BackendReqAsChar)<>0 THEN
+							SET eventLogType = 'BackendRequest';
+							INSERT INTO Database.NCLSEA.NCL_EVNT_LOG (EVENT_LOG_TYPE, SERVICE_NAME, FLOW_NAME, TRANSACTION_ID, LOGGING_TIME, EVENT_NAME, SERVER_NAME, STATUS_CODE, EVENT_LOG_FLAG, EVENT_LOGS, LOG_MESSAGE, METADATA_FLAG, METADATA_LOGS, FINAL_RESP_MSG) VALUES (
+												eventLogType, application, messageFlow, localTransactionId, creationTime, eventName,integrationServer, COALESCE(StatusCode,'NULL'),COALESCE(eventMonitongFlag,'N'),COALESCE(EventsLogAsChar,'NULL'),BackendReqAsChar, COALESCE(MetaDataFlag,'N'), COALESCE(MetaDataAsChar,'NULL'), COALESCE(ResponseMsg,'NULL'));							
+							COMMIT;
+						END IF;
+					END IF;
+					IF CONTAINS(UCASE(payFor.LogDescription), 'BACKENDRESPONSE') THEN
+						SET BackendRespBlob=payFor.LogMessage;
+						SET BackendRespAsChar = CAST(BackendRespBlob AS CHARACTER CCSID 1208 ENCODING 546);
+						
+						IF LENGTH(BackendRespAsChar)<>0 THEN
+							SET eventLogType = 'BackendResponse';
+							INSERT INTO Database.NCLSEA.NCL_EVNT_LOG (EVENT_LOG_TYPE, SERVICE_NAME, FLOW_NAME, TRANSACTION_ID, LOGGING_TIME, EVENT_NAME, SERVER_NAME, STATUS_CODE, EVENT_LOG_FLAG, EVENT_LOGS, LOG_MESSAGE, METADATA_FLAG, METADATA_LOGS, FINAL_RESP_MSG) VALUES (
+												eventLogType, application, messageFlow, localTransactionId, creationTime, eventName,integrationServer, COALESCE(StatusCode,'NULL'),COALESCE(eventMonitongFlag,'N'),COALESCE(EventsLogAsChar,'NULL'),BackendRespAsChar, COALESCE(MetaDataFlag,'N'), COALESCE(MetaDataAsChar,'NULL'), COALESCE(ResponseMsg,'NULL'));							
+							COMMIT;
+						END IF;
+					END IF;
+					IF CONTAINS(UCASE(payFor.LogDescription), 'FINALRESPONSE') THEN
+						SET FinalRespBlob=payFor.LogMessage;
+						SET FinalRespAsChar = CAST(FinalRespBlob AS CHARACTER CCSID 1208 ENCODING 546);
+						
+						IF LENGTH(FinalRespAsChar)<>0 THEN
+							SET eventLogType = 'FinalResponse';
+							INSERT INTO Database.NCLSEA.NCL_EVNT_LOG (EVENT_LOG_TYPE, SERVICE_NAME, FLOW_NAME, TRANSACTION_ID, LOGGING_TIME, EVENT_NAME, SERVER_NAME, STATUS_CODE, EVENT_LOG_FLAG, EVENT_LOGS, LOG_MESSAGE, METADATA_FLAG, METADATA_LOGS, FINAL_RESP_MSG) VALUES (
+												eventLogType, application, messageFlow, localTransactionId, creationTime, eventName,integrationServer, COALESCE(StatusCode,'NULL'),COALESCE(eventMonitongFlag,'N'),COALESCE(EventsLogAsChar,'NULL'),FinalRespAsChar, COALESCE(MetaDataFlag,'N'), COALESCE(MetaDataAsChar,'NULL'), COALESCE(ResponseMsg,'NULL'));						
+							COMMIT;
+						END IF;
+					END IF;
+					
+--				END IF;
+			END FOR;
+		END IF;
+		
+		IF EXISTS(complexRef.LogEvent.FinalResponse[]) THEN
+			Create FIRSTCHILD of Environment DOMAIN 'XMLNSC' Name 'FinalRespList';
+			SET Environment.FinalRespList = complexRef.LogEvent.FinalResponse;
+			SET FinalRespAsBLOB = ASBITSTREAM(Environment.FinalRespList CCSID 1208 ENCODING 546);
+			SET FinalRespAsChar = CAST(FinalRespAsBLOB AS CHARACTER CCSID 1208 ENCODING 546);
+		END IF;
+		
+		IF(EXISTS(complexRef.LogEvent.ErrorDetails[]))THEN
+			Create FIRSTCHILD of Environment DOMAIN 'XMLNSC' Name 'ExceptionList';
+			SET Environment.ExceptionList.ExceptionDescription = complexRef.LogEvent.ErrorDetails;
+			SET ErrorDescAsBLOB = ASBITSTREAM(Environment.ExceptionList CCSID 1208 ENCODING 546);
+			SET ErrorDescAsChar = CAST(ErrorDescAsBLOB AS CHARACTER CCSID 1208 ENCODING 546);
+			
+			IF LENGTH(ErrorDescAsChar)<>0 THEN
+				SET eventLogType = 'Error';
+				
+				INSERT INTO Database.NCLSEA.NCL_EVNT_LOG (EVENT_LOG_TYPE, SERVICE_NAME, FLOW_NAME, TRANSACTION_ID, LOGGING_TIME, EVENT_NAME, SERVER_NAME, STATUS_CODE, EVENT_LOG_FLAG, EVENT_LOGS, LOG_MESSAGE, METADATA_FLAG, METADATA_LOGS, FINAL_RESP_MSG) VALUES (
+												eventLogType, application, messageFlow, localTransactionId, creationTime, eventName,integrationServer, COALESCE(StatusCode,'NULL'),COALESCE(eventMonitongFlag,'N'),COALESCE(EventsLogAsChar,'NULL'),ErrorDescAsChar, COALESCE(MetaDataFlag,'N'), COALESCE(MetaDataAsChar,'NULL'), COALESCE(ResponseMsg,'NULL'));				
+			COMMIT;
+				END IF;
+		END IF;
+		COMMIT;
+		RETURN FALSE;
+	END;
+END MODULE;

@@ -1,0 +1,140 @@
+
+BROKER SCHEMA com.ncl.ais
+DECLARE vag2 NAMESPACE 'http://NCL_ValidateBookingLib';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER '';
+DECLARE LogPayload EXTERNAL BOOLEAN;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseGetSessionExpirationTime
+ * MODULE NAME       :     LoadAgency
+ * Description       :     This module is used to capture inital req and call load agency service.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetSessionExpirationTime_LoadAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionExpirationTimeRQ;
+		CREATE FIELD InputRoot.XMLNSC.*:NCL_CruiseGetSessionExpirationTimeRQ  AS rIn;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		-- Uncomment the below block after GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',
+												'',
+												'',
+											 	rEnv);
+		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+	    	SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.XMLNSC.QUID = rIn.*:SessionId.*:SessionToken; 
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time input request...', 'xml', rEnv);
+		END IF;
+		DECLARE rLoadAgencyIn REFERENCE TO OutputRoot.XMLNSC.LoadAgency_IN;
+		CREATE FIELD OutputRoot.XMLNSC.LoadAgency_IN AS rLoadAgencyIn;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rIn.*:SessionId.*:SessionToken,rLoadAgencyIn);
+--		SET rLoadAgencyIn.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+--		SET rLoadAgencyIn.MsgHeader.SessionGUID = rIn.*:SessionId.*:SessionToken;
+		SET rLoadAgencyIn.MsgHeader.Language = 'ENG';
+		SET rLoadAgencyIn.AgencyID = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),NULL);
+		
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetSessionExpirationTime_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayload) THEN	
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Pay with coupons input request message exception IIB...', 'xml', rEnv);
+			END IF;
+		END IF;
+		
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetSessionExpirationTime_ExceptionResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns5:NCL_CruiseGetSessionExpirationTimeRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns5:NCL_CruiseGetSessionExpirationTimeRS AS runTimeErr;
+		
+		SET runTimeErr.ns5:Errors.ns5:Error = cErrorText;
+		SET runTimeErr.ns5:Errors.ns5:Error.(XMLNSC.Attribute)Code = '9999';
+		SET runTimeErr.ns5:Errors.ns5:Error.(XMLNSC.Attribute)ShortText = RIGHT(cErrorText,64);
+		SET runTimeErr.ns5:Errors.ns5:Error.(XMLNSC.Attribute)Type = '3';
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayload) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time exception message payload...', 'xml', rEnv);
+		END IF;
+--		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+
+
+		RETURN TRUE;
+	END;
+
+END MODULE;

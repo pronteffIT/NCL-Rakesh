@@ -1,0 +1,51 @@
+
+
+
+
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE UnlockAndLogout_UnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		
+		IF LENGTH(rEnv.ResID) > 0 THEN
+			
+			-- set the endpoint of the VX server
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+			CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rOut;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,rOut);
+--			SET rOut.MsgHeader.Version = VersonixAPIVersion;
+--			SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			SET rOut.ResID = rEnv.ResID;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		IF LENGTH(COALESCE(rEnv.SessionGUID,'')) > 0 THEN 
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+	
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		RETURN TRUE;	
+		END IF;
+		
+		RETURN FALSE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE UnlockAndLogout_Logout
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		IF LENGTH(COALESCE(rEnv.SessionGUID,'')) > 0 THEN 
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint;
+	
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+
+			RETURN TRUE;
+		END IF;
+		RETURN FALSE;
+	END;
+END MODULE;

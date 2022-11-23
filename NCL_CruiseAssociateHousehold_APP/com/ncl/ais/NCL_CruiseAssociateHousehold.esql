@@ -1,0 +1,228 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_ASSOCIATE_HOUSEHOLD_RESP';
+DECLARE LogPayLoad EXTERNAL BOOLEAN FALSE;
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+
+CREATE COMPUTE MODULE NCL_CruiseAssociateHousehold_LogInReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE bPayload BLOB;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseAssociateHouseholdRQ;
+		
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseAssociateHouseholdRQ = rIn;
+		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),'', '','',rEnv);
+		
+		IF (LogPayLoad) THEN
+			--creating IIB Log Event
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Associate Household Request', 'xml', rEnv);
+		END IF;
+		
+		-- create verify agency request
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;
+		
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Verify agency api request', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+	
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAssociateHousehold_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseAssociateHouseholdRQ;
+		DECLARE cErrorText CHARACTER 'System Backend Error ,Please try again later';
+
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseAssociateHouseholdRS;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Sync Client Preference request message', 'xml', rEnv);
+		END IF ;
+	END IF;
+
+	IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+		SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+	END IF;
+
+	IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+		---call logging Procedure
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception ', rEnv);
+		CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		---Build Response for RuntimeError
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseAssociateHouseholdRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		SET rOut.ns:Warnings.ns:Warning = cErrorText;
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'System backend error , please try again later';
+		SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+	END IF;
+	RETURN TRUE;
+
+END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAssociateHousehold_LoadClients
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rClint REFERENCE TO Environment.Variables;
+		DECLARE rInClint REFERENCE TO InputRoot.XMLNSC.ManageClients_OUT.Households.Household.HouseholdHeader.Clients;
+		CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') IDENTITY ManageClientsResp;
+		
+		FOR rMangeclitRes AS rInClint.Client[] DO
+			
+			CREATE LASTCHILD OF rEnv.Temp.ClientInfo AS rClint NAME 'Client';
+			SET rClint.ClientHeader.ClientID = rMangeclitRes.ClientHeader.ClientID;
+			SET rEnv.Temp.LockClientIDs = COALESCE(rEnv.Temp.LockClientIDs,'')||' '|| COALESCE(rMangeclitRes.ClientHeader.ClientID,'');
+		
+		END FOR;
+		
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAssociateHousehold_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rManageCleint REFERENCE TO Environment.Variables;
+		DECLARE rRefInput REFERENCE TO rEnv.Temp.Message.NCL_CruiseAssociateHouseholdRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.ManageClients_OUT;
+		
+		SET OutputRoot.MQMD =  rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseAssociateHouseholdRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rRefInput,rOut);
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			
+			SET rOut.Warnings.Warning = rIn.*:Errors.*:Error.*:ErrorMessage;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rIn.*:Errors.*:Error.*:ErrorMessage FROM 1 FOR 64);
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out';
+		
+		ELSE
+			
+			CREATE FIELD rOut.Success;
+			SET rOut.HouseholdID = rIn.*:Clients.*:Client.*:ClientHeader.*:HouseholdID;
+			SET rOut.Clients = rRefInput.*:Clients;
+			
+			PROPAGATE TO TERMINAL 'out';
+			
+		END IF;
+		
+			SET rOut.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+			CREATE FIELD rOut.XMLNSC.ManageClients_IN AS rManageCleint;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rManageCleint);
+			SET rManageCleint.Options.ReturnState = 'Y';
+			SET rManageCleint.Unlock.HouseholdIDs = rIn.*:Clients.*:Client.*:ClientHeader.*:HouseholdID;
+			SET rManageCleint.Unlock.ClientIDs = rEnv.Temp.LockClientIDs;
+			
+			PROPAGATE TO TERMINAL 'out1';
+		
+		IF LENGTH(COALESCE(rEnv.Temp.SessionId,'')) > 0 THEN
+			
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+			SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+
+			PROPAGATE TO TERMINAL 'out2';
+		END IF;
+		RETURN FALSE;
+	END;
+
+END MODULE;
+
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseAssociateHousehold_StoreHouseHold
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv,rOutMngCleint,rOut REFERENCE TO Environment.Variables;
+		DECLARE rInputMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseAssociateHouseholdRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.ManageClients_OUT;		
+
+
+		IF EXISTS(rIn.Errors.Error[]) THEN
+
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.NCL_CruiseAssociateHouseholdRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rInputMsg,rOut);
+			SET rOut.Warnings.Warning = rIn.*:Errors.*:Error.*:ErrorMessage;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = SUBSTRING(rIn.*:Errors.*:Error.*:ErrorMessage FROM 1 FOR 64);
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+			
+		ELSE
+
+			CREATE FIELD OutputRoot.XMLNSC.ManageClients_IN AS rOutMngCleint;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rOutMngCleint);
+			SET rOutMngCleint.Options.ReturnState = 'Y';
+			SET rOutMngCleint.Store.ClientIDs = rEnv.Temp.StoreClientIDs;
+
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+

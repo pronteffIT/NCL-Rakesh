@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <xsd:element name="EmailSubject" type="xsd:string"/>  
+  <xsd:element name="EmailContentType">
+	<!-- Optional charset can be attached to content type. Ex. "text/html; charset=utf-8" -->
+	<xsd:simpleType>
+		<xsd:restriction base="xsd:string">
+	      <xsd:enumeration value="text/plain"/>
+	      <xsd:enumeration value="text/html"/>
+	      <xsd:enumeration value="text/xml"/>
+	    </xsd:restriction>
+  	</xsd:simpleType>
+  </xsd:element>
+  <xsd:element name="EmailContent" type="xsd:string"/>
+  <xsd:element name="AttachmentType">
+	<xsd:simpleType>	
+		<xsd:restriction base="xsd:string">
+	      <xsd:enumeration value="text/plain"/>
+	      <xsd:enumeration value="text/html"/>
+	      <xsd:enumeration value="text/xml"/>
+	      <xsd:enumeration value="application/octet-stream"/>
+	    </xsd:restriction>
+  	</xsd:simpleType>
+  </xsd:element>
+  <xsd:element name="AttachmentEncoding">
+	<xsd:simpleType>
+		<!-- 7bit is the default value that is used for ASCII text -->
+		<xsd:restriction base="xsd:string">
+	      <xsd:enumeration value="7bit"/>
+	      <xsd:enumeration value="base64"/>
+	      <xsd:enumeration value="quoted-printable"/>
+	    </xsd:restriction>
+  	</xsd:simpleType>
+  </xsd:element>
+  <xsd:element name="AttachmentContent" type="xsd:string"/>
+  <xsd:element name="AttachmentName" type="xsd:string"/>
+
+  <xsd:element name="EmailAddress">
+    <xsd:complexType>
+      <xsd:sequence>
+		  <xsd:element name="FromAddress" type="xsd:string"/>
+		  <xsd:element name="ToAddress" type="xsd:string"/>
+		  <xsd:element name="CcAddress" type="xsd:string" minOccurs="0"/>
+		  <xsd:element name="ReplyToAddress" type="xsd:string" minOccurs="0"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="Attachment">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element ref="AttachmentType"/>
+        <xsd:element ref="AttachmentEncoding"/>
+        <xsd:element ref="AttachmentContent"/>
+        <xsd:element ref="AttachmentName"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+
+  <xsd:element name="EmailRequest">
+    <xsd:complexType>
+      <xsd:sequence>
+        <xsd:element ref="EmailSubject"/>
+        <xsd:element ref="EmailContent"/>
+        <xsd:element ref="EmailContentType"/>
+        <xsd:element ref="EmailAddress"/>
+        <xsd:element ref="Attachment" minOccurs="0"/>
+      </xsd:sequence>
+    </xsd:complexType>
+  </xsd:element>
+</xsd:schema>

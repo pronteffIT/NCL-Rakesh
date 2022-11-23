@@ -1,0 +1,228 @@
+
+BROKER SCHEMA com.ncl.ais
+
+--DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE ns8 NAMESPACE 'http://nclapi/schemas';
+--DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_ONLINE_CHECKIN_RES_GUEST_RESP';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseOnlineCheckinResGuestRQ
+ * MODULE NAME       :     OnlineCheckInResGuest
+ * Description       :     This module is used for copying the initial request and process the message and send final response.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseOnlineCheckinResGuestRQ_OnlineCheckInResGuest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+
+		SET rEnv.MQMD = InputRoot.MQMD;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseOnlineCheckinResGuestRQ;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		IF (LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise_Online_Checkin_Res_Guest input request...', 'xml', rEnv);
+		END IF;
+		-- Uncomment the below block once GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationId,''),
+												COALESCE(rIn.*:ClientId,''),
+												'',
+											 	rEnv);
+
+		-- Execute the following query
+		DECLARE query CHARACTER 'SELECT GUEST_ID,GUEST_SEQN,OCCUPANCY_NUMBER,RES_ID,CLIENT_ID,GUEST_TYPE,AGE,DOCUMENT_TYPE,DOCUMENT_NUMBER,DOCUMENT_ISSUED_COUNTRY,
+		to_char(DOCUMENT_EXPIRATION_DATE,''yyyy-mm-dd'')
+		as DOCUMENT_EXPIRATION_DATE,EMRGNCY_CONTACT_NAME,EMRGNCY_CONTACT_PHONE_NUMBER,VISA_TYPE,VISA_NUMBER,VISA_ISSUED_CITY,VISA_ISSUED_DATE,RAW_RNUM_
+		from (select raw_sql_.*, rownum raw_rnum_ from (SELECT * FROM ncl_online_checkin_res_guest
+		WHERE (ncl_online_checkin_res_guest.client_id = ? AND ncl_online_checkin_res_guest.res_id = ?) ) raw_sql_ where rownum <= 1) where raw_rnum_ > 0';
+
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns8:NCL_CruiseOnlineCheckinResGuestRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns8:NCL_CruiseOnlineCheckinResGuestRS AS rOut;
+		DECLARE Clients REFERENCE TO rOut.ns8:Clients;
+		SET rEnv.Temp.DBResult[] = PASSTHRU(query VALUES(rIn.*:ClientId,rIn.*:ReservationId));
+
+		-- Start building the response here		
+		CASE
+		
+		WHEN rIn.*:ClientId IS NULL OR rIn.*:ClientId = '' OR NOT EXISTS(rIn.*:ClientId[]) THEN
+			SET rOut.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns8:Errors.ns8:Error.(XMLNSC.Attribute)ShortText = 'Field value for ClientID is missing';
+			SET rOut.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Type = '3';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Client ID is missing in the request', rEnv);
+		WHEN NOT EXISTS(rEnv.Temp.DBResult[]) THEN
+			-- no records found
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '88799';
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'No Match Found';
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Type = '3';
+			
+		WHEN CARDINALITY(rEnv.Temp.DBResult[]) > 100 THEN
+			-- Match Exceeds records
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Code = '88798';
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)ShortText = 'Matches Exceeded Limit';
+			SET rOut.ns8:Warnings.ns8:Warning.(XMLNSC.Attribute)Type = '3';
+			
+		ELSE
+			CREATE FIELD rOut.ns8:Success;
+			FOR source AS rEnv.Temp.DBResult[] DO
+				CREATE LASTCHILD OF rOut.ns8:Clients AS Clients NAMESPACE ns8 NAME 'Client';
+				SET Clients.ns8:GuestSeqN = source.GUEST_SEQN;
+				SET Clients.ns8:OccupancyNumber = source.OCCUPANCY_NUMBER;
+				SET Clients.ns8:ReservationId = source.RES_ID;
+				SET Clients.ns8:ClientID = source.CLIENT_ID;
+				SET Clients.ns8:GuestType = source.GUEST_TYPE;
+				SET Clients.ns8:Age = source.AGE;
+				SET Clients.ns8:DocumentType = source.DOCUMENT_TYPE;
+				SET Clients.ns8:DocumentNumber = source.DOCUMENT_NUMBER;
+				SET Clients.ns8:DocumentIssuedCountry = source.DOCUMENT_ISSUED_COUNTRY;
+
+				IF CONTAINS(source.DOCUMENT_EXPIRATION_DATE,'-') THEN
+					SET Clients.ns8:DocumentExpirationDate = CAST(source.DOCUMENT_EXPIRATION_DATE AS DATE);
+				ELSE IF source.DOCUMENT_EXPIRATION_DATE <> NULL THEN
+					SET Clients.ns8:DocumentExpirationDate = CAST('2002-01-01' AS DATE);
+				END IF;
+			END IF;
+
+			SET Clients.ns8:EmergencyContact = source.EMRGNCY_CONTACT_NAME;
+			SET Clients.ns8:EmergencyContactPhone = source.EMRGNCY_CONTACT_PHONE_NUMBER;
+			SET Clients.ns8:VisaType = source.VISA_TYPE;
+			SET Clients.ns8:VisaNumber = source.VISA_NUMBER;
+			SET Clients.ns8:VisaIssuedCity = source.VISA_ISSUED_CITY;
+
+			IF CONTAINS(source.VISA_ISSUED_DATE,'-') THEN
+				SET Clients.ns8:VisaIssuedDate = CAST(source.VISA_ISSUED_DATE AS DATE);
+			ELSE IF source.VISA_ISSUED_DATE <> NULL THEN
+				SET Clients.ns8:VisaIssuedDate = CAST('2000-01-01' AS DATE);
+			END IF;
+		END IF;
+
+	END FOR;
+
+	SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+	IF (LogPayLoad) THEN
+	CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise_Online_Checkin_Res_Guest Success response payload...', 'xml', rEnv);
+	END IF;
+	SET OutputRoot.XMLNSC = NULL;
+	SET OutputRoot.BLOB.BLOB = bPayload;
+
+END CASE;
+
+END;
+
+END MODULE;
+
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseOnlineCheckinResGuestRQ
+ * MODULE NAME       :     Exception
+ * Description       :     This module is used for capturing the exception occurred in the IIB flow and send it for error logging.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+CREATE COMPUTE MODULE NCL_CruiseOnlineCheckinResGuestRQ_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		SET OutputRoot = InputRoot;	
+		RETURN TRUE;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseOnlineCheckinResGuestRQ
+ * MODULE NAME       :     ExceptionHandler
+ * Description       :     This module is used to send exception message to the caller in case of IIB Runtime error.
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/03/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseOnlineCheckinResGuestRQ_ExceptionHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns8:NCL_CruiseOnlineCheckinResGuestRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns8:NCL_CruiseOnlineCheckinResGuestRS AS runTimeErr;
+		
+		SET runTimeErr.ns8:Errors.ns8:Error = cErrorText;
+		SET runTimeErr.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns8:Errors.ns8:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET runTimeErr.ns8:Errors.ns8:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;

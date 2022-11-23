@@ -1,0 +1,41 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns4 NAMESPACE 'http://nclapi/schemas';
+DECLARE xsi NAMESPACE 'http://www.w3.org/2001/XMLSchema-instance';
+
+CREATE COMPUTE MODULE NCL_CruiseGetCountryCodes_Compute1
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,refOut REFERENCE TO Environment.Variables;
+		DECLARE rVAIn REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE rInReq,RefOutCounryCode REFERENCE TO rEnv.InpReq;
+		
+			
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Session established ...', rEnv);
+
+			SET rEnv.Response = InputRoot.XMLNSC.*:VerifyAgencyResponse;
+			SET rEnv.SessionGUID = rVAIn.sessionGUID;
+			SET rEnv.Endpoint = rVAIn.endpoint;
+
+			 SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Endpoint; 
+			 
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC';
+
+			CREATE FIELD OutputRoot.XMLNSC.DbSearch_IN AS RefOutCounryCode;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionGUID,RefOutCounryCode);
+--			SET RefOutCounryCode.DbSearch_IN.MsgHeader.Version = VersonixAPIVersion;
+--			SET RefOutCounryCode.DbSearch_IN.MsgHeader.SessionGUID = rEnv.SessionGUID;
+			SET RefOutCounryCode.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(rEnv.InpReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+			SET RefOutCounryCode.Countries = 'Countries';
+			
+			PROPAGATE TO TERMINAL 'out';
+		RETURN FALSE;		
+	END;
+
+	
+END MODULE;
+
+
+

@@ -1,0 +1,1183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:altova="http://www.altova.com/xml-schema-extensions" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:simpleType name="FieldType">
+		<xs:annotation>
+			<xs:documentation>Note: BLOB columns are returned in base64binary format.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="15"/>
+			<xs:enumeration value="String"/>
+			<xs:enumeration value="Integer"/>
+			<xs:enumeration value="Date"/>
+			<xs:enumeration value="DateTime"/>
+			<xs:enumeration value="Time"/>
+			<xs:enumeration value="Float"/>
+			<xs:enumeration value="WideString"/>
+			<xs:enumeration value="CLOB"/>
+			<xs:enumeration value="BLOB"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="TagName">
+		<xs:annotation>
+			<xs:documentation>Tag (node) name.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="255"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="FieldName">
+		<xs:annotation>
+			<xs:documentation>Field (column) name. Can start with '%_' to prevent automatic 'T.' addition.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:element name="TableDefs">
+		<xs:annotation>
+			<xs:documentation>Root element - list of TableDef and/or QueryDef</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice minOccurs="0" maxOccurs="unbounded">
+				<xs:element name="TableDef" type="TableDef"/>
+				<xs:element name="QueryDef" type="QueryDef"/>
+			</xs:choice>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="FieldDefs">
+		<xs:annotation>
+			<xs:documentation>List of FieldDef</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="FieldDef" type="FieldDef" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="FieldDef">
+		<xs:annotation>
+			<xs:documentation>Field Definition - mapping of table/query column to input and/or output elements of the DbSearch message</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Tag" type="TagName">
+				<xs:annotation>
+					<xs:documentation>Element name in the input and/or output message. Can start with '%_' to allow second definition for the same name.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Name">
+				<xs:annotation>
+					<xs:documentation>Column name, which will be inserted into column list of the select statement and used as parameter name if Search is defined. Can start with '%_' to prevent duplication and addition of the 'T.' prefix.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="FieldName">
+							<xs:attribute name="FieldName" type="ColumnName">
+								<xs:annotation>
+									<xs:documentation>Column name to be used for translations if SQL expression is too complex to extract it from there.</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:choice minOccurs="0">
+				<xs:element name="Search">
+					<xs:annotation>
+						<xs:documentation>This string will be added to the WHERE clause of the select statement. Can contain the '&amp;InList' sub-string to mark insertion of list of values from the input message. Optional value delimiter can follow that sub-string. Examples: T.RES_STATUS in (&amp;InList), T.PAP_CODE in (&amp;InList,)</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:whiteSpace value="preserve"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="CaseSearch">
+					<xs:annotation>
+						<xs:documentation>Defines alternative search strings depending on input tag value. Exception is raised if input value is not found.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="CaseSearchItem" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Value">
+											<xs:annotation>
+												<xs:documentation>Input tag value</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="collapse"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+										<xs:element name="Search">
+											<xs:annotation>
+												<xs:documentation>See FieldDef.Search</xs:documentation>
+											</xs:annotation>
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="preserve"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="SelectMin">
+					<xs:annotation>
+						<xs:documentation>Defines WHERE fragment in the form of 'SelectMin = min(SelectMin)'. Input tag is expected to be a Y/N value to turn on/of this search.</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:whiteSpace value="preserve"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="SelectMax">
+					<xs:annotation>
+						<xs:documentation>Defines WHERE fragment in the form of 'SelectMax = max(SelectMax)'. Input tag is expected to be a Y/N value to turn on/of this search.</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:whiteSpace value="preserve"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="NoSearchTags" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If any of the tags defined here is present in the input message - skip processing of the search string. The assumption is that search strings for these other tags include search criteria for this tag.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:list itemType="TagName"/>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Type" type="FieldType" default="String" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Field data type.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Select" type="Boolean" default="Y" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Y: include in select list </xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Output" type="Boolean" default="Y" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Y: include into output tree</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DefaultValue" type="xs:anySimpleType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines default value for the input tag.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="AddStringDef">
+		<xs:annotation>
+			<xs:documentation>Additional FROM and WHERE fragment</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="From" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>FROM fragment</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Where" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>WHERE fragment</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Tags" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If any of the tags defined here are present in the input message - this AddStringDef element will be procesed, otherwise - skipped. If no tags are defined - AddStringDef element is always processed.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Tag" type="xs:string" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TableDef">
+		<xs:annotation>
+			<xs:documentation>Top level DbSearch node definition (table-based approach)</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="TableNodeName" type="TagName">
+				<xs:annotation>
+					<xs:documentation>Top element name (tag) in the DbSearch message. Examples: Cities, Countries, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="TableName">
+						<xs:annotation>
+							<xs:documentation>Database Table Name - primary table in the FROM clause. Alias 'T' is always set for this table.</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="TableName">
+									<xs:attribute name="UseSchemaPrefix" type="Boolean" default="Y"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="RecordNodeName" type="TagName">
+						<xs:annotation>
+							<xs:documentation>Element name in the output message for individual record. Example: City, Country, etc.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="FieldDefs" type="FieldDefs"/>
+					<xs:choice>
+						<xs:element name="FullQuery" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Complete query to be executed. Dynamic query creation based on this setup is disabled. This option is not recommended and should only be used as an exception in case of very complex queries. Consider using Oracle views instead.</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:whiteSpace value="preserve"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:sequence>
+							<xs:element name="ActiveOnlyWhere" type="xs:string" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>WHERE fragment to be used if Options.ActiveOnly=Y in the input message.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="AdditionalWhere" type="xs:string" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Additional unconditional WHERE fragment.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="AddStringDefs" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>Additional FROM and WHERE fragments</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="AddStringDef" type="AddStringDef" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="GroupBy" type="xs:string" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>GROUP BY clause (without 'GROUP BY')</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:choice>
+					<xs:element name="InternallyAddNodes" type="Boolean" default="N" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>If 'Y' - each record node in the output message will contain additional elements populated by code inside the server. Can be set by Versonix only.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="RowType" type="RowType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Used for filtering by sets. If not provided, the first Rowtype associated with the table will be used.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="InternallyProcessed" type="Boolean">
+					<xs:annotation>
+						<xs:documentation>If 'Y' - processing is hard-coded in the server. Can be set by Versonix only !</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="AddDynamicFields" type="Boolean" default="N" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - each record node in the output message will contain DynamicFields element with values of user-definable fields associated with that record. Using this option significantly affects performance of the DbSearch request.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SubQueries" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines additional queries which are executed for each record of the primary query and produce child elements in the output message. This function needs to be explicitly requested in the input message by adding child node name into Options.IncludeElements list.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SubQuery" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="NodeName" type="TagName">
+										<xs:annotation>
+											<xs:documentation>Node name for the sub-tree produced by this query.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="ItemName" type="TagName">
+										<xs:annotation>
+											<xs:documentation>Node name for individual child records.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="TableName">
+										<xs:annotation>
+											<xs:documentation>Database table name.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="TableName">
+													<xs:attribute name="UseSchemaPrefix" type="Boolean" default="N">
+														<xs:annotation>
+															<xs:documentation>Default is N here for compatibility with previous version</xs:documentation>
+														</xs:annotation>
+													</xs:attribute>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Where" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>WHERE clause which should link this child table to some column in the primary query.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="IdFields">
+										<xs:annotation>
+											<xs:documentation>List of column names from the primary query which should be passed as parameters to this child query.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:list itemType="FieldName"/>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="FieldDefs">
+										<xs:annotation>
+											<xs:documentation>Column and output tag definitions.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="FieldDef" maxOccurs="unbounded">
+													<xs:complexType>
+														<xs:all>
+															<xs:element name="Tag" type="TagName">
+																<xs:annotation>
+																	<xs:documentation>Output tag name</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="Name">
+																<xs:annotation>
+																	<xs:documentation>Column name in the query</xs:documentation>
+																</xs:annotation>
+																<xs:complexType>
+																	<xs:simpleContent>
+																		<xs:extension base="FieldName">
+																			<xs:attribute name="FieldName" type="ColumnName">
+																				<xs:annotation>
+																					<xs:documentation>Column name to be used for translations if SQL expression is too complex to extract it from there.</xs:documentation>
+																				</xs:annotation>
+																			</xs:attribute>
+																		</xs:extension>
+																	</xs:simpleContent>
+																</xs:complexType>
+															</xs:element>
+															<xs:element name="Type" type="FieldType" default="String" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Field data type, which overrides actual column data type.</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="Output" type="Boolean" default="Y" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Y: include into output tree</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+														</xs:all>
+													</xs:complexType>
+												</xs:element>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="GroupBy" type="xs:string" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>GROUP BY clause</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="OrderBy" type="xs:string" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>ORDER BY clause</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<!---->
+	<!--QueryDef related definitions.-->
+	<!--QueryDef is an alternative, query-based way of defining DbSearch functions.-->
+	<!---->
+	<xs:complexType name="JoinItem">
+		<xs:annotation>
+			<xs:documentation>Represents Join clause of a query.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:choice>
+				<xs:element name="What">
+					<xs:annotation>
+						<xs:documentation>Initial portion of the JOIN clause, for example, 'left outer join RES_HEADER' (deprecated)</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:whiteSpace value="collapse"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:sequence>
+					<xs:element name="Type" default="JOIN" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Join type, for example, INNER, LEFT, LEFT OUTER, etc.</xs:documentation>
+						</xs:annotation>
+						<xs:simpleType>
+							<xs:restriction base="xs:string">
+								<xs:whiteSpace value="collapse"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:element>
+					<xs:choice>
+						<xs:element name="TableName" type="TableName"/>
+						<xs:element name="SubQuery">
+							<xs:annotation>
+								<xs:documentation>Complete sub-query string</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Query" type="Query"/>
+					</xs:choice>
+				</xs:sequence>
+			</xs:choice>
+			<xs:element name="Alias">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:choice>
+				<xs:element name="On">
+					<xs:annotation>
+						<xs:documentation>The ON portion of the JOIN clause.</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:whiteSpace value="collapse"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="Using">
+					<xs:annotation>
+						<xs:documentation>The USING portion of the JOIN clause.</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:whiteSpace value="collapse"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+			</xs:choice>
+		</xs:sequence>
+		<xs:attribute name="If" type="TagExpression"/>
+	</xs:complexType>
+	<xs:complexType name="FromItem">
+		<xs:annotation>
+			<xs:documentation>Represents the From clause of a query.</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="With" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>The WITH portion of the SELECT statement. All With elements from main and sub- queries will be combined into WITH clause of the resulting SELECT statement.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="QueryName" type="xs:string"/>
+						<xs:choice>
+							<xs:element name="SubQuery">
+								<xs:annotation>
+									<xs:documentation>Complete sub-query string</xs:documentation>
+								</xs:annotation>
+								<xs:simpleType>
+									<xs:restriction base="xs:string">
+										<xs:whiteSpace value="collapse"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:element>
+							<xs:element name="Query" type="Query"/>
+						</xs:choice>
+					</xs:sequence>
+					<xs:attribute name="If" type="TagExpression"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Primary" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Primary FROM portion. If more than one Primary element is present they all must have the 'If' attribute.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:choice>
+							<xs:element name="TableName" type="TableName"/>
+							<xs:sequence>
+								<xs:choice>
+									<xs:element name="SubQuery">
+										<xs:annotation>
+											<xs:documentation>Complete sub-query string</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Query" type="Query"/>
+								</xs:choice>
+								<xs:element name="TableName" type="TableName" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Should be specified if DynamicFields or Translation features are going to be used.</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:sequence>
+						</xs:choice>
+						<xs:element name="DynamicFields" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Can be used only within the top level From element. If set - each record node in the output message may contain DynamicFields element with values of user-definable fields associated with that record. This can additionally be controlled via IncludeElements and ExcludeElements options. 'On' means that DynamicFields will be populated unless excluded. 'Off' means that DynamicFields will be populated only if included. Population of the DynamicFields element significantly affects performance of the DbSearch request.</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:enumeration value="On"/>
+									<xs:enumeration value="Off"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Alias">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="RowType" type="RowType" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Should be defined if FilterBySets feature will be used. The system will try to determine RowType automatically if TableName is specified.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="IdColumn" type="ColumnName" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Should be defined if FilterBySets or the Translation feature will be used. The system will try to determine IdColumn automatically if TableName is specified.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="If" type="TagExpression"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Join" type="JoinItem" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>The JOIN portion of the FROM clause</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="Query">
+		<xs:annotation>
+			<xs:documentation>Defines Sub-Queries used in From, With and Join elements</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="From" type="FromItem"/>
+			<xs:element name="Columns">
+				<xs:annotation>
+					<xs:documentation>Column and output tag definitions.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Column" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Complete column SQL expression. It may include the AS portion too.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="If" type="TagExpression"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Where" type="WhereItem" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines creation of the WHERE clause. Multiple expressions on the top level are always combined using AND operator. Note: you only need to split complex SQL expression into these Where elements if you want to control each of them with a different 'If' attribute.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Group" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Specifies GROUP BY clauses, only one of which is included into the resulting query.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="By" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>GROUP BY clause (SQL syntax). If more than one By element is specified - they all must have the If attribute.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="If" type="TagExpression"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Distinct" default="N" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - DISTINCT will be added to the select statement.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="Boolean">
+							<xs:attribute name="If" type="TagExpression"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Hints" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Oracle hints for the primary select statement</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Hint" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="If" type="TagExpression"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="QueryDef">
+		<xs:annotation>
+			<xs:documentation>Top level DbSearch node definition (query-based approach)</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="TopTag" type="TagName">
+				<xs:annotation>
+					<xs:documentation>Top element name (tag) in the DbSearch input and output message. Examples: Cities, Countries, etc.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ParamTags" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines tags in the input message and their mapping to query parameters</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ParamTag" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Tag" type="TagName">
+										<xs:annotation>
+											<xs:documentation>Tag in the input message. Dotted format can be used if input parameters have complex structure like Parent.Child.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Type" default="String">
+										<xs:annotation>
+											<xs:documentation>Data type of the parameter.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="FieldType">
+													<xs:attribute name="ListMode">
+														<xs:annotation>
+															<xs:documentation>If set - parameter value will be processed to satisfy sytax requirements of the IN operartor and then inserted into select using macro substitution feature of Seaware. In other words it should be used like this: '... in (&amp;ParamName) ...'. If ListMode=AsIs - no conversion is done, parameter value should conform to the IN syntax.</xs:documentation>
+														</xs:annotation>
+														<xs:simpleType>
+															<xs:restriction base="xs:string">
+																<xs:enumeration value="Values"/>
+																<xs:enumeration value="AsIs"/>
+															</xs:restriction>
+														</xs:simpleType>
+													</xs:attribute>
+													<xs:attribute name="Delimiter" type="xs:string">
+														<xs:annotation>
+															<xs:documentation>Only for ListMode=Values. Defines character which is used to separate values in the input parameter. Default - space.</xs:documentation>
+														</xs:annotation>
+													</xs:attribute>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="ParamName" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Parameter name used in the query. By default parameter  name is the same as Tag.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Where" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>SQL expression to be added to the WHERE clause if this parameter is present. This is intended to be used in simple cases. See Where definition for advanced capabilities.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="SelectMin" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Defines WHERE fragment in the form of 'SelectMin = min(SelectMin)'. Input tag is expected to be a Y/N value to turn on/of this search.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="preserve"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="SelectMax" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Defines WHERE fragment in the form of 'SelectMax = max(SelectMax)'. Input tag is expected to be a Y/N value to turn on/of this search.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="preserve"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Default" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Defines default value for the input tag.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:choice>
+												<xs:element name="Value" type="xs:anySimpleType"/>
+												<xs:element name="SysVar">
+													<xs:annotation>
+														<xs:documentation>Date - current date, Time - current time, DateTime - current date/time.</xs:documentation>
+													</xs:annotation>
+													<xs:simpleType>
+														<xs:restriction base="xs:string">
+															<xs:enumeration value="Date"/>
+															<xs:enumeration value="Time"/>
+															<xs:enumeration value="DateTime"/>
+														</xs:restriction>
+													</xs:simpleType>
+												</xs:element>
+											</xs:choice>
+										</xs:complexType>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Output">
+				<xs:annotation>
+					<xs:documentation>Defines list of selected columns for the SELECT statement and output elements in the response message</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="RecordTag" type="TagName">
+							<xs:annotation>
+								<xs:documentation>Element name in the output message for individual record. Example: City, Country, etc.</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Distinct" default="N" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>If 'Y' - DISTINCT will be added to the select statement.</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="Boolean">
+										<xs:attribute name="If" type="TagExpression"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Column" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Tag">
+										<xs:annotation>
+											<xs:documentation>Element name in the output message (dotted if needed).</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="TagName">
+													<xs:attribute name="If" type="TagExpression">
+														<xs:annotation>
+															<xs:documentation>Aliases should not be used in expressions for Columns, because they will be defined only after list of columns is finalized.</xs:documentation>
+														</xs:annotation>
+													</xs:attribute>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="SQLExpr">
+										<xs:annotation>
+											<xs:documentation>Column expression to be used in the SELECT statement</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:string">
+													<xs:attribute name="FieldName" type="ColumnName">
+														<xs:annotation>
+															<xs:documentation>Column name to be used for translations if SQL expression is too complex to extract it from there.</xs:documentation>
+														</xs:annotation>
+													</xs:attribute>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Type" default="String" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Data type of the element. Used to override data type of the actual column. It is currently processed for Date/Time/DateTime types only.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="FieldType"/>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="As" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Column alias. If not set - system will use Tag value where dots are replaced with underscores.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Excluded" type="Boolean" default="N" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If 'Y' - column is excluded from the select list by default unless specifically requested in Options.IncludeElements. Columns which are included by default can also be explicitly excluded using Options.ExcludeElements.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Output" type="Boolean" default="Y" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If 'N' - column will not produce an element in the output message but will still be included into select list.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="TableName" type="TableName" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Used for the translation feature. It is supposed to specify parent table which has associated translated values for that column. Overrides table name determined from the Primary element.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="IdTag" type="TagName" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Used for the translation feature together with TableName above. Overrides IdColumn defined in the Primary element. Specifies output tag which contains record ID in the table specified by TableName above.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="From" type="FromItem">
+				<xs:annotation>
+					<xs:documentation>Defines creation of WITH and FROM clauses</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Where" type="WhereItem" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines creation of the WHERE clause. Multiple expressions on the top level are always combined using AND operator. Note: you only need to split complex SQL expression into these Where elements if you want to control each of them with a different 'If' attribute.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Variables" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Can be used to associate a name with a Tag Expression. That name can be used in other tag expressions. This feature might be useful to avoid repeating same complex expressions in several places.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="Name">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="If" type="TagExpression"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SubQueries" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines additional queries which are executed for each record of the primary query and produce child elements in the output message. Each subquery needs to be explicitly requested in the input message by adding child node name into Options.IncludeElements list.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SubQuery" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Tag" type="TagName">
+										<xs:annotation>
+											<xs:documentation>Node name for the sub-tree produced by this query. This element will be a sibling to all column elements from the primary query.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="RecordTag" type="TagName">
+										<xs:annotation>
+											<xs:documentation>Node name for individual child records.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="From">
+										<xs:annotation>
+											<xs:documentation>FROM clause of the subquery. JOINs can be defined here too.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Where" type="WhereItem">
+										<xs:annotation>
+											<xs:documentation>Defines creation of the WHERE clause, which should also link this child table to some columns in the primary query. Multiple expressions on the top level are always combined using AND operator. Note: you only need to split complex SQL expression into these Where elements if you want to control each of them with a different 'If' attribute.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="LinkedBy">
+										<xs:annotation>
+											<xs:documentation>List of column aliases from the primary query which should be passed as parameters to this child query.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:list itemType="ColumnName"/>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="Hint" type="xs:string" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Oracle hints</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Distinct" default="N" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If 'Y' - DISTINCT will be added to the select statement.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="Boolean"/>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Columns">
+										<xs:annotation>
+											<xs:documentation>Column and output tag definitions.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="Column" maxOccurs="unbounded">
+													<xs:complexType>
+														<xs:all>
+															<xs:element name="Tag" type="TagName">
+																<xs:annotation>
+																	<xs:documentation>Output tag name</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="SQLExpr">
+																<xs:annotation>
+																	<xs:documentation>Column expression to be used in the SELECT statement</xs:documentation>
+																</xs:annotation>
+																<xs:complexType>
+																	<xs:simpleContent>
+																		<xs:extension base="xs:string">
+																			<xs:attribute name="FieldName" type="ColumnName">
+																				<xs:annotation>
+																					<xs:documentation>Column name to be used for translations if SQL expression is too complex to extract it from there.</xs:documentation>
+																				</xs:annotation>
+																			</xs:attribute>
+																		</xs:extension>
+																	</xs:simpleContent>
+																</xs:complexType>
+															</xs:element>
+															<xs:element name="Type" type="FieldType" default="String" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Field data type, which overrides actual column data type.</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="As" type="xs:string" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>Column alias. If not set - system will use Tag value where dots are replaced with underscores.</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+															<xs:element name="Output" type="Boolean" default="Y" minOccurs="0">
+																<xs:annotation>
+																	<xs:documentation>If 'N' - column will not produce an element in the output message but will still be included into select list.</xs:documentation>
+																</xs:annotation>
+															</xs:element>
+														</xs:all>
+													</xs:complexType>
+												</xs:element>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="GroupBy" type="xs:string" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>GROUP BY clause (SQL syntax)</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="OrderBy" type="xs:string" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>ORDER BY clause (SQL syntax)</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Excluded" type="Boolean" default="Y" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>If 'Y' (default) - subquery will not run by default unless specifically requested in Options.IncludeElements. Subqueries with Excluded=N can also be explicitly excluded using Options.ExcludeElements.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="TableName" type="TableName" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Should be defined if the Translation feature will be used.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="IdTag" type="TagName" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Alias of the column which contains record ID. Should be defined if the Translation feature will be used.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Hints" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Oracle hints for the primary select statement</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="Hint">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="If" type="TagExpression"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="WhereItem">
+		<xs:annotation>
+			<xs:documentation>Part of WHERE expression tree</xs:documentation>
+		</xs:annotation>
+		<xs:choice maxOccurs="unbounded">
+			<xs:element name="Expression">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="If" type="TagExpression"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="And">
+				<xs:annotation>
+					<xs:documentation>Combines child elements with AND operartor.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="WhereItem">
+							<xs:attribute name="If" type="TagExpression"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Or">
+				<xs:annotation>
+					<xs:documentation>Combines child elements with OR operartor.</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="WhereItem">
+							<xs:attribute name="If" type="TagExpression"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<!---->
+	<xs:simpleType name="TagExpression">
+		<xs:annotation>
+			<xs:documentation>Expression based on Parameter Tags from the input message and/or previously defined named expressions. If expression evaluates to False corresponding node is not processed.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<!---->
+	<!--Tag Expression syntax -->
+	<!-- -->
+	<!--  <Expression> ::= <AndExpr> [[<OrOp> <AndExpr>] ...] -->
+	<!--  <AndExpr> ::= [<NotOp>] <CompExpr> -->
+	<!--  <CompExpr> ::= <TermExpr> [[NotOp] <CompOp> <TermExpr>] -->
+	<!--  <TermExpr> ::= <Const> | <Ident> | "[" <Array> "]" | "(" <Expression> ")" -->
+	<!--  <Array> ::= [<Const> ["," <Const>] ...] -->
+	<!--  <Const> ::= <Number> | <String> | "True" | "False" | "Null" -->
+	<!--  <OrOp> ::= "OR" -->
+	<!--  <AndOp> ::= "AND" -->
+	<!--  <NotOp> ::= "NOT" -->
+	<!--  <CompOp> ::=  "=" | "<" | ">" | "<=" | ">=" | -->
+	<!--               "EQ" | "LT" | "GT" | "LE" | "GE" | "NE" -->
+	<!--               "IN" -->
+	<!-- -->
+	<!--  <String> - string value enclosed in "'", internal "'" should be doubled. -->
+	<!--              Date values are represented as strings too in one of the following formats (XML-like): -->
+	<!--                DateTime: "yyyy-mm-ddThh:nn:ss.ssss" -->
+	<!--                Date:     "yyyy-mm-dd" -->
+	<!--                Time:     "hh:nn:ss.ssss" -->
+	<!--              The .ssss part is optional. -->
+	<!-- -->
+	<!--  <Number> - usual number syntax, integer or float. -->
+	<!--  <Ident> - Identifier - sequence of letters, numbers, "_" and ".", starting with a letter. -->
+	<!-- -->
+	<!--Identifiers have the following format:-->
+	<!--    [<prefix> "."] Name-->
+	<!--   <prefix> ::= "param" | "in" | "out" | "var" | "alias"-->
+	<!--Identifier can also start with "@", which means reference to parameter value instead of parameter presense.-->
+	<!-- -->
+	<!--If identifier does not start with "@" or a prefix then system will try to locate the Name in the list of variables (Variables.Name)-->
+	<!--   and then in the list of parameter tags (ParamTag.Tag).-->
+	<!--   If search was successful - Name evaluates to True, otherwise to False.-->
+	<!-- -->
+	<!--Prefix is used to explicitly define where to look for the name:-->
+	<!--   "param" or "in" - in the list of input parameter tags;-->
+	<!--   "out" - in the actual list of output columns;-->
+	<!--   "var" - in the list of variables;-->
+	<!--   "alias" - in the list of active table/query aliases (the ones, which were actually used in resulting SELECT statement.-->
+	<!-- -->
+	<!--Built-in identifiers:-->
+	<!--    Options.ActiveOnly - set True if Options.ActiveOnly is set to 'Y' (default) in the input message.-->
+	<!--    Options.TranslationRequested - set True if MsgHeader.Language is not empty in the input message.-->
+	<!-- -->
+	<!--Examples:-->
+	<!--   If="ResID"             - true if ResID parameter is present in the input message-->
+	<!--   If="ResID or GroupID" - true if ResID or GroupID parameters are present in the input message-->
+	<!--   If="@Mode in ['Cargo', 'CargoExt']" - true if input parameter "Mode" has value of "Cargo" or "CargoExt"-->
+	<!--   if="Alias.RH"        - true is table or query with alias "RH" is included into resulting SELECT statement.-->
+	<!--   If="out.GuestFullName"   - true if GuestFullName element will be included into the output message (by default or explicitly via IncludeElements).-->
+	<!-- -->
+</xs:schema>

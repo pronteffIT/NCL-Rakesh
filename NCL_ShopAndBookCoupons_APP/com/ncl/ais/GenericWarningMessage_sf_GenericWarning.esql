@@ -1,0 +1,115 @@
+BROKER SCHEMA com.ncl.ais
+PATH com.ncl.ais.utils;
+
+
+CREATE COMPUTE MODULE GenericWarningMessage_sf_GenericWarning
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE FlowName,ErrorCode,CompanyNameCode,AdvisoryCode,AdvisoryDesc CHARACTER;
+
+		SET CompanyNameCode = InputRoot.XMLNSC.Body.Code;
+		SET FlowName = InputRoot.XMLNSC.Body.FlowName;
+
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		CREATE FIELD OutputRoot.XMLNSC AS rOut;
+
+		DECLARE subFlowOut REFERENCE TO rOut;
+		CREATE LASTCHILD OF rOut AS subFlowOut NAME ''||FlowName;
+
+		DECLARE rOutWarnings REFERENCE TO subFlowOut.Warnings;
+		
+		FOR source AS InputRoot.XMLNSC.Body.Errors[] DO
+
+			CREATE LASTCHILD OF subFlowOut AS rOutWarnings NAME 'Warnings';
+			-- call Procedure here for db lookup
+			SET ErrorCode = source.Error.ErrorCode;
+
+			IF EXISTS(source.Error.ErrorCode[]) AND EXISTS(InputRoot.XMLNSC.Body.Code[]) THEN
+				CALL getAdvisoryCode(ErrorCode,CompanyNameCode,rEnv);
+				IF EXISTS(rEnv.Temp.FinalResp.EXTERNAL_CODE[]) AND EXISTS(rEnv.Temp.FinalResp.DESCRIPTION[]) THEN
+					SET AdvisoryCode = rEnv.Temp.FinalResp.EXTERNAL_CODE;
+					SET AdvisoryDesc = rEnv.Temp.FinalResp.DESCRIPTION;
+				ELSE
+					SET AdvisoryCode = '12228';
+					SET AdvisoryDesc = 'System error from backend Try Later';
+				END IF;
+			ELSE
+				SET AdvisoryCode = '12228';
+				SET AdvisoryDesc = 'System error from backend Try Later';
+			END IF;
+
+			SET rOutWarnings.Warning = source.Error.ErrorMessage;
+
+			SET rOutWarnings.Warning.(XMLNSC.Attribute)Code = AdvisoryCode;
+			SET rOutWarnings.Warning.(XMLNSC.Attribute)ShortText = AdvisoryDesc;
+
+
+			IF source.error.errorSeverity = 'W' OR source.error.errorSeverity = 'I' THEN
+
+				SET rOutWarnings.Warning.(XMLNSC.Attribute)Type = '2';
+
+			ELSE
+
+				SET rOutWarnings.Warning.(XMLNSC.Attribute)Type = '3';
+
+			END IF;
+
+
+		END FOR;
+
+	END;
+
+END MODULE;
+
+
+
+
+CREATE PROCEDURE getAdvisoryCode(IN ErrorCode CHARACTER,IN CmpnyCode CHARACTER,INOUT rEnv REFERENCE)
+
+BEGIN
+
+	DECLARE advisoryCode,genericMsg,ADVISORY_TABLE CHARACTER;
+
+	SET advisoryCode = '12228';
+	SET genericMsg = 'System error from backend Try Later';
+	SET ADVISORY_TABLE = 'AdvisoryCondition';
+
+
+
+	IF ErrorCode <> '' AND CmpnyCode <> '' THEN
+		-- call the External method for db call
+		CALL lookupExternalCode(ErrorCode,CmpnyCode,ADVISORY_TABLE,rEnv);
+
+	ELSE
+		SET rEnv.Temp.FinalResponse = advisoryCode || ',' || genericMsg;
+	END IF;
+	-- return the response if above thing fails	
+	
+END;
+
+
+CREATE PROCEDURE lookupExternalCode(IN ErrorCode CHARACTER,IN CmpnyCode CHARACTER,IN ADVISORY_TABLE CHARACTER,INOUT rEnv REFERENCE)
+
+BEGIN
+
+	IF ErrorCode <> '' AND CmpnyCode <> '' THEN
+		-- call the External method for db call
+		DECLARE query CHARACTER;
+
+		SET query = 'SELECT'|| ' DETAILS.EXTERNAL_CODE,'|| ' DETAILS.SW_CODE,'|| ' DETAILS.DESCRIPTION,'|| ' DETAILS.EXTERNAL_XREF_DETAIL_ID,'|| ' DETAILS.long_description, '|| ' details.external_xref_id'
+		|| ' FROM'|| ' SEA.EXTERNAL_XREF_DETAIL DETAILS'|| ' INNER JOIN'|| ' ('|| ' SELECT'|| ' XREF.EXTERNAL_XREF_ID,'|| ' XREF.EXTERNAL_TABLE'|| ' FROM'|| ' SEA.EXTERNAL_XREF XREF'|| ' INNER JOIN'
+		|| ' SEA.EXTERNAL_NAMES NAMES ON'|| ' XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID'|| ' Where'|| ' NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? ' || ' AND DETAILS.SW_CODE = ?';
+		--1st param of query EXTERNAL_NAME = CmpnyCode
+		--2nd param of query EXTERNAL_TABLE = AdvisoryCondition
+		--3rd param of querySW_Code= ErrorCode
+		-- CAll the above query in DB and return the Result set and retrieve the few values from result set
+
+		SET rEnv.Temp.FinalResp[] = PASSTHRU(query VALUES(CmpnyCode,ADVISORY_TABLE,ErrorCode));
+		--The result rest obtained from the above thing just extract the external_code and description		
+
+	END IF;
+
+END;

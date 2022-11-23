@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:include schemaLocation="BaseTypes.xsd"/>
+  <xs:element name="Scenario">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Name" type="LongCode"/>
+        <xs:element name="Root" type="SetupNode"/>
+        <xs:element name="CacheFields">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element maxOccurs="unbounded" name="CacheField" type="CacheField"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:complexType name="SetupRecord">
+    <xs:annotation>
+      <xs:documentation>
+        The primary declarative entity describing the relationships between 
+        1)Custom parameters of the request
+        2)Cache fields
+        3)Text substitutions for building the equivalent reqular availability request
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="Class">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="Variants"/>
+            <xs:enumeration value="ParamValue"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element minOccurs="0" name="MacroParam" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>
+            The name of the text substitution variable to be used for test substitutes when the regular API call requests
+            are created to retrieve a part of availability data needed either in case of cache population or 
+            when the cache is bypassed.
+            The hardcoded value $AVL_REQUEST is used for construction a regular availability request, from this element all 
+            substitutions start and are retrieved recursively
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element minOccurs="0" name="TableField" type="LongCode">
+        <xs:annotation>
+          <xs:documentation>
+            The name of one of CacheField elements associated with this setup reccord (if any)
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="FieldMode">
+        <xs:annotation>
+          <xs:documentation>
+            Describes how the key field accepts with the value during search
+          </xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="None"/>
+            <xs:enumeration value="EqualIfSet">
+              <xs:annotation>
+                <xs:documentation>
+                  Comparison of not Null Keys
+                </xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="EqualEvenIfNull">
+              <xs:annotation>
+                <xs:documentation>
+                  Needs to be used in such cases when Table Field = Null has the meaning (like no car case)
+                </xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="Le"/>
+            <xs:enumeration value="Ge"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="Comments" type="LongComment"/>
+      <xs:element name="RemovesParentNodeIfEmpty" type="xs:boolean">
+        <xs:annotation>
+          <xs:documentation>
+            true means that wrapping text must be set to empty string if this macrosubstitution inside that text is empty
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="XMLType">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="Char"/>
+            <xs:enumeration value="Date"/>
+            <xs:enumeration value="DateTime"/>
+            <xs:enumeration value="Boolean"/>
+            <xs:enumeration value="Float"/>
+            <xs:enumeration value="Integer"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="IsLabel" type="xs:boolean">
+        <xs:annotation>
+          <xs:documentation>
+            Adds a label to the particular package item when result is returned
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:choice minOccurs="0">
+        <xs:element name="InputParamName" type="LongCode">
+          <xs:annotation>
+            <xs:documentation>
+              The input value(s) associated with the given SetupRecord is taken from the custom parameter with this name
+            </xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="StrVal" type="xs:string">
+          <xs:annotation>
+            <xs:documentation>
+              The input value(s) associated with the given SetupRecord is a constant taken from here
+            </xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:choice>
+      <xs:element name="Mode">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="EofIfNoValues">
+              <xs:annotation>
+                <xs:documentation>
+                  The whole execution step is bypassed if this node has no value
+                </xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="DummyIteration">
+              <xs:annotation>
+                <xs:documentation>
+                  If nothing comes from the input parameter the default value is used
+                </xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element minOccurs="0" name="DefaultStrVal" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>
+            Default value if needed in string representation, when the input is not set 
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="VarType" type="VarType">
+        <xs:annotation>
+          <xs:documentation>
+            Translates strings to actual values, in case of input parameters strings with ";" are considered as vectors
+            Empty strings are translated as Variant to Null 
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element minOccurs="0" name="Decodes">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element maxOccurs="unbounded" name="Decode" type="Decode"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="CacheField">
+    <xs:sequence>
+      <xs:element name="Name" type="LongCode"/>
+      <xs:element name="Type">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="ResShellProp">
+              <xs:annotation>
+                <xs:documentation>Such (abstract) fields describe pieces of ResShell. These are mandatory fields in the request for the modes: ReadCacheFirst, PopulateCacheOnly, PopulateCache, BypassCache. In the mode ReadCacheOnly two cases are possible: 
+1) the field is taken by default value (if the setup gives it); 
+2) the field may be ignored in filtering (the corresponding IgnoreFilter parameter must be marked accordingly then). 
+These fields are populated only from request. Formally here may be included some 'pseudo-shell' fields (for example, if we know that car price affects voyage prices we may add "resshell" field taken from the same car price category, or the price depends only on existence of any car, we can add CAR_EXISTS (Y/N) into this resshell props.
+</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="DateIndex">
+              <xs:annotation>
+                <xs:documentation>Must be at least one field for (date for now) range selection. The actual value is retrieved for any serch result item. The range of values while populating the cache is stored and describes the set of parameters where the cache was populated.
+</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="DateSubIndex">
+              <xs:annotation>
+                <xs:documentation>For hotel search two level date indexing is used. Second field's distance from the first field is the index (number of nights)
+                </xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="SailPackage">
+              <xs:annotation>
+                <xs:documentation>Package Type, Sail ID, Package ID, Dep.Ref.Id, Route, Ship, etc.
+Can de retrieved from any result and used on search. Such fields normally are not mandatory, especially for population purposes.
+</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="BuildFeature">
+              <xs:annotation>
+                <xs:documentation>Dynamic Package, Forced Promotion : such field describes the manual request affecting the content of final reservation, it's very similar ShellProp.
+Build features are taken from the input availability request or default value (either set or absent). To ignore it and get all results in ReadCacheOnly mode, IgnoreFilter must be set to 'Y'.</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="CarShellProp">
+              <xs:annotation>
+                <xs:documentation>Subdivision of car prices on package in level.</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="CtgProp">
+              <xs:annotation>
+                <xs:documentation>This is similar to SailPackage, it takes data from the cabin category item.</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="HotelPackage">
+              <xs:annotation>
+                <xs:documentation>Properties of found hotel.
+                </xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element minOccurs="0" name="Source">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="PortFrom"/>
+            <xs:enumeration value="PortTo"/>
+            <xs:enumeration value="CityFrom"/>
+            <xs:enumeration value="CityTo"/>
+            <xs:enumeration value="CarCategory"/>
+            <xs:enumeration value="HotelCity"/>
+            <xs:enumeration value="HotelCategory"/>
+            <xs:enumeration value="HotelID"/>
+            <xs:enumeration value="HotelRoomType"/>
+            <xs:enumeration value="DateFrom">
+              <xs:annotation>
+                <xs:documentation>For DateIndex Fields only.</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+            <xs:enumeration value="DateTo">
+              <xs:annotation>
+                <xs:documentation>For DateIndex Fields only.</xs:documentation>
+              </xs:annotation>
+            </xs:enumeration>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="Decode">
+    <xs:annotation>
+      <xs:documentation>
+        Replaces original value for different purposes
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="VarType" type="VarType"/>
+      <xs:element name="From" type="LongCode">
+        <xs:annotation>
+          <xs:documentation>
+            Source value
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="ToXMLSubst" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>
+            To be used for XML text substitution
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="ToTableField" type="LongCode">
+        <xs:annotation>
+          <xs:documentation>
+            The value to be used in Cache Key
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="FIsDefault" type="xs:boolean">
+        <xs:annotation>
+          <xs:documentation>
+            This line of decoding is used if the sorce value is not set
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="SetupNode">
+    <xs:sequence>
+      <xs:element name="SetupRecords">
+        <xs:annotation>
+          <xs:documentation>
+            The list of setup record which declare a set of relationships: like common ones both for round trip outbound and inbound
+            sail; or particular relationships valid for only one direction
+          </xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element maxOccurs="unbounded" name="SetupRecord" type="SetupRecord"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element minOccurs="0" name="Subnodes">
+        <xs:annotation>
+          <xs:documentation>
+            Different sub branches of setup : the full case set of declarations (SetupRecord's) to be processed is any set from the root to any top node
+          </xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element maxOccurs="unbounded" name="SetupNode" type="SetupNode"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:simpleType name="VarType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Variant"/>
+      <xs:enumeration value="Char"/>
+      <xs:enumeration value="Integer"/>
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>

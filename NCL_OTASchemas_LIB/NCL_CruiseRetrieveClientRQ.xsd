@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" id="OTA2005B" targetNamespace="http://nclapi/schemas" version="2.1" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:include schemaLocation="NCL_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseRetrieveClientRQ">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Retrieve Client Request message requests the client profile information from the cruise line system for a given Reservation +Name+Sailing OR Name+Client ID (Lattitude Nukber) OR Name+DateOf Birth + ZipCode OR WEB USER NAME. </xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:sequence>
+					<xs:element minOccurs="0" name="ReservationID" type="UniqueID_Type">
+						<xs:annotation>
+							<xs:documentation>Contains the Reservation ID of a booking</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element minOccurs="0" name="SelectedSailing">
+						<xs:annotation>
+							<xs:documentation>Contains information related to the selected sailing. Typically the selected sailing is one of the sailings returned in the previous sailing availability response. </xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:attributeGroup ref="SelectedSailingGroup"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element minOccurs="0" name="ClientInfo">
+						<xs:annotation>
+							<xs:documentation>Contains the Guest Information such as Last name and First name</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element minOccurs="0" name="PersonName" type="PersonNameType">
+									<xs:annotation>
+										<xs:documentation>Specifies the Guest Name </xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element minOccurs="0" name="Address" type="AddressInfoType">
+									<xs:annotation>
+										<xs:documentation>Specifies the Address</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element minOccurs="0" name="Email" type="EmailType">
+									<xs:annotation>
+										<xs:documentation>Specifies the Email Address</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<!--  added 11/12/09   Following is not in xsd -->
+								<xs:element minOccurs="0" name="Telephone" type="TelephoneInfoType"/>
+								<xs:element minOccurs="0" name="ContactPreferences">
+									<xs:complexType>
+										<xs:attribute name="ContactPreference" type="xs:string" use="optional"/>
+									</xs:complexType>
+								</xs:element>
+								<!--  added 11/12/09   Following is not in xsd -->
+							</xs:sequence>
+							<xs:attributeGroup ref="GuestInfoGroup"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element minOccurs="0" name="LoyaltyInfo" type="CustLoyaltyType">
+						<xs:annotation>
+							<xs:documentation>Used to define guests loyalty program such as Latitude</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element minOccurs="0" name="UserLogin">
+						<xs:annotation>
+							<xs:documentation>Specifies the WEB User Login Name and Password</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:attributeGroup ref="UserLoginInfoGroup"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element minOccurs="0" name="SkipCache" type="xs:boolean"/>
+					<xs:element minOccurs="0" name="IncludeNative" type="xs:boolean"/>
+				</xs:sequence>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

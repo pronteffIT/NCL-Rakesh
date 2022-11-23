@@ -1,0 +1,435 @@
+BROKER SCHEMA com.ncl.ais.client
+DECLARE ADULT_AGE EXTERNAL INTEGER 18;
+DECLARE ALLOW_NAME_UPDATE EXTERNAL BOOLEAN FALSE;
+CREATE COMPUTE MODULE ManageClient_ProcessVXResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.ManageClients_OUT;	
+
+--SEAOPS 3699 Item 1 to update FN and LN Jag 
+			
+		IF (EXISTS (rIn.Errors.Error[]))
+            AND (EXISTS(SELECT E.* FROM rIn.Errors.Error[] AS E
+                        WHERE (E.ErrorSeverity IN ('E','F','OPERATION','EXCEPTION','FATAL')  ) ) ) THEN
+				
+			IF NOT EXISTS(rEnv.Temp.XMLNSC[]) THEN
+				CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'XMLNSC';
+			END IF;
+			SET rEnv.Temp.XMLNSC.Errors = rIn.Errors;						
+			SET rEnv.Temp.ManageClientError = 'Y';
+			SET rEnv.Temp.ErrorMessage=rIn.Errors.Error.ErrorMessage;
+			SET rEnv.Temp.ErrorCode=rIn.Errors.Error.ErrorCode;
+			RETURN FALSE;			
+		END IF;		
+		IF EXISTS(rIn.Clients[]) OR EXISTS(rIn.Households[] )
+		THEN
+			IF NOT EXISTS(rEnv.Temp.XMLNSC[]) THEN
+				CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'XMLNSC';
+			END IF;
+			IF EXISTS(rIn.Clients[]) THEN
+				SET rEnv.Temp.XMLNSC.Clients  = rIn.Clients;
+				SET rEnv.Temp.ClientID = rIn.Clients.Client.ClientHeader.ClientID;
+				SET rEnv.Temp.HouseholdID = rIn.Clients.Client.ClientHeader.HouseholdID;
+			END IF;
+			IF EXISTS(rIn.Households[]) THEN
+				SET rEnv.Temp.XMLNSC.Households = rIn.Households;							
+				SET rEnv.Temp.HouseholdID = COALESCE(rIn.Clients.Client.ClientHeader.HouseholdID,rIn.Households.Household.HouseholdHeader.HouseholdID);
+			END IF;			
+		END IF;   
+		RETURN TRUE;		
+	END;	
+END MODULE;
+--Unlock the client and 
+CREATE COMPUTE MODULE ManageClient_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE rEnv  REFERENCE TO Environment.Variables;				
+		IF LENGTH(COALESCE(rEnv.Temp.HouseholdID,''))>0 THEN
+			CALL BuildLockHouseholdsReq(rEnv.Temp.HouseholdID,rEnv,FALSE,rOut);
+			PROPAGATE;
+		END IF;
+		IF LENGTH(COALESCE(rEnv.Temp.ClientID,''))>0 THEN
+			CALL BuildLockClientIdsReq(rEnv.Temp.ClientID,rEnv,FALSE,rOut);
+			PROPAGATE;
+		END IF;			
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE CreateOrUpdateHouseHold_CreateorUpdateHousehold
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rOut REFERENCE TO OutputRoot;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:ContactInfo;
+		DECLARE rEnv  REFERENCE TO Environment.Variables;
+		DECLARE cGuestRefNum CHARACTER FIELDVALUE(rIn.(XMLNSC.Attribute)GuestRefNumber);
+		DECLARE cLoyaltyMembershipID CHARACTER COALESCE(FIELDVALUE(rIn.(XMLNSC.Attribute)LoyaltyMembershipID),FIELDVALUE(InputRoot.XMLNSC.*:LoyaltyInfo.(XMLNSC.Attribute)MembershipID));
+		DECLARE cDob DATE CAST(FIELDVALUE(rIn.(XMLNSC.Attribute)BirthDate) AS DATE FORMAT 'yyyy-MM-dd' DEFAULT DATE '2000-01-01');
+		DECLARE cAge INTEGER CAST(FIELDVALUE(rIn.(XMLNSC.Attribute)Age) AS INTEGER DEFAULT ADULT_AGE);
+		--Calculate Age from request
+		IF COALESCE(FIELDVALUE(rIn.(XMLNSC.Attribute)BirthDate),'') <> '' 
+		THEN
+			SET cAge = (CURRENT_DATE - cDob )YEAR;
+		END IF; 
+
+		SET rEnv.Temp = NULL;
+		--Check if clientID exists
+		IF COALESCE(cLoyaltyMembershipID,'') <> '' THEN
+			--Load the Client
+			CALL BuildLoadClient(cLoyaltyMembershipID,rEnv,rOut);
+			SET rEnv.Temp.HouseholdID = rEnv.Temp.XMLNSC.Clients.Client.ClientHeader.HouseholdID;
+			PROPAGATE;			
+			IF COALESCE(rEnv.Temp.ClientID,'') = '' THEN
+				SET rEnv.Temp.ManageClientError = 'Y';
+				SET rEnv.Temp.ErrorMessage='Invalid client ID '|| cLoyaltyMembershipID ;
+				SET rEnv.Temp.ErrorCode='1000766';			
+				RETURN FALSE;
+			END IF;
+			--IF birthdate is not provided in request for existing guest
+			IF COALESCE(FIELDVALUE(rIn.(XMLNSC.Attribute)BirthDate),'')='' THEN
+				SET cDob = CAST (rEnv.Temp.XMLNSC.Clients.Client.ClientHeader.Birthday AS DATE FORMAT 'yyyy-MM-dd' DEFAULT DATE '2000-01-01') ;
+				SET cAge = 	(CURRENT_DATE - cDob )YEAR;
+			END IF;
+		ELSE
+			--For new clients without name do nothing no household or client is created
+			IF NOT EXISTS(rIn.*:PersonName[]) THEN
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;						
+		END IF;				
+		
+		--Create/Update the Household for all adult passengers or First Guest
+		IF CAST(cGuestRefNum AS INTEGER) =1 OR cAge>=ADULT_AGE THEN
+			DECLARE bHasAddressOrPhone BOOLEAN HasAddressOrPhone(rIn);
+			--Rest the household only if the request has an address or telephone	
+			IF bHasAddressOrPhone 
+			THEN
+				--Compare the Household id with each previous guest if its matches create a new household			
+				DECLARE gIndex INTEGER CAST(cGuestRefNum AS INTEGER)-1;
+				X: WHILE gIndex>0 DO
+					IF COALESCE(rEnv.Temp.HouseholdID,'')<>'' AND rEnv.Temp.HouseholdID = rEnv.Households.{CAST(gIndex AS CHARACTER)}.HouseholdID  THEN
+						SET rEnv.Households.{cGuestRefNum}.OldHouseholdID = rEnv.Temp.HouseholdID;
+						SET rEnv.Temp.HouseholdID = '';
+					END IF;
+					SET gIndex = gIndex -1;
+				END WHILE X;
+			ELSE
+				--IF No Address or Phone in request and has existing household proceed to update client details
+				IF COALESCE(rEnv.Temp.HouseholdID,'')<>'' THEN
+					CALL CreateUpdateClient(rIn ,rEnv,rOut);					  							
+					PROPAGATE TO TERMINAL 'out1';
+					RETURN FALSE;
+				END IF;
+			END IF;
+		
+		
+			DECLARE isLock BOOLEAN FALSE;
+			--Updating existing household
+			-- First Lock the Booking
+			IF LENGTH(COALESCE(rEnv.Temp.HouseholdID,''))>0 THEN
+				SET rOut = NULL;
+				CALL BuildLockHouseholdsReq(rEnv.Temp.HouseholdID,rEnv,TRUE,rOut);			
+				PROPAGATE;
+				IF  COALESCE(rEnv.Temp.ManageClientError,'N') = 'Y' THEN
+					SET rEnv.Temp.ErrorMessage='Client Locked client ID '|| cLoyaltyMembershipID ;
+					SET rEnv.Temp.ErrorCode='25113';					
+					--Lock Failed
+					RETURN FALSE;	
+				END IF;
+				SET isLock = TRUE;			
+			END IF;
+			--Create or Update Household
+			CALL BuildCreateUpdateHousehold(rIn,COALESCE(rEnv.Temp.HouseholdID,''),rEnv,rOut);
+			PROPAGATE;
+			
+			IF  COALESCE(rEnv.Temp.ManageClientError,'N') <> 'Y' AND LENGTH(COALESCE(rEnv.Temp.HouseholdID,''))>0 THEN				
+				--Store The Household
+				CALL BuildStoreHouseHold(rEnv.Temp.HouseholdID,rEnv,rOut);
+				PROPAGATE;
+				-- IF there is no error Store the client
+				IF  COALESCE(rEnv.Temp.ManageClientError,'N') <> 'Y' THEN				
+					IF LENGTH(cGuestRefNum)>0 THEN
+						SET rEnv.Households.{cGuestRefNum}.HouseholdID = rEnv.Temp.HouseholdID;
+						SET rEnv.Households.{cGuestRefNum}.ClientID = rEnv.Temp.ClientID;
+					END IF;
+				END IF;			
+			END IF;
+			  
+		  	--Unlock the Household		  	
+		  	CALL BuildLockHouseholdsReq(rEnv.Temp.HouseholdID,rEnv,FALSE,rOut);
+			PROPAGATE;
+
+		ELSE
+			--Assign the first guest household 			 
+			SET rEnv.Temp.HouseholdID = rEnv.Households.{'1'}.HouseholdID;
+		END IF;		  
+		CALL CreateUpdateClient(rIn ,rEnv,rOut);					  							
+		PROPAGATE TO TERMINAL 'out1';
+		RETURN FALSE;
+END;
+CREATE PROCEDURE CreateUpdateClient ( IN rContactInfo REFERENCE,IN rEnv REFERENCE, INOUT rOut REFERENCE)
+BEGIN
+	DECLARE isLock BOOLEAN FALSE;
+	DECLARE cGuestRefNum CHARACTER FIELDVALUE(rContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+	--Client ID can be in Loyalty info as well
+	DECLARE cLoyaltyMembershipID CHARACTER COALESCE(FIELDVALUE(rContactInfo.(XMLNSC.Attribute)LoyaltyMembershipID),rEnv.Temp.ClientID);
+		
+	IF LENGTH(cLoyaltyMembershipID) >0 THEN
+		--Lock the client
+		CALL BuildLockClientIdsReq(cLoyaltyMembershipID,rEnv,TRUE,rOut);
+		PROPAGATE;
+		IF  COALESCE(rEnv.Temp.ManageClientError,'N') = 'Y' THEN
+			RETURN;
+		END IF;
+		SET isLock = TRUE;			
+	END IF;
+	CALL BuildCreateUpdateClient(rEnv.Temp.ClientID,rEnv.Temp.HouseholdID,rContactInfo ,rEnv,rOut);
+	PROPAGATE;
+	
+	IF  COALESCE(rEnv.Temp.ManageClientError,'N') <> 'Y' AND LENGTH(COALESCE(rEnv.Temp.HouseholdID,''))>0 THEN				
+		--Store The Client
+		CALL BuildStoreClient(rEnv.Temp.ClientID,rEnv,rOut);
+		PROPAGATE;
+		-- IF there is no error Store the client
+		IF  COALESCE(rEnv.Temp.ManageClientError,'N') <> 'Y' THEN				
+			SET rEnv.Households.{cGuestRefNum}.HouseholdID = rEnv.Temp.HouseholdID;
+			SET rEnv.Households.{cGuestRefNum}.ClientID = rEnv.Temp.ClientID;
+			SET cLoyaltyMembershipID = rEnv.Temp.ClientID; 
+		END IF;			
+	END IF;
+	CALL BuildLockClientIdsReq(cLoyaltyMembershipID,rEnv,FALSE,rOut);
+	PROPAGATE;
+END;
+
+CREATE FUNCTION HasAddressOrPhone( IN rContactInfo REFERENCE )  RETURNS BOOLEAN
+BEGIN
+	IF EXISTS(rContactInfo.*:Address[]) THEN
+		RETURN TRUE;
+	END IF;
+	IF EXISTS(rContactInfo.*:Telephone[]) THEN
+		DECLARE cPhoneNumber CHARACTER FIELDVALUE(rContactInfo.*:Telephone.(XMLNSC.Attribute)PhoneNumber);
+		IF LENGTH(COALESCE(	cPhoneNumber,'')) >0 THEN
+			RETURN TRUE;
+		END IF;								
+	END IF;	
+	RETURN FALSE;
+END ;
+
+CREATE PROCEDURE BuildCreateUpdateClient (IN pClientID CHARACTER,IN pHouseholdId CHARACTER, IN rContactInfo REFERENCE,IN rCtx REFERENCE, INOUT rOut REFERENCE)
+BEGIN
+	DECLARE rCrtUpdtClient,rclientHeader REFERENCE TO rOut;
+	DECLARE cGuestRefNum CHARACTER FIELDVALUE(rContactInfo.(XMLNSC.Attribute)GuestRefNumber);
+	CALL SetMsgHeader(rCtx,rOut);
+	SET rOut.Options.ReturnState = 'Y';
+	IF 	LENGTH(COALESCE(pClientID,''))>0 THEN
+		CREATE LASTCHILD OF rOut AS rCrtUpdtClient NAME 'Update';
+		CREATE FIELD rCrtUpdtClient.Clients.Client.ClientHeader AS rclientHeader ;
+		SET rclientHeader.ClientID =  pClientID;
+	ELSE
+		CREATE LASTCHILD OF rOut AS rCrtUpdtClient NAME 'Create';
+		CREATE FIELD rCrtUpdtClient.Clients.Client.ClientHeader AS rclientHeader ;  
+	END IF;
+	--Set the create or existing household
+	SET rclientHeader.HouseholdID=pHouseholdId; 
+
+	-- Updated for Airwave on 06/26/2018.
+	IF FIELDVALUE(rContactInfo.(XMLNSC.Attribute)Gender) = 'Male' THEN
+		SET rclientHeader.Gender = 'M';
+	ELSEIF FIELDVALUE(rContactInfo.(XMLNSC.Attribute)Gender) = 'Female'  THEN
+		SET rclientHeader.Gender ='F';
+	END IF;
+	SET rclientHeader.Occupation = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)GuestOccupation);
+	SET rclientHeader.Citizenship = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)Nationality);
+	SET rclientHeader.Birthday = FIELDVALUE(rContactInfo.(XMLNSC.Attribute)BirthDate);
+	SET rclientHeader.EMail = rContactInfo.*:Email;
+	
+	IF EXISTS(rContactInfo.*:PersonName[]) THEN	
+		IF LENGTH(COALESCE(pClientID,''))=0 OR ALLOW_NAME_UPDATE THEN
+			SET rclientHeader.LastName = rContactInfo.*:PersonName.*:Surname;
+			SET rclientHeader.FirstName = rContactInfo.*:PersonName.*:GivenName;
+		END IF;
+		SET rclientHeader.MiddleName = rContactInfo.*:PersonName.*:MiddleName;	
+		SET rclientHeader.Title = rContactInfo.*:PersonName.*:NamePrefix;
+		--Create Mode
+		SET rclientHeader.FirstNameNative = rContactInfo.*:PersonName.*:GivenNameNative;
+		SET rclientHeader.LastNameNative = rContactInfo.*:PersonName.*:SurnameNative;
+		SET rclientHeader.MiddleNameNative = rContactInfo.*:PersonName.*:MiddleNameNative;
+		SET rclientHeader.TitleNative = rContactInfo.*:PersonName.*:NameTitleNative;
+		SET rclientHeader.SuffixNative = rContactInfo.*:PersonName.*:NameSuffixNative;	
+	END IF;		
+END;
+	
+	
+	
+	--Build the household header with address and telephone
+	--Based on the pHouseholdId it will update or create a new household
+	CREATE PROCEDURE BuildCreateUpdateHousehold(IN rContactInfo REFERENCE,IN pHouseholdId CHARACTER,IN rCtx REFERENCE, INOUT rOut REFERENCE) 
+	BEGIN
+		DECLARE rCrtUpdtHousehold REFERENCE TO OutputRoot;
+		CALL SetMsgHeader(rCtx,rOut);
+		SET rOut.Options.ReturnState = 'Y';
+		IF LENGTH(pHouseholdId)>0 THEN
+			CREATE LASTCHILD OF rOut AS rCrtUpdtHousehold NAME 'Update';
+			CREATE FIELD rCrtUpdtHousehold.Households.Household.HouseholdHeader; 
+			SET rCrtUpdtHousehold.Households.Household.HouseholdHeader.HouseholdID=pHouseholdId;  
+		ELSE
+			CREATE LASTCHILD OF rOut AS rCrtUpdtHousehold NAME 'Create';
+			CREATE FIELD rCrtUpdtHousehold.Households.Household.HouseholdHeader; 
+		END IF;
+		SET rCrtUpdtHousehold.Households.Household.HouseholdHeader.HouseholdName = rContactInfo.*:PersonName.*:Surname;
+		CALL PopulateAddresses(rCrtUpdtHousehold.Households.Household,rContactInfo);						
+	END;
+
+CREATE PROCEDURE PopulateAddresses (INOUT rCrtUpdtHousehold REFERENCE, IN rContactInfo REFERENCE)
+	BEGIN
+		IF EXISTS(rContactInfo.*:Address[]) THEN			
+-- SEAOPS 3699 Item 2 To send multiple addresses Jag
+		CREATE FIELD rCrtUpdtHousehold.Addresses;
+		DECLARE addressType CHAR;
+			
+		FOR rInAddr AS rContactInfo.*:Address[] DO
+			DECLARE rOutAddr REFERENCE TO rCrtUpdtHousehold.Addresses.Address;						
+			CREATE LASTCHILD OF rCrtUpdtHousehold.Addresses AS rOutAddr IDENTITY Address;			
+-- SEAOPS 3699 Item 2 to fix address type, compare with valid types Jag
+			IF LENGTH(rInAddr.(XMLNSC.Attribute)Type) >0 THEN
+				IF(rInAddr.(XMLNSC.Attribute)Type = 'HOME ADDRESS')
+					 OR (rInAddr.(XMLNSC.Attribute)Type = 'PRIMARY') 
+					 OR (rInAddr.(XMLNSC.Attribute)Type = 'BAD ADDRESS')
+					 OR (rInAddr.(XMLNSC.Attribute)Type = 'SUPPRESS') 
+					 OR (rInAddr.(XMLNSC.Attribute)Type = 'E MAIL') 
+					 OR (rInAddr.(XMLNSC.Attribute)Type = 'SECONDARY') THEN					
+					SET addressType = rInAddr.(XMLNSC.Attribute)Type;
+					SET rOutAddr.AddressType = addressType;
+				END IF;			
+			ELSE
+			SET rOutAddr.AddressType = 'HOME ADDRESS';
+			END IF;		
+			-- TODO Consider revising the array index method
+			SET rOutAddr.Line1 = rInAddr.*:AddressLine[1];
+			SET rOutAddr.Line2 = rInAddr.*:AddressLine[2];
+			SET rOutAddr.Line3 = rInAddr.*:AddressLine[3];
+			SET rOutAddr.Line4 = rInAddr.*:AddressLine[4];			
+			SET rOutAddr.City = rInAddr.*:CityName;
+			SET rOutAddr.State = FIELDVALUE(rInAddr.*:StateProv.(XMLNSC.Attribute)StateCode);
+			SET rOutAddr.ZIP = rInAddr.*:PostalCode;
+			SET rOutAddr.Country = FIELDVALUE(rInAddr.*:CountryName.(XMLNSC.Attribute)Code);
+			--Set Native Fields
+			SET rOutAddr.Line1Native = CAST(rInAddr.*:AddressLineNative[1] AS BLOB CCSID 1202);
+			SET rOutAddr.Line2Native = CAST(rInAddr.*:AddressLineNative[2] AS BLOB CCSID 1202);
+			SET rOutAddr.Line3Native = CAST(rInAddr.*:AddressLineNative[3] AS BLOB CCSID 1202);
+			SET rOutAddr.Line4Native = CAST(rInAddr.*:AddressLineNative[4] AS BLOB CCSID 1202);
+			SET rOutAddr.CityNative = CAST(rInAddr.*:CityNameNative AS BLOB CCSID 1202);
+		MOVE rInAddr NEXTSIBLING;
+		END FOR;
+		END IF;
+	
+		IF EXISTS(rContactInfo.*:Telephone[]) THEN
+			
+			DECLARE rPhones,rPhone REFERENCE TO rCrtUpdtHousehold;
+			CREATE LASTCHILD OF rCrtUpdtHousehold AS rPhones IDENTITY Phones;
+			DECLARE nSeqN INTEGER 1;	
+			FOR rTelephone AS rContactInfo.*:Telephone[] DO				
+				DECLARE cPhoneNumber CHARACTER FIELDVALUE(rTelephone.(XMLNSC.Attribute)PhoneNumber);			
+				IF LENGTH(cPhoneNumber)>=7 AND LENGTH(cPhoneNumber)<=20 THEN
+					CREATE LASTCHILD OF rPhones AS rPhone IDENTITY Phone;
+					DECLARE cpUseType CHARACTER COALESCE(FIELDVALUE(rTelephone.(XMLNSC.Attribute)PhoneUseType),'');
+					SET rPhone.SeqN = nSeqN;
+					SET rPhone.PhoneNumber = cPhoneNumber;
+					SET rPhone.PhoneType = MAP_PHONE_USE_TYPE(cpUseType,NULL);
+					SET rPhone.IntlCode = FIELDVALUE(rTelephone.(XMLNSC.Attribute)CountryAccessCode);
+					SET rPhone.IsPrimary = FIELDVALUE(rTelephone.(XMLNSC.Attribute)isPrimary);
+					SET rPhone.Extension = FIELDVALUE(rTelephone.(XMLNSC.Attribute)Extension);
+					SET nSeqN = nSeqN + 1;
+				END IF;
+			END FOR;
+		END IF;
+	END;
+	
+
+	
+	CREATE PROCEDURE BuildStoreClient(IN clientIds CHARACTER,IN rCtx REFERENCE,INOUT rOut REFERENCE)
+	BEGIN
+		CALL SetMsgHeader(rCtx,rOut);
+		SET rOut.Options.ReturnState = 'Y';
+		SET rOut.Store.ClientIDs = clientIds;	
+	END;
+	
+	CREATE PROCEDURE BuildLoadClient(IN clientIds CHARACTER,IN rCtx REFERENCE,INOUT rOut REFERENCE)
+	BEGIN
+		CALL SetMsgHeader(rCtx,rOut);
+		SET rOut.Options.ReturnState = 'Y';
+		SET rOut.Load.ClientIDs = clientIds;	
+	END;
+	
+	CREATE PROCEDURE BuildStoreHouseHold(IN householdIds CHARACTER,IN rCtx REFERENCE,INOUT rOut REFERENCE)
+	BEGIN
+		CALL SetMsgHeader(rCtx,rOut);
+		SET rOut.Options.ReturnState = 'Y';
+		SET rOut.Store.HouseholdIDs = householdIds;	
+	END;
+	
+	CREATE PROCEDURE BuildDeleteHouseholdClient(IN clientIds CHARACTER,IN householdIds CHARACTER,IN rCtx REFERENCE,INOUT rOut REFERENCE)
+	BEGIN
+		CALL SetMsgHeader(rCtx,rOut);
+		SET rOut.Options.ReturnState = 'Y';
+		SET rOut.Delete.ClientIDs = clientIds;
+		SET rOut.Delete.HouseholdIDs = householdIds;		
+	END;
+
+END MODULE;
+
+--Create ManageClients_IN with Lock Operation
+CREATE PROCEDURE BuildLockHouseholdsReq(IN householdIds CHARACTER,IN rCtx REFERENCE, IN bLock BOOLEAN , INOUT rOut REFERENCE)
+BEGIN
+	CALL SetMsgHeader(rCtx,rOut);
+	IF bLock THEN
+		SET rOut.Lock.HouseholdIDs = householdIds;
+	ELSE
+		SET rOut.Unlock.HouseholdIDs = householdIds;
+	END IF;					
+END;
+--Lock or Unlock Client
+CREATE PROCEDURE BuildLockClientIdsReq(IN clientIds CHARACTER,IN rCtx REFERENCE,IN bLock BOOLEAN , INOUT rOut REFERENCE)
+BEGIN
+	CALL SetMsgHeader(rCtx,rOut);
+	IF bLock THEN
+		SET rOut.Lock.ClientIDs = clientIds;
+	ELSE
+		SET rOut.Unlock.ClientIDs = clientIds;
+	END IF;		
+	
+END;
+--Creates the MSG Header
+CREATE PROCEDURE SetMsgHeader(IN rCtx REFERENCE,INOUT rOut REFERENCE)
+BEGIN
+	--Start Fresh
+	SET rOut = NULL;
+	SET rOut.HTTPRequestHeader."x-upstream" = COALESCE(rCtx.EndPoint,rCtx.endPoint);	
+	CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+	CREATE FIELD rOut.XMLNSC.ManageClients_IN AS rOut;
+	SET rOut.MsgHeader.Version = '1.0';
+	SET rOut.MsgHeader.SessionGUID = COALESCE(rCtx.SessionID,rCtx.sessionID);
+END;
+CREATE FUNCTION MAP_PHONE_USE_TYPE( cpUseType CHARACTER , cBookingChannel CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE rPhoneType CHARACTER 'HOME';
+	IF LENGTH(cpUseType)>0 THEN
+		IF cpUseType = '1' OR cpUseType = '4' OR cpUseType = '5' THEN
+			SET rPhoneType = 'BUSINESS';
+		ELSEIF  cpUseType = '2' THEN
+			SET rPhoneType = 'HOME';
+		ELSEIF  cpUseType = '3' THEN
+			SET rPhoneType = 'FAX';
+		ELSEIF  cpUseType = '6' OR cpUseType = '7' THEN
+			SET rPhoneType = 'CELLULAR';
+		ELSEIF  cpUseType = '8' THEN
+			SET rPhoneType = 'CELLULAR';
+		ELSE
+			SET rPhoneType = 'HOME';
+		END IF;													
+	ELSE
+		SET rPhoneType = 'HOME';
+	END IF;
+	RETURN rPhoneType;
+END;

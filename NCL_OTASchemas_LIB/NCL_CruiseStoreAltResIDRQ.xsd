@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema elementFormDefault="qualified"
+	targetNamespace="http://nclapi/schemas" version="3.0"
+	xmlns="http://nclapi/schemas"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema">
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd" />
+
+	<xs:include schemaLocation="OTA_CommonTypes.xsd" />
+	<xs:annotation>
+      <xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/OTA_downloads_form.cfm</xs:documentation>
+   </xs:annotation>
+	<xs:element name="NCL_CruiseStoreAltResIDRQ">
+		<xs:annotation>
+         <xs:documentation xml:lang="en">Updates the reservation with  AltResID if it is in Is in RQ, OF, BK</xs:documentation>
+      </xs:annotation>
+		<xs:complexType>
+			<xs:annotation>
+            
+         <xs:documentation>Updates the reservation with  AltResID if it is in Is in RQ, OF, BK </xs:documentation>
+      </xs:annotation>
+			<xs:sequence>
+				<xs:element name="POS" type="POS_Type">
+					<xs:annotation>
+                  <xs:documentation xml:lang="en">Point of sale 
+object.</xs:documentation>
+               </xs:annotation>
+				</xs:element>
+				<xs:element minOccurs="1" name="ReservationId"
+					type="StringLength1to128">
+					<xs:annotation>
+            <xs:documentation>Reservation ID for Booking</xs:documentation>
+          </xs:annotation>
+				</xs:element>
+				<xs:element minOccurs="1" name="AltReservationId"
+					type="StringLength1to128">
+					<xs:annotation>
+            <xs:documentation>Alternative Reservation ID</xs:documentation>
+          </xs:annotation>
+				</xs:element>
+				<xs:element minOccurs="0" name="AgencyCheck"
+					type="xs:boolean" default="true">
+					<xs:annotation>
+            <xs:documentation>If true ageny ID in the request is checked with Booking Agency ID</xs:documentation>
+          </xs:annotation>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes" />
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

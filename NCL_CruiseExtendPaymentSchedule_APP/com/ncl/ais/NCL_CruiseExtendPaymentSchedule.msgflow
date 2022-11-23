@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ecore:EPackage xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:ComIbmCallableFlowInvoke.msgnode="ComIbmCallableFlowInvoke.msgnode" xmlns:ComIbmCompute.msgnode="ComIbmCompute.msgnode" xmlns:ComIbmLabel.msgnode="ComIbmLabel.msgnode" xmlns:ComIbmMQInput.msgnode="ComIbmMQInput.msgnode" xmlns:ComIbmMQReply.msgnode="ComIbmMQReply.msgnode" xmlns:ComIbmPassthru.msgnode="ComIbmPassthru.msgnode" xmlns:com_ncl_ais_LoadBooking.subflow="com/ncl/ais/LoadBooking.subflow" xmlns:com_ncl_ais_StoreBooking.subflow="com/ncl/ais/StoreBooking.subflow"
+    xmlns:com_ncl_ais_UnlockAndLogoutSession.subflow="com/ncl/ais/UnlockAndLogoutSession.subflow" xmlns:com_ncl_ais_UpdateBooking.subflow="com/ncl/ais/UpdateBooking.subflow" xmlns:com_ncl_ais_VerifyAgency.subflow="com/ncl/ais/VerifyAgency.subflow" xmlns:ecore="http://www.eclipse.org/emf/2002/Ecore" xmlns:eflow="http://www.ibm.com/wbi/2005/eflow" xmlns:utility="http://www.ibm.com/wbi/2005/eflow_utility" nsURI="com/ncl/ais/NCL_CruiseExtendPaymentSchedule.msgflow" nsPrefix="com_ncl_ais_NCL_CruiseExtendPaymentSchedule.msgflow">
+  <eClassifiers xmi:type="eflow:FCMComposite" name="FCMComposite_1">
+    <eSuperTypes href="http://www.ibm.com/wbi/2005/eflow#//FCMBlock"/>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.ExternalCodeType" name="ExternalCodeType" lowerBound="1" defaultValueLiteral="AdvisoryCondition">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.XC10CacheMap" name="XC10CacheMap" lowerBound="1" defaultValueLiteral="EXTERNAL_ERROR_CODE.LUT">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.XC10ConnectionConfig" name="XC10ConnectionConfig" lowerBound="1" defaultValueLiteral="XC10ConnectionConfig">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.DefaultReplyQ" name="DefaultReplyQ" lowerBound="1" defaultValueLiteral="NCL_CRUISE_EXTND_PYMT_SCHEDULE_RESP">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EString"/>
+    </eStructuralFeatures>
+    <eStructuralFeatures xmi:type="ecore:EAttribute" xmi:id="Property.MsgExpiry" name="MsgExpiry" lowerBound="1" defaultValueLiteral="1500">
+      <eType xmi:type="ecore:EDataType" href="http://www.eclipse.org/emf/2002/Ecore#//EInt"/>
+    </eStructuralFeatures>
+    <translation xmi:type="utility:TranslatableString" key="NCL_CruiseExtendPaymentSchedule" bundleName="com/ncl/ais/NCL_CruiseExtendPaymentSchedule" pluginId="NCL_CruiseExtendPaymentSchedule_APP"/>
+    <colorGraphic16 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseExtendPaymentSchedule_APP/icons/full/obj16/NCL_CruiseExtendPaymentSchedule.gif"/>
+    <colorGraphic32 xmi:type="utility:GIFFileGraphic" resourceName="platform:/plugin/NCL_CruiseExtendPaymentSchedule_APP/icons/full/obj30/NCL_CruiseExtendPaymentSchedule.gif"/>
+    <composition>
+      <nodes xmi:type="ComIbmMQInput.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_1" location="27,73" queueName="NCL_CRUISE_EXTND_PYMT_SCHEDULE_REQ" messageDomainProperty="XMLNSC" logicalOrder="false" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="MQ Input"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_7" location="109,22" computeExpression="esql://routine/com.ncl.ais#NCL_CruiseExtendPaymentSchedule_HandleException.Main">
+        <translation xmi:type="utility:ConstantString" string="HandleException"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_8" location="634,110" computeExpression="esql://routine/com.ncl.ais#NCL_CruiseExtendPaymentSchedule_SetEndpoint.Main">
+        <translation xmi:type="utility:ConstantString" string="SetEndpoint"/>
+      </nodes>
+      <nodes xmi:type="ComIbmMQReply.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_9" location="696,30" policyUrl="">
+        <translation xmi:type="utility:ConstantString" string="MQ Reply"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_10" location="531,157" computeExpression="esql://routine/com.ncl.ais#NCL_CruiseExtendPaymentSchedule_RuntimeErrors.Main">
+        <translation xmi:type="utility:ConstantString" string="RuntimeErrors"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_VerifyAgency.subflow:FCMComposite_1" xmi:id="FCMComposite_1_18" location="111,112">
+        <translation xmi:type="utility:ConstantString" string="VerifyAgency"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_LoadBooking.subflow:FCMComposite_1" xmi:id="FCMComposite_1_19" location="197,88">
+        <translation xmi:type="utility:ConstantString" string="LoadBooking"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_UpdateBooking.subflow:FCMComposite_1" xmi:id="FCMComposite_1_21" location="307,84">
+        <translation xmi:type="utility:ConstantString" string="UpdateBooking"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_StoreBooking.subflow:FCMComposite_1" xmi:id="FCMComposite_1_22" location="421,80">
+        <translation xmi:type="utility:ConstantString" string="StoreBooking"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_2" location="361,240" labelName="GENERIC_WARN">
+        <translation xmi:type="utility:ConstantString" string="GENERIC_WARN"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCompute.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_4" location="536,240" dataSource="NCLSEAT" computeExpression="esql://routine/com.ncl.ais#NCL_CruiseExtendPaymentSchedule_MapErrors.Main">
+        <translation xmi:type="utility:ConstantString" string="MapErrors"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_5" location="565,37" labelName="ROUTETOCALLER">
+        <translation xmi:type="utility:ConstantString" string="ROUTETOCALLER"/>
+      </nodes>
+      <nodes xmi:type="ComIbmLabel.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_3" location="16,204" labelName="CACHE_LOAD">
+        <translation xmi:type="utility:ConstantString" string="CACHE_LOAD"/>
+      </nodes>
+      <nodes xmi:type="ComIbmCallableFlowInvoke.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_14" location="120,239" targetApplication="NCL_CacheLoader_APP" targetEndpointName="LoadExternalCodesToCache" requestTimeout="1" callPreference="RemoteOnly">
+        <translation xmi:type="utility:ConstantString" string="TriggerCacheLoad"/>
+      </nodes>
+      <nodes xmi:type="ComIbmPassthru.msgnode:FCMComposite_1" xmi:id="FCMComposite_1_15" location="262,238">
+        <translation xmi:type="utility:ConstantString" string="IGNORE"/>
+      </nodes>
+      <nodes xmi:type="com_ncl_ais_UnlockAndLogoutSession.subflow:FCMComposite_1" xmi:id="FCMComposite_1_28" location="717,112">
+        <translation xmi:type="utility:ConstantString" string="UnlockAndLogoutSession"/>
+      </nodes>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_8" targetNode="FCMComposite_1_7" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_9" targetNode="FCMComposite_1_7" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.catch" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_25" targetNode="FCMComposite_1_19" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_27" targetNode="FCMComposite_1_10" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.Output1" targetTerminalName="InTerminal.in">
+        <bendPoints>57,58,-279,-11</bendPoints>
+      </connections>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_28" targetNode="FCMComposite_1_10" sourceNode="FCMComposite_1_18" sourceTerminalName="OutTerminal.Output1" targetTerminalName="InTerminal.in">
+        <bendPoints>61,46,-362,1</bendPoints>
+        <bendPoints>323,29,-84,10</bendPoints>
+      </connections>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_33" targetNode="FCMComposite_1_10" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.Output1" targetTerminalName="InTerminal.in">
+        <bendPoints>61,32,-159,-41</bendPoints>
+      </connections>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_34" targetNode="FCMComposite_1_22" sourceNode="FCMComposite_1_21" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_35" targetNode="FCMComposite_1_10" sourceNode="FCMComposite_1_22" sourceTerminalName="OutTerminal.Output1" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_39" targetNode="FCMComposite_1_18" sourceNode="FCMComposite_1_1" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_40" targetNode="FCMComposite_1_21" sourceNode="FCMComposite_1_19" sourceTerminalName="OutTerminal.Output" targetTerminalName="InTerminal.Input"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_2" targetNode="FCMComposite_1_4" sourceNode="FCMComposite_1_2" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_3" targetNode="FCMComposite_1_8" sourceNode="FCMComposite_1_5" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_4" targetNode="FCMComposite_1_14" sourceNode="FCMComposite_1_3" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_7" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.failure" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_15" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.error" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_16" targetNode="FCMComposite_1_15" sourceNode="FCMComposite_1_14" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_32" targetNode="FCMComposite_1_9" sourceNode="FCMComposite_1_8" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.in"/>
+      <connections xmi:type="eflow:FCMConnection" xmi:id="FCMConnection_37" targetNode="FCMComposite_1_28" sourceNode="FCMComposite_1_9" sourceTerminalName="OutTerminal.out" targetTerminalName="InTerminal.Input"/>
+    </composition>
+    <propertyOrganizer>
+      <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.ExternalCodeType">
+        <propertyName xmi:type="utility:TranslatableString" key="Property.ExternalCodeType" bundleName="com/ncl/ais/NCL_CruiseExtendPaymentSchedule" pluginId="NCL_CruiseExtendPaymentSchedule_APP"/>
+        <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.XC10CacheMap">
+          <propertyName xmi:type="utility:TranslatableString" key="Property.XC10CacheMap" bundleName="com/ncl/ais/NCL_CruiseExtendPaymentSchedule" pluginId="NCL_CruiseExtendPaymentSchedule_APP"/>
+          <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.XC10ConnectionConfig">
+            <propertyName xmi:type="utility:TranslatableString" key="Property.XC10ConnectionConfig" bundleName="com/ncl/ais/NCL_CruiseExtendPaymentSchedule" pluginId="NCL_CruiseExtendPaymentSchedule_APP"/>
+            <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.DefaultReplyQ">
+              <propertyName xmi:type="utility:TranslatableString" key="Property.DefaultReplyQ" bundleName="com/ncl/ais/NCL_CruiseExtendPaymentSchedule" pluginId="NCL_CruiseExtendPaymentSchedule_APP"/>
+              <propertyDescriptor groupName="Group.Basic" configurable="true" userDefined="true" describedAttribute="Property.MsgExpiry">
+                <propertyName xmi:type="utility:TranslatableString" key="Property.MsgExpiry" bundleName="com/ncl/ais/NCL_CruiseExtendPaymentSchedule" pluginId="NCL_CruiseExtendPaymentSchedule_APP"/>
+              </propertyDescriptor>
+            </propertyDescriptor>
+          </propertyDescriptor>
+        </propertyDescriptor>
+      </propertyDescriptor>
+    </propertyOrganizer>
+    <stickyBoard/>
+  </eClassifiers>
+</ecore:EPackage>

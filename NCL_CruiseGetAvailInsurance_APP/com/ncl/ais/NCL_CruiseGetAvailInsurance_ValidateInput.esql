@@ -1,0 +1,31 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE Default_ReplyQ EXTERNAL CHARACTER 'NCL_GET_AVAIL_INSURANCE_RESP';
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailInsurance_ValidateInput
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;	 
+		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetAvailInsuranceRQ;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		SET rEnv.rInReq = InputRoot.XMLNSC;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET rEnv.Temp.Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID),'');
+		SET rEnv.Temp.Channel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code), '');
+		-- Saving Headers in Environment
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = Default_ReplyQ;
+		END IF;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		SET OutputRoot.XMLNSC.VerifyAgencyRequest.source = rIn.*:POS.*:Source;		
+		RETURN TRUE;
+	END;
+
+END MODULE;

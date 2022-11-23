@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns="http://nclapi/schemas" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="http://nclapi/schemas" elementFormDefault="qualified" version="3.0">
+	<xs:include schemaLocation="NCL_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA specification are made available according to the terms defined by the OTA License Agreement at http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseGetSailAvailPackagesRS">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The Get Sail Avail Response message contains results of sailings that were returned for the requested criteria.
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="Success" type="SuccessType">
+						<xs:annotation>
+							<xs:documentation xml:lang="en"> Standard way to indicate successful processing of an OTA message. Returning an empty element of this type indicates success.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="Warnings" type="WarningsType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation xml:lang="en"> Standard way to indicate successful processing of an OTA message, but one in which warnings are generated.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="Packages" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation xml:lang="en">Contains the different sailing availability options that customers can choose from.</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Package" maxOccurs="unbounded">
+									<xs:annotation>
+										<xs:documentation xml:lang="en">Specifies a sailing availability option per cruise line and per ship. </xs:documentation>
+									</xs:annotation>
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="VoyageID" type="StringLength1to32">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">Specifies the cruise line unique identifier for a particular voyage.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="SailID" type="StringLength1to32">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">Specifies the cruise line unique identifier for a particular sailing.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="Start" type="DateOrTimeOrDateTimeType">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">The attributes of the  OTA DateTimeSpan data type are based on the W3C base data types of timeInstant and timeDuration. The lexical representation for timeDuration is the [ISO 8601] extended format PnYn MnDTnH nMnS, where nY represents the number of years, nM the number of months, nD the number of days, 'T' is the date/time separator, nH the number of hours, nM the number of minutes and nS the number of seconds. The number of seconds can include decimal digits to arbitrary precision. As an example, 7 months, 2 days, 2hours and 30 minutes would be expressed as P0Y7M2DT2H30M0S. Truncated representations are allowed provided they conform to ISO 8601 format. </xs:documentation>
+													<xs:documentation xml:lang="en">Time periods, i.e. specific durations of time, can be represented by supplying two items of information: a start instant and a duration or a start instant and an end instant or an end instant and a duration. The OTA standards use the XML mapping that provides for two elements to represent the specific period of time; a startInstant and a duration.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="Duration" type="DurationType" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">The duration datatype represents a combination of year, month, day and time values representing a single duration of time, encoded as a single string. </xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="End" type="DateOrTimeOrDateTimeType" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">The attributes of the  OTA DateTimeSpan data type are based on the W3C base data types of timeInstant and timeDuration. The lexical representation for timeDuration is the [ISO 8601] extended format PnYn MnDTnH nMnS, where nY represents the number of years, nM the number of months, nD the number of days, 'T' is the date/time separator, nH the number of hours, nM the number of minutes and nS the number of seconds. The number of seconds can include decimal digits to arbitrary precision. As an example, 7 months, 2 days, 2hours and 30 minutes would be expressed as P0Y7M2DT2H30M0S. Truncated representations are allowed provided they conform to ISO 8601 format. </xs:documentation>
+													<xs:documentation xml:lang="en">Time periods, i.e. specific durations of time, can be represented by supplying two items of information: a start instant and a duration or a start instant and an end instant or an end instant and a duration. The OTA standards use the XML mapping that provides for two elements to represent the specific period of time; a startInstant and a duration.</xs:documentation>
+												</xs:annotation>
+											</xs:element>
+											<xs:element name="ShipDetails">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">Collection of cruise line preferences.</xs:documentation>
+												</xs:annotation>
+												<xs:complexType>
+													<xs:sequence>
+														<xs:element name="ShipCode" type="StringLength1to16">
+															<xs:annotation>
+																<xs:documentation xml:lang="en">Ship Code specific to cruise line.</xs:documentation>
+															</xs:annotation>
+														</xs:element>
+														<xs:element name="ShipName" type="StringLength0to64" minOccurs="0">
+															<xs:annotation>
+																<xs:documentation xml:lang="en">Ship Name.</xs:documentation>
+															</xs:annotation>
+														</xs:element>
+													</xs:sequence>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="RegionDetails" minOccurs="0">
+												<xs:annotation>
+													<xs:documentation xml:lang="en">Contains the region information for the sailing</xs:documentation>
+												</xs:annotation>
+												<xs:complexType>
+													<xs:sequence>
+														<xs:element name="RegionCode" type="StringLength1to8">
+															<xs:annotation>
+																<xs:documentation xml:lang="en">Specifies a region code as commonly defined by the cruise line.</xs:documentation>
+															</xs:annotation>
+														</xs:element>
+														<xs:element name="RegionName" type="StringLength1to32" minOccurs="0">
+															<xs:annotation>
+																<xs:documentation xml:lang="en">Specifies the region name as commonly defined by the cruise line.</xs:documentation>
+															</xs:annotation>
+														</xs:element>
+													</xs:sequence>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="PackageDescription" type="StringLength1to64"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="Errors" type="ErrorsType">
+					<xs:annotation>
+						<xs:documentation xml:lang="en">A collection of errors that prevented the processing of a message.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+			<xs:attributeGroup ref="ResponseGroup">
+				<xs:annotation>
+					<xs:documentation xml:lang="en">Used to identify requirements regarding the maximum data results sent.</xs:documentation>
+				</xs:annotation>
+			</xs:attributeGroup>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

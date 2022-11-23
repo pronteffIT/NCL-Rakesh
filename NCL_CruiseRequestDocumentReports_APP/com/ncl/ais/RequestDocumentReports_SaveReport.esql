@@ -1,0 +1,88 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE RequestDocumentReports_SaveReport
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseRequestDocumentReportsRQ;
+		DECLARE rReport REFERENCE TO InputRoot.XMLNSC.IssueDocs_OUT;
+		DECLARE rEnvReport REFERENCE TO rEnv.Temp.Message.Reports.Report[<];
+		
+		DECLARE DB ROW;
+		DECLARE cQuery, channel, resId, collectionId, groupId, agencyId, agentId, clientId, report, lang, email, fax, cExternalCodeInfo, cAdvisoryMsg CHARACTER '';
+		DECLARE bPayload BLOB;
+		
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Issue docs api response', 'xml', rEnv);
+		END IF;
+		
+		SET channel = COALESCE(rOrgMsg.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, '');
+		SET resId = COALESCE(rOrgMsg.*:ReservationID, '');
+		SET collectionId = COALESCE(rOrgMsg.*:CollectionID, '');
+		SET groupId = COALESCE(rOrgMsg.*:GroupID, '');
+		SET agencyId = COALESCE(rOrgMsg.*:Entity.*:AgencyID, '');
+		SET agentId = COALESCE(rOrgMsg.*:Entity.*:AgentID, '');
+		SET clientId = COALESCE(rOrgMsg.*:Entity.*:ClientID, '');
+		SET lang = COALESCE(rOrgMsg.*:Language, '');
+		SET email = rOrgMsg.*:EmailAddress;
+		SET fax = rOrgMsg.*:FaxNumber.(XMLNSC.Attribute)PhoneNumber;
+		
+		IF LENGTH(rReport.Errors.Error.ErrorCode) > 0 THEN
+			SET rEnvReport.status = 'ERROR';
+			SET rEnvReport.errCode = rReport.Errors.Error.ErrorCode;
+			SET rEnvReport.errMsg = rReport.Errors.Error.ErrorMessage;
+		ELSE
+			SET rEnvReport.status = 'OK';
+			SET rEnvReport.errCode = '0';
+		END IF;
+		
+		-- save report request in database
+		SET cQuery = 'INSERT INTO NCLSEA.NCL_DOC_PROCESSING_QUEUE PQ ' ||
+	         '(PQ.CHANNEL, PQ.RES_ID, PQ.COLLECTION_ID, PQ.AGENCY_ID, PQ.AGENT_ID, PQ.CLIENT_ID, PQ.REPORT_NAME, PQ.LANGUAGE_CODE, PQ.SUBJECT, PQ.MESSAGE, ' || 
+	         ' PQ.EMAIL, PQ.FAX_NUMBER, PQ.ERR_CODE, PQ.ERR_MESSAGE,  PQ.PROCESSING_COMPLETE, PQ.LAST_REQUEST_TIME) ' ||
+             ' VALUES( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATE)';
+        
+        IF STARTSWITH(rEnvReport.name, 'GROUP') AND LENGTH(groupId) > 3 THEN
+        	SET resId = groupId;
+        END IF;
+        
+        SET DB.result[] = PASSTHRU(cQuery VALUES(channel, resId, collectionId, agencyId, agentId, clientId, rEnvReport.name, lang, rEnvReport.name, rEnv.Temp.InputMsg,
+        										 email, fax, rEnvReport.errCode, rEnvReport.errMsg, rEnvReport.status));
+		
+		-- handle the errors
+		IF rEnvReport.errCode <> '0' THEN
+			SET rEnv.Temp.ReportValidationErrors = 'Y';
+			SET rEnvReport.sourceErrCode = rEnvReport.errCode;
+			
+			-- lookup advisory error code
+			-- get external error code from cache
+			SET cExternalCodeInfo = com.ncl.ais.utils.GetExternalCodeFromCache(channel || '#' || ExternalCodeType, rEnvReport.errCode, XC10CacheMap, XC10ConnectionConfig);
+			
+			IF COALESCE(cExternalCodeInfo, '') = '' OR STARTSWITH(cExternalCodeInfo, 'ERROR') THEN
+				-- trigger cache loader
+				SET OutputRoot.XMLNSC.CacheMetadata.Channel = channel;
+				SET OutputRoot.XMLNSC.CacheMetadata.ErrorCodeType = ExternalCodeType;
+				
+				-- PROPAGATE TO LABEL 'CACHE_LOAD';
+				
+				-- get external error code from database
+				SET cExternalCodeInfo = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(channel, rEnvReport.errCode, ExternalCodeType);
+				
+				IF LENGTH(cExternalCodeInfo) > 0 THEN
+					SET cAdvisoryMsg = SUBSTRING(SUBSTRING(cExternalCodeInfo AFTER '#1#') BEFORE '#2#');
+					SET rEnvReport.errCode = SUBSTRING(cExternalCodeInfo BEFORE '#1#');
+				END IF;
+				
+				IF LENGTH(cAdvisoryMsg) > 0 AND cAdvisoryMsg = 'Unhandled Error' THEN
+					SET rEnvReport.errMsg = 'Report: ' || rEnvReport.name || ' ErrMsg: ' || rEnvReport.errMsg;
+				ELSE
+					SET rEnvReport.errMsg = 'Report: ' || rEnvReport.name || ' ErrMsg: ' || cAdvisoryMsg;
+				END IF;
+			END IF;
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

@@ -1,0 +1,162 @@
+BROKER SCHEMA com.ncl.ais
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailBoardPackages_ShorexRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE querry CHARACTER;
+		DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseGetAvailOnBoardPackagesRQ;
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'GetAvailShorex Request', rEnv);
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';	
+		CREATE FIELD OutputRoot.XMLNSC.GetAvailShorex_IN AS rOut ;
+	       
+	    SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();   
+		--SET rOut.MsgHeader.SessionGUID = rEnv.SessionGUID;
+		SET rOut.MsgHeader.CallerInfo.UserInfo.Internal = '';
+		SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = FIELDVALUE(RefInReq.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+		SET rOut.SearchParams.PackageStartRange.From = RefInReq.*:PackageDateRange.*:PackageStartDate;
+		SET rOut.SearchParams.PackageStartRange.To = RefInReq.*:PackageDateRange.*:PackageEndDate;
+		SET rOut.SearchParams.ProductTypes.ProductType = FIELDVALUE(RefInReq.*:OnBoardActivity);
+		
+		IF LENGTH(FIELDVALUE(RefInReq.*:PackageType)) > 0 THEN
+			SET rOut.SearchParams.PackageTypes.PackageType = FIELDVALUE(RefInReq.*:PackageType);
+		END IF;
+		 
+		IF LENGTH(RefInReq.*:CalculatePrice)> 0 THEN
+			
+			SET rEnv.CalcPrice = RefInReq.*:CalculatePrice;
+		ELSE
+			SET rEnv.CalcPrice = 'N';
+		END IF;
+		
+		SET rOut.SearchOptions.CalcPrices = rEnv.CalcPrice;
+		--SET rOut.ResShellRef =  rEnv.TempResID;
+		SET rOut.ResShellRef = rEnv.ReservationID;
+		
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseGetAvailBoardPackages_ShorexResponse
+	
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,refOut,rOutPackage,rOutGuest,rOutWarning REFERENCE TO Environment.Variables;
+		DECLARE RefInReq REFERENCE TO rEnv.InReq.*:NCL_CruiseGetAvailOnBoardPackagesRQ;
+		DECLARE inRefShorex REFERENCE TO InputRoot.XMLNSC.*:GetAvailShorex_OUT;
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseGetAvailOnBoardPackagesRS AS refOut;
+		
+		-- This Proc creates/copy the attributes for Root Element
+		CALL com.ncl.ais.utils.CopyAttributes (RefInReq,refOut);
+		CREATE FIELD refOut.ns:Success;
+		CREATE FIELD refOut.ns:Warnings;
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			
+			DECLARE rExcp REFERENCE TO InputExceptionList;
+			DECLARE cErrorText CHARACTER;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking Backend', rEnv);
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			SET refOut.ns:Errors.ns:Error = COALESCE(cErrorText,'System error from back end. Please try again later');
+			SET refOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+			SET refOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+			SET refOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+			
+		RETURN TRUE;	
+		
+		END IF;	
+	
+		IF EXISTS(inRefShorex.Errors[] ) THEN
+			-- This Proc Creates the Warnings Section
+			CALL MapWarnings(inRefShorex,rEnv,refOut);
+			
+		ELSE	
+			
+			IF (LogPayLoad) THEN
+				-- Add response msg to log event
+				DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Avail Shorex message', 'xml', rEnv);
+			END IF;
+			
+			CREATE FIELD refOut.Packages;
+			FOR inRefAvailPackg AS inRefShorex.AvailPackages.AvailPackage[] DO
+				
+				CREATE LASTCHILD OF refOut.Packages AS rOutPackage NAME 'Package';
+				SET rOutPackage.(XMLNSC.Attribute)ID = inRefAvailPackg.*:Definition.*:PackageID;
+				SET rOutPackage.Type = inRefAvailPackg.*:Definition.*:Components.*:Component.*:Type;
+				SET rOutPackage.Name = inRefAvailPackg.*:Definition.*:PkgComment;
+				SET rOutPackage.Code = inRefAvailPackg.*:Definition.*:Type;
+				SET rOutPackage.DateRange.PackageStartDate = CAST(CAST(inRefAvailPackg.*:Definition.*:Vacation.*:From AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT 'IU');
+				
+				SET rOutPackage.DateRange.PackageEndDate = CAST(CAST(inRefAvailPackg.*:Definition.*:Vacation.*:To AS TIMESTAMP FORMAT 'IU') AS CHARACTER FORMAT 'IU');
+		
+				FOR inRefGuestTotal AS inRefAvailPackg.PriceTotals.GuestTotal[] DO
+					
+					CREATE LASTCHILD OF rOutPackage.Price AS rOutGuest NAME 'Guest';
+					SET rOutGuest.GuestRefNumber = inRefGuestTotal.*:GuestSeqN;
+					
+					IF rEnv.CalcPrice = 'Y' THEN
+						
+						SET rOutGuest.PackagePrice.(XMLNSC.Attribute)Amount = COALESCE(CAST(CAST(inRefGuestTotal.PriceTotal AS DECIMAL)*100 AS INTEGER),0);
+						
+					END IF;
+					
+					--SET rOutGuest.PackagePrice.(XMLNSC.Attribute)CurrencyCode = rEnv.agencyCurrency;
+					SET rOutGuest.PackagePrice.(XMLNSC.Attribute)CurrencyCode = rEnv.AgencyInfo.DEFAULT_CURRENCY;
+				END FOR;
+				
+			END FOR;
+			
+		END IF;	
+		
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise GetAvailOnBoardPackages Response_GetShorex', 'xml', rEnv);
+		END IF;
+		-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+	RETURN TRUE;
+	
+	END;
+
+
+END MODULE;
+
+CREATE PROCEDURE MapWarnings ( IN rInPut REFERENCE ,IN rEnv REFERENCE ,INOUT refOut REFERENCE )
+ 	BEGIN
+	
+		DECLARE rInErrors,rOutWarning REFERENCE TO rInPut.Errors;
+		DECLARE type CHARACTER '3';
+		DECLARE BkingChnlCompCd CHARACTER rEnv.InReq.*:NCL_CruiseGetAvailOnBoardPackagesRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		FOR rError AS rInErrors.*:Error[] 
+		DO
+			CREATE LASTCHILD OF refOut.ns:Warnings AS rOutWarning IDENTITY ns:Warning;					
+			IF rError.ErrorSeverity='W' OR rError.ErrorSeverity='I'	THEN
+				SET type = '2';
+			END IF;
+			IF rError.ErrorMessage IS NULL THEN
+				CALL com.ncl.ais.utils.getAdvisoryCode(rError.ErrorCode,BkingChnlCompCd,rEnv);
+			END IF;	
+			-- Map warnings to error
+			DECLARE ErrorDesc CHARACTER COALESCE(rError.ErrorMessage,SUBSTRING(rEnv.Temp.FinalResp.DESCRIPTION FROM 1 FOR 64));
+		
+			SET rOutWarning = ErrorDesc;
+			SET rOutWarning.(XMLNSC.Attribute)Code = COALESCE(rError.ErrorCode,rEnv.Temp.FinalResp.EXTERNAL_CODE, 12228);
+			SET rOutWarning.(XMLNSC.Attribute)ShortText = COALESCE(ErrorDesc,'System error from backend Try Later');
+			SET rOutWarning.(XMLNSC.Attribute)Type = type;
+			
+		END FOR;			
+		
+ END;
+	

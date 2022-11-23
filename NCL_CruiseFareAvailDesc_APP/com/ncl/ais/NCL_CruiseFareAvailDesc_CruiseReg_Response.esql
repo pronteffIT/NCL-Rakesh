@@ -1,0 +1,97 @@
+
+BROKER SCHEMA com.ncl.ais
+
+
+CREATE COMPUTE MODULE NCL_CruiseFareAvailDesc_CruiseReg_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE rFareAvailReq REFERENCE TO rEnv.Temp.Message.NCL_CruiseFareAvailDescRQ;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRegistrationRS;
+		DECLARE FareCode CHARACTER FIELDVALUE(rFareAvailReq.*:FareCodeOptions.*:FareCodeOption.(XMLNSC.Attribute)FareCode);
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseFareAvailDescRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rFareAvailReq, rOut);
+		
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+			-- Casting the CruiseRegistration Response to XML
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.BLOB CCSID 1208 ENCODING 546);
+			CREATE LASTCHILD OF rEnv.Temp AS rIn DOMAIN('XMLNSC') PARSE(bPayload,546,1208,'BLOB', 'XMLNSC');
+			MOVE rIn TO rEnv.Temp.XMLNSC.*:NCL_CruiseRegistrationRS;
+		END IF;
+		--Verify the status of Cruise Registration Response
+		IF EXISTS(rIn.*:Warnings[]) THEN
+			SET rOut.Warnings = rIn.*:Warnings;
+
+		ELSEIF EXISTS(rIn.*:Errors[]) THEN
+			SET rOut.Errors = rIn.*:Errors;
+
+		ELSEIF EXISTS(rIn.*:Success[]) THEN
+			CREATE FIELD rOut.ns:Success;
+			-- Check for GroupFareCode or RQcollection FareCode
+			IF rEnv.isRQCollection OR rEnv.isGrpFareCd THEN
+
+				SET rOut.ns:FareCodeOptions.ns:FareCodeOption.(XMLNSC.Attribute)FareCode = FareCode;
+				SET rOut.ns:FareCodeOptions.ns:FareCodeOption.(XMLNSC.Attribute)FareCodeDescription = 'GROUP_FARE';
+				SET rOut.ns:FareCodeOptions.ns:FareCodeOption.(XMLNSC.Attribute)Status = '36';
+				CREATE FIELD rOut.ns:FareCodeOptions.ns:FareCodeOption.FareRemark VALUE GetFareRemark(rEnv);
+
+			ELSE
+				-- go for DB call to get the Fare Description
+				DECLARE DescQry,Description CHARACTER;
+				SET DescQry = 'SELECT DETAILS.DESCRIPTION FROM SEA.EXTERNAL_XREF_DETAIL DETAILS INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE
+				FROM SEA.EXTERNAL_XREF XREF INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where
+				NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE = ? and EXTERNAL_CODE = ?';
+
+				SET rEnv.Description = PASSTHRU(DescQry VALUES('SABREXML','PromosToDisplay',rEnv.FareCode));
+				SET Description = rEnv.Description.DESCRIPTION;
+				IF LENGTH(Description) > 0 THEN
+					SET rOut.ns:FareCodeOptions.ns:FareCodeOption.(XMLNSC.Attribute)FareCode = FareCode;
+					SET rOut.ns:FareCodeOptions.ns:FareCodeOption.(XMLNSC.Attribute)FareCodeDescription = Description;
+					SET rOut.ns:FareCodeOptions.ns:FareCodeOption.(XMLNSC.Attribute)Status = '36';
+					SET rOut.ns:FareCodeOptions.ns:FareCodeOption.FareRemark = GetFareRemark(rEnv);
+				ELSE
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '10019';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Invalid FareCode';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+				END IF;
+			END IF;
+		END IF;
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise FareAvailDesc Response', 'xml', rEnv);
+		END IF;	
+		-- Make the output message as BLOB to avoid XML parsing errors that show up for native character data
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		RETURN TRUE;
+	END;
+	CREATE FUNCTION GetFareRemark ( IN rEnv REFERENCE) RETURNS CHARACTER
+	BEGIN
+		DECLARE Result REFERENCE TO rEnv;
+		DECLARE FareRemarkQuery,FareRemark CHARACTER;
+		IF rEnv.isRQCollection THEN
+			SET FareRemarkQuery = 'select collection_name from agency_sail_program where collection_id = ?';
+			SET FareRemark = THE(SELECT ITEM A.collection_name From Database.agency_sail_program AS A where A.collection_id = rEnv.FareCode);
+
+		ELSEIF rEnv.isGrpFareCd THEN
+			SET FareRemarkQuery = 'select group_name from group_booking where group_id=?';
+			SET FareRemark = THE(SELECT ITEM A.group_name From Database.group_booking AS A where A.group_id = rEnv.FareCode);
+
+		ELSE
+			SET FareRemarkQuery = 'SELECT to_char(details.long_description) as COMMENTS FROM SEA.EXTERNAL_XREF_DETAIL DETAILS INNER JOIN
+			(SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF INNER JOIN SEA.EXTERNAL_NAMES NAMES ON
+			XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID Where NAMES.EXTERNAL_NAME = ''SABREXML'') TEMP_JOIN ON
+			DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=''PromosToDisplay'' AND DETAILS.EXTERNAL_CODE=?';
+
+			SET rEnv.FareRemark = PASSTHRU(FareRemarkQuery VALUES(rEnv.FareCode));
+			SET FareRemark = COALESCE(rEnv.FareRemark.COMMENTS);
+		END IF;
+
+		RETURN FareRemark;
+	END;
+
+END MODULE;

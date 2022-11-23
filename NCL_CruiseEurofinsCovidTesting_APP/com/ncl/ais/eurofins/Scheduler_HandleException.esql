@@ -1,0 +1,42 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+
+DECLARE LOG_TO_NEWRELIC EXTERNAL BOOLEAN true;
+DECLARE EMAIL_FROM EXTERNAL CHARACTER '';
+DECLARE EMAIL_TO_ERROR EXTERNAL CHARACTER '';
+CREATE COMPUTE MODULE Scheduler_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv,rOutResp REFERENCE TO Environment.Variables;
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;		
+			
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE cErrorText CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+		SET rEnv.STATUS=cErrorText;
+		--SEND NR EVENT
+		IF LOG_TO_NEWRELIC 
+		THEN
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;
+		--BUILD EMAIL
+		SET OutputRoot = NULL;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		IF EXISTS(rEnv.Temp.Headers.MQMD[]) THEN
+			SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		END IF;
+				
+		DECLARE rEmailReq REFERENCE TO OutputRoot;
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmailReq;
+		SET rEmailReq.EmailAddress.FromAddress = EMAIL_FROM;
+		SET rEmailReq.EmailAddress.ToAddress = EMAIL_TO_ERROR;
+		SET rEmailReq.EmailSubject = 'Eurofins Registration Status Scheduler  :Internal Error';
+		SET rEmailReq.EmailContentType = 'text/html;charset=utf-8';
+		SET rEmailReq.EmailContent = cErrorText;
+		RETURN TRUE;
+	END;	
+END MODULE;

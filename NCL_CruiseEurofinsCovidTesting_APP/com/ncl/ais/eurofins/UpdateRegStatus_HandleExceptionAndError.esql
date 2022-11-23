@@ -1,0 +1,44 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+
+DECLARE nr NAMESPACE  'http://com.ncl.newrelic';
+CREATE COMPUTE MODULE UpdateRegStatus_HandleExceptionAndError
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv,rOut REFERENCE TO Environment.Variables;
+		DECLARE cErrorText,cStatus,context CHARACTER;
+		SET cStatus = InputRoot.HTTPResponseHeader."X-Original-HTTP-Status-Code";
+		SET context = CAST(InputLocalEnvironment.HTTP.Response.UserContext AS CHAR CCSID 1208);			
+
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, 'Internal IIB Error, please check the logs');
+		ELSE
+			SET cErrorText = CAST(InputRoot.BLOB.BLOB AS CHAR CCSID 1208);			
+		END IF;
+		
+		DECLARE rEmailReq REFERENCE TO OutputRoot;
+		SET OutputRoot = NULL;
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmailReq;
+		SET rEmailReq.EmailAddress.FromAddress = EMAIL_FROM;
+		SET rEmailReq.EmailAddress.ToAddress = EMAIL_TO_ERROR;
+		SET rEmailReq.EmailSubject = 'Eurofins Registration Status Scheduler  :Internal Error';
+		SET rEmailReq.EmailContentType = 'text/html;charset=utf-8';
+		SET rEmailReq.EmailContent = REPLACE(cErrorText,EUROFINS_PASSWORD,'********');
+		PROPAGATE TO TERMINAL 'out1';
+		
+		SET OutputRoot = NULL;		
+		CREATE FIELD OutputRoot.XMLNSC.nr:NewRelicInsightEvent AS rOut;
+		SET rOut.(XML.NamespaceDecl)xmlns=nr;
+		SET rOut.nr:Events[1].nr:EventType = 'EUROFINS_GUEST_UPDATE'; 
+		SET rOut.nr:Events[1].nr:Fields[1].nr:FieldName ='SEARCH_FILTER';
+		SET rOut.nr:Events[1].nr:Fields[1].nr:FieldValue = REPLACE(context,EUROFINS_PASSWORD,'********');
+		SET rOut.nr:Events[1].nr:Fields[2].nr:FieldName ='ERROR_MSG';
+		SET rOut.nr:Events[1].nr:Fields[2].nr:FieldValue = REPLACE(cErrorText,EUROFINS_PASSWORD,'********') ;
+		SET rOut.nr:Events[1].nr:Fields[3].nr:FieldName ='STATUS';
+		SET rOut.nr:Events[1].nr:Fields[3].nr:FieldValue = COALESCE(cStatus,'ERROR');
+		RETURN TRUE;
+	END;
+	
+END MODULE;

@@ -1,0 +1,195 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:complexType name="DbSearchOptions">
+		<xs:annotation>
+			<xs:documentation>Options on DbSearch message level</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="MaxRows" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:positiveInteger">
+						<xs:totalDigits value="9"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ActiveOnly" type="Boolean" default="Y" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - only currently active records are returned. Inactive records may be needed for working with past bookings.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CountOnly" type="Boolean" minOccurs="0"/>
+			<xs:element name="SortItems" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SortItem" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="NodeName" type="NodeName">
+										<xs:annotation>
+											<xs:documentation>Refers to the one of nodes which are present in the current message</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="OrderBy">
+										<xs:annotation>
+											<xs:documentation>ORDER BY string for the database query. If Mode=Columns the string should follow Oracle syntax
+rules and refer to columns, for example, 'AGENCY_ID
+desc, RES_ID asc'. If Mode=Nodes the string refer to node names in the ouput message with optional ASC/DESC 	modificators, for example, 'AgencyID desc, ResID asc'.
+Default can be set in the INI file of the server.
+Mode=Columns is deprecated and is not supported in future Seaware versions.</xs:documentation>
+										</xs:annotation>
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:string">
+													<xs:attribute name="Mode">
+														<xs:simpleType>
+															<xs:restriction base="xs:string">
+																<xs:enumeration value="Columns"/>
+																<xs:enumeration value="Nodes"/>
+															</xs:restriction>
+														</xs:simpleType>
+													</xs:attribute>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="IncludeElements" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Provides a list of additional nodes that should be included into result set (see specific nodes annotations)</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:list itemType="NodeName"/>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="FilterBySets" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Additional filter is set by user defineable access codes for the specific table. The code to be used is defined based on sessions context </xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IncludeDisplayRanks" type="Boolean" default="N" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If Y - the DisplayRank attribute will be populated in result nodes.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MaxDuration" type="xs:integer" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Max total duration of DBSearch processing (secs per table); 0 means no limits. If not provided, the value is taken from the setting DbSearchMaxDuration</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MaxCost" type="xs:integer" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Max cost value of query to be processed; 0 means no limits If not provided, the value will be taken from the setting DbSearchMaxCost
+if the table is a part of the setting DbSearchCalcCostNodes.
+</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element default="N" minOccurs="0" name="ForceTranslation" type="Boolean">
+				<xs:annotation>
+					<xs:documentation>Forces attempt at translation of field values even when they are not marked with Translation attribute. Translated value in this case will replace the original value. If the list of fields to be translated is not specified, all fields will be translated.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SetsRowType" type="RowType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Overrides RowType from DbSearch definition for FilterBySets feature.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="NodeOptions">
+		<xs:annotation>
+			<xs:documentation>Options on individual node level, which are supported with QueryDef-style definitions.</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="MaxRows" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Max number of rows (records) to be read by the query.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:positiveInteger">
+						<xs:totalDigits value="9"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ActiveOnly" type="Boolean" default="Y" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If 'Y' - only currently active records are returned. Inactive records may be needed for working with past bookings.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="IncludeElements" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Names of output tags, which should be included into the output message.</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:list itemType="NodeName"/>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="ExcludeElements" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Names of output tags, which should be excluded from the output message. Can be
+						used to make the output message shorter. Also excluding unneeded elements can improve
+						perfromance of some complex queries.
+					</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:list itemType="NodeName"/>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="OrderBy" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Requests ordering of records in the otput message based on output tag names. Each
+						tag name can be preceeded by '+' (ASC) or '-' (DESC) without space. Overrides sort order
+						specified in Options.SortItems.
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FilterBySets" type="Boolean" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Additional filter is set by user defineable access codes for the specific table.
+						The code to be used is defined based on sessions context
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="DbSearchBase_IN">
+		<xs:annotation>
+			<xs:documentation>Base type for DbSearch_IN messages (built-in and custom)</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="MsgHeader" type="MsgHeader"/>
+			<xs:element name="Options" type="DbSearchOptions" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DbSearchBase_OUT">
+		<xs:annotation>
+			<xs:documentation>Base type for DbSearch_OUT messages (built-in and custom)</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="MsgHeader" type="MsgHeader"/>
+			<xs:element name="Counts" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Provides records quantity for CountOnly mode</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="CountItem" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="NodeName" type="NodeName"/>
+									<xs:element name="Count" type="xs:nonNegativeInteger"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Errors" type="Errors" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

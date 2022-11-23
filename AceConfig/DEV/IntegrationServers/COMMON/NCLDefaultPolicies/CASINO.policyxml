@@ -1,0 +1,18 @@
+<?xml version="1.1" encoding="UTF-8" standalone="yes"?>
+<policies>
+  <policy policyType="MQEndpoint" policyName="CASINO">
+    <CCDTUrl></CCDTUrl>
+    <MQApplName></MQApplName>
+    <SSLCertificateLabel></SSLCertificateLabel>
+    <SSLCipherSpec></SSLCipherSpec>
+    <SSLPeerName></SSLPeerName>
+    <channelName>ACE.SVRCONN</channelName>
+    <connection>CLIENT</connection>
+    <destinationQueueManagerName>HDQPSWQAQM</destinationQueueManagerName>
+    <listenerPortNumber>14142</listenerPortNumber>
+    <queueManagerHostname>192.168.1.4</queueManagerHostname>
+    <reconnectOption>default</reconnectOption>
+    <securityIdentity></securityIdentity>
+    <useSSL>FALSE</useSSL>
+  </policy>
+</policies>

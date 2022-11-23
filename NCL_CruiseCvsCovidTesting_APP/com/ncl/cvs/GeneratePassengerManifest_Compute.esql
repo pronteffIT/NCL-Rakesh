@@ -1,0 +1,124 @@
+BROKER SCHEMA com.ncl.cvs
+DECLARE COMPANY_CODE EXTERNAL CHARACTER '';
+DECLARE CLIENT_CO_NAME EXTERNAL CHARACTER  '';
+DECLARE PATIENT_INDICATOR EXTERNAL CHARACTER  '';
+DECLARE OFFER_PRETRAVEL_TESTING EXTERNAL CHARACTER  '';
+DECLARE OFFER_EMBARK_TESTING EXTERNAL CHARACTER  '';
+DECLARE OFFER_DEBARK_TESTING EXTERNAL CHARACTER '';
+DECLARE PRETRAVEL_LEAD_TIME EXTERNAL CHARACTER  '';
+DECLARE COMPANY_PREFIX EXTERNAL CHARACTER  '';
+DECLARE FILE_NAME_TEMPLATE EXTERNAL CHARACTER  '';
+DECLARE LOG_TO_NEWRELIC EXTERNAL BOOLEAN TRUE;
+DECLARE FILE_DIRECTORY EXTERNAL CHARACTER  '';
+DECLARE cQuery CHARACTER 'select 
+				rg.guest_id,
+				REPLACE(REGEXP_REPLACE(C.FIRST_NAME, ''[^[:print:]]'', ''''),''|'','''') AS FIRST_NAME,
+			    REPLACE(REGEXP_REPLACE(C.LAST_NAME, ''[^[:print:]]'', ''''),''|'','''') AS LAST_NAME,
+			    TO_CHAR(c.birthday,''YYYYMMDD'') AS dob,
+			    (select zip from household_address ha 
+			            where ha.household_id=c.household_id 
+			                and ha.zip is not null 
+			                and rownum=1) as zip,
+			    ''Y'' AS covid_patient_auth,
+			    TO_CHAR(sh.sail_date_from,''YYYYMMDD'') AS sail_date_from,
+                TO_CHAR(sh.sail_date_to,''YYYYMMDD'') AS sail_date_to,
+                s.ship_code,
+			    s.ship_brand,
+			    s.ship_name,
+			    sh.port_from as port_name_from,
+			    sh.port_to as port_name_to,
+			    rg.guest_id			
+			from package_definition pd,
+			     sail_header sh,
+			     res_package rp,
+			     res_header rh,
+			     res_guest rg,
+			     client c,
+			     ship s     
+			where 
+			pd.sail_id=sh.sail_id 
+			and pd.is_active=''Y''
+			and sh.is_active=''Y'' 
+			and sh.sail_id=?
+			and rp.package_id=pd.package_id
+			and rh.res_id=rp.res_id
+			and rh.res_status=''BK''
+			and rg.res_id=rp.res_id
+			and rg.guest_id=rp.guest_id
+			and c.client_id=rg.client_id
+			and s.ship_code=sh.ship_code';
+
+CREATE COMPUTE MODULE GeneratePassengerManifest_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.SAIL;
+		DECLARE sailID CHARACTER rIn.SAIL_ID;
+		DECLARE PROVIDER_NAME CHARACTER rIn.PROVIDER_NAME;
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		DECLARE rOut,rHeader,rRecord REFERENCE TO OutputRoot;
+		DECLARE cErrorMsg CHARACTER;
+		
+		SET rEnv.Temp.PassengerManifest[] = PASSTHRU(cQuery,sailID);
+		IF NOT EXISTS(rEnv.Temp.PassengerManifest.GUEST_ID[]) THEN
+			RETURN FALSE;
+		END IF;		
+		CALL NCL_INS_MANIFEST_EXCH_LOG(CAST(sailID AS DECIMAL DEFAULT 0),PROVIDER_NAME,cErrorMsg);
+		-- Generate FILE only for CVS
+		IF PROVIDER_NAME <> 'CVS' THEN
+			RETURN FALSE;
+		END IF;
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		--NCLH_*_GUESTELIG_YYYYMMDDHHMM.txt
+		DECLARE YYYYMMDDHHMM CHARACTER  CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'yyyyMMddHHmm');
+		DECLARE cFileName CHARACTER;
+		SET cFileName = REPLACE(FILE_NAME_TEMPLATE,'#SAILID#',sailID);
+		SET cFileName = REPLACE(cFileName,'#TIMESTAMP#',YYYYMMDDHHMM);
+		SET OutputRoot.MQRFH2.usr.WMQFTEFileName = 	cFileName;
+		SET OutputRoot.MQRFH2.usr.SAIL_ID = sailID;
+		SET OutputRoot.MQRFH2.usr.destFileName = cFileName;
+		IF UPPER(PROVIDER_NAME)='CVS' THEN
+			SET OutputLocalEnvironment.Destination.File.Directory = FILE_DIRECTORY || 'To_HDMS';	
+		ELSE
+			SET OutputLocalEnvironment.Destination.File.Directory = FILE_DIRECTORY || 'To_' || PROVIDER_NAME;	
+		END IF;		
+		SET OutputLocalEnvironment.Destination.File.Name = cFileName;
+		SET Environment.Variables.FILE_NAME = cFileName;
+		SET Environment.Variables.SAIL_ID =  sailID;
+		CREATE LASTCHILD OF rOut DOMAIN('DFDL') NAME 'DFDL';
+		MOVE rOut TO OutputRoot.DFDL;		
+		CREATE LASTCHILD OF rOut.CVS_MANIFEST AS rHeader NAME 'header';
+		
+		FOR rec AS rEnv.Temp.PassengerManifest[]
+		DO
+			CREATE LASTCHILD OF rOut.CVS_MANIFEST AS rRecord NAME 'record';
+			SET rRecord.COMPANY_CODE = COMPANY_CODE;
+			SET rRecord.CLIENT_CO_NAME = CLIENT_CO_NAME;
+			SET rRecord.PATIENT_INDICATOR = PATIENT_INDICATOR;
+			SET rRecord.REF_ID = COMPANY_PREFIX || '-' || CAST(rec.GUEST_ID AS CHAR);
+			SET rRecord.PATIENT_FNAME = rec.FIRST_NAME;
+			SET rRecord.PATIENT_LNAME = rec.LAST_NAME;
+			SET rRecord.PATIENT_DOB =	rec.DOB;
+			SET rRecord.PATIENT_ZIPCODE = rec.ZIP;
+			SET rRecord.COVID_PATIENT_AUTH = rec.COVID_PATIENT_AUTH;
+			SET rRecord.OFFER_PRETRAVEL_TESTING = OFFER_PRETRAVEL_TESTING;
+			SET rRecord.OFFER_EMBARK_TESTING =OFFER_EMBARK_TESTING;
+			SET rRecord.OFFER_DEBARK_TESTING = OFFER_DEBARK_TESTING;
+			SET rRecord.PRETRAVEL_LEAD_TIME =PRETRAVEL_LEAD_TIME;
+			SET rRecord.SAIL_DATE = rec.SAIL_DATE_FROM;
+			SET rRecord.RETURN_DATE = rec.SAIL_DATE_TO;
+			SET rRecord.SHIP_BRAND = rec.SHIP_BRAND;
+			SET rRecord.SHIP_NAME = rec.SHIP_CODE;
+			SET rRecord.EMBARK_PORT_NAME = rec.PORT_NAME_FROM;
+			SET rRecord.DEBARK_PORT_NAME = rec.PORT_NAME_TO;
+			SET rRecord.GROUP = sailID;
+		END FOR;
+		SET rEnv.Temp = NULL;
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE NCL_INS_MANIFEST_EXCH_LOG (
+	    IN p_sail_id    DECIMAL,
+	    IN p_provider_cd  CHARACTER,	    
+	    OUT p_error_txt   CHARACTER
+	)	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_INS_MANIFEST_EXCH_LOG";
+END MODULE;

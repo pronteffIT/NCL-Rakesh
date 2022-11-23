@@ -1,0 +1,31 @@
+BROKER SCHEMA com.ncl.ais.eurofins
+CREATE COMPUTE MODULE TrustOne_ValidateGuest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE to Environment.Variables;
+		DECLARE rIn REFERENCE to InputRoot.XMLNSC.root;
+		PROPAGATE TO LABEL 'GET_JWT_TOKEN';
+		IF NOT EXISTS(rEnv.JWT_TOKEN[]) THEN
+			RETURN FALSE;
+		END IF;
+		SET OutputLocalEnvironment.Destination.HTTP.UserContext = CAST(rEnv.GUEST_ID AS BLOB CCSID 1208 );
+		SET OutputRoot.HTTPRequestHeader."Authorization"  = 'Bearer '|| rEnv.JWT_TOKEN;
+		IF COALESCE(rIn.search,'') <> '' THEN
+			SET OutputLocalEnvironment.Destination.HTTP.QueryString.search = rIn.search;
+		END IF;
+		IF COALESCE(rIn.from,'') <> '' THEN
+			SET OutputLocalEnvironment.Destination.HTTP.QueryString.from = rIn.from;
+		END IF;
+		IF COALESCE(rIn.to,'') <> '' THEN
+			SET OutputLocalEnvironment.Destination.HTTP.QueryString.to = rIn.to;
+		END IF;
+		IF COALESCE(rIn.full,'') <> '' THEN
+			SET OutputLocalEnvironment.Destination.HTTP.QueryString.full = rIn.full;
+		END IF;
+		IF COALESCE(rIn.status,'') <> '' THEN
+			SET OutputLocalEnvironment.Destination.HTTP.QueryString.status = rIn.status;
+		END IF;
+		RETURN TRUE;
+	END;
+
+END MODULE;

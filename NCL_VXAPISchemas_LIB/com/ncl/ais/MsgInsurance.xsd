@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<!---->
+	<!--Seaware Insurance interface-->
+	<!---->
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<!---->
+	<xs:simpleType name="TransmissionID">
+		<xs:annotation>
+			<xs:documentation>An arbitrary string, which uniquely identifies batch of data for/from the insurance company</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="128"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="InsuranceStatus">
+		<xs:annotation>
+			<xs:documentation>Insurance request status</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="15"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="REQUESTED"/>
+			<xs:enumeration value="CONFIRMED"/>
+			<xs:enumeration value="CANCELED"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="InsuranceData">
+		<xs:annotation>
+			<xs:documentation>Insurance related information for a guest</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="ResID" type="RecordID"/>
+			<xs:element name="ClientID" type="RecordID"/>
+			<xs:element name="OldClientID" type="RecordID" minOccurs="0"/>
+			<xs:element name="InsuranceStatus" type="InsuranceStatus"/>
+			<xs:element name="InsuranceProductCode" type="LongCode">
+				<xs:annotation>
+					<xs:documentation>Corresponds to Insurance Addon code in Seaware</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InsuranceProductSubcode" type="LongCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Corresponds to Insurance Addon subcode in Seaware</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InsuranceProductClassifications" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Comma-separated list of Addon classification codes</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="2000"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="InsuranceProductDetails" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Currently is not populated</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="InsuranceEffDate" type="xs:dateTime">
+				<xs:annotation>
+					<xs:documentation>Date/time when insurance request was made (addon added to the reservation).</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InsuranceConfirmDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Date/time when insurance request was confirmed.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PremiumAmount" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Insurance price for the client.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TripTotal" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Total price of the trip</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CostTotal" type="Money" minOccurs="0"/>
+			<xs:element name="InsuredDateRange" type="DateRange" minOccurs="0"/>
+			<xs:element name="InsuredProductType" type="LongCode" minOccurs="0"/>
+			<xs:element name="InsuredProductDetails" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="100"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="CancellationType" type="LongCode" minOccurs="0"/>
+			<xs:element name="CancellationDate" type="xs:dateTime" minOccurs="0"/>
+			<xs:element name="PenaltyAmount" type="Money" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Cancellation penalty charged to the client.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TransmissionID" type="TransmissionID" minOccurs="0"/>
+			<xs:element name="ExchangeStatus" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>NEW, MOD or SENT</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="LongCode">
+						<xs:enumeration value="NEW"/>
+						<xs:enumeration value="MOD"/>
+						<xs:enumeration value="SENT"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="PaxInfo" minOccurs="0">
+				<xs:complexType>
+					<xs:all>
+						<xs:element name="FirstName" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="MiddleName" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="LastName" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="30"/>
+									<xs:whiteSpace value="collapse"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Birthday" type="xs:date" minOccurs="0"/>
+						<xs:element name="Address" minOccurs="0">
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Street" minOccurs="0">
+										<xs:simpleType>
+											<xs:restriction base="xs:string">
+												<xs:maxLength value="200"/>
+												<xs:whiteSpace value="collapse"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:element>
+									<xs:element name="City" type="CityName" minOccurs="0"/>
+									<xs:element name="State" type="StateCode" minOccurs="0"/>
+									<xs:element name="Country" type="CountryCode" minOccurs="0"/>
+									<xs:element name="ZIP" type="ZipCode" minOccurs="0"/>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:all>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!---->
+	<xs:element name="ManageInsuranceData_IN">
+		<xs:annotation>
+			<xs:documentation>Insurance data management</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Action">
+					<xs:complexType>
+						<xs:choice>
+							<xs:element name="GetNewData">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="TransmissionID" type="TransmissionID">
+											<xs:annotation>
+												<xs:documentation>An arbitrary string, which uniquely identifies batch of data for/from the insurance company.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="MaxNofRecords" type="xs:positiveInteger" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Max # of records, which should be transmited, if not set then all new updates will be returned.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="IncludeAllGuests" type="Boolean" default="N" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If 'Y' then records for all guests for changed bookings will be included, otherwise - only for changed guests.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="IncludeResShell" type="Boolean" default="N" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If 'N' - ResShell node is not provided in the output message.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Used only if IncludeResShell is set to 'Y'.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="GetSentData">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="TransmissionID" type="TransmissionID">
+											<xs:annotation>
+												<xs:documentation>An arbitrary string, which uniquely identifies batch of data for/from the insurance company.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="IncludeResShell" type="Boolean" default="N" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>If 'N' - ResShell node is not provided in the output message.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ResShellOptions" type="ResShellOptions" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>Used only if IncludeResShell is set to 'Y'.</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:choice>
+					</xs:complexType>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageInsuranceData_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ManageInsuranceData_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Action" minOccurs="0">
+					<xs:complexType>
+						<xs:choice>
+							<xs:element name="GetNewData">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Item" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:all>
+													<xs:element name="InsuranceData" type="InsuranceData"/>
+													<xs:element name="ResShell" type="ResShell" minOccurs="0"/>
+												</xs:all>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="GetSentData">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Item" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:all>
+													<xs:element name="InsuranceData" type="InsuranceData"/>
+													<xs:element name="ResShell" type="ResShell" minOccurs="0"/>
+												</xs:all>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:choice>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

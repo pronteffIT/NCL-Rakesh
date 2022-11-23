@@ -1,0 +1,406 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_CREATE_AMENITYORDERITEMS_RESP';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER 3000;
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     StoreRequest
+ * Description       :     This module retrieves Client details from Seaware database
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/10/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateAmenityOrderItems_StoreRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rInmsg,rOut REFERENCE TO OutputLocalEnvironment;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		-- Variables for Error Handler 
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+--		-- Add metadata to log event. 
+--		CALL com.ncl.iib.log.CreateMetaData('AmenityOrderID', CAST(rIn.*:AmenityOrder.(XMLNSC.Attribute)ID AS CHAR), 'Amenity Order ID', rEnv);
+--		CALL com.ncl.iib.log.CreateMetaData('RequestorID', CAST(rIn.*:AmenityOrder.*:RequestorInfo.(XMLNSC.Attribute)ID AS CHAR), 'Requester ID', rEnv);
+--		CALL com.ncl.iib.log.CreateMetaData('RecipientID', CAST(rIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID AS CHAR), 'Recipient ID', rEnv);
+				
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+        CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID,COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+											   COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code,''),
+										 	   COALESCE(rIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID,''),
+										 	   COALESCE(rIn.*:AmenityOrder.*:RequestorInfo.(XMLNSC.Attribute)ID,''),'',rEnv);
+		
+		IF (LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateAmenityOrderItems request message', 'xml', rEnv);
+		END IF;
+		-- Backup the MQMD details
+		SET Environment.MQMD = InputRoot.MQMD;
+		-- Set Message expiry to 1/10th of a second
+		SET Environment.MQMD.Expiry = MSG_EXPIRY;
+		SET Environment.MQMD.Format = MQFMT_STRING;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP	
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN				
+			SET Environment.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+			
+		/** Backup Input message in environment **/	
+		CREATE FIELD rEnv.InMsg AS rInmsg;
+		CREATE LASTCHILD OF rInmsg DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET rInmsg.XMLNSC = InputRoot.XMLNSC;
+		
+		-- Pass MQMD details to ValidateBookingSource
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Validate Booking Source...', rEnv);
+		SET OutputRoot.MQMD = InputRoot.MQMD;
+		-- Begin building the request to Call ValidateBookingSource 
+		SET OutputRoot.XMLNSC.sc:VerifyAgencyRequest.sc:source = rIn.*:POS.*:Source;	
+		--SET OutputRoot.XMLNSC.sc:VerifyAgencyRequest.sc:source = rIn.*:POS;
+		
+		-- Log the ValidateBookingSource Request payload
+		--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'ValidateBookingSource request message', 'xml', rEnv);
+	
+		RETURN TRUE;
+	END;
+	
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+	
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     HandleException
+ * Description       :     This module logs the request message that has failed at
+ *							MQInput Node, using the logging framework
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/10/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateAmenityOrderItems_HandleException
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CALL CopyMessageHeaders();
+		-- Set Message expiry to 1/10th of a second
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		-- If no Reply To Queue mentioned, default to the queue defined in UDP
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 
+		THEN
+			SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET OutputRoot.MQMD.Format = MQFMT_STRING;
+
+		DECLARE rEnv, rOutResp, rOutErrors REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		--DECLARE errorMsg CHARACTER 'Unknown Error in Request';
+		DECLARE bPayload BLOB;
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+
+		DECLARE errorMsg CHARACTER COALESCE(rEnv.ErrorSummary.ErrorText, 'Unknown Error in Request');	
+			
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;			
+			SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+			--SET errorMsg = 'Invalid Request Message';
+
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayLoad)THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Invalid CruiseCreateAmenityOrderItems request message', 'xml', rEnv);
+			END IF;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Unhandled Exception in IIB :' || errorMsg, rEnv);
+		END IF;		
+		
+		-- Send the error response and end flow
+		--CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+		--SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOutResp IDENTITY sc:NCL_CruiseCreateAmenityOrderItemsRS;
+		
+		-- Copy root level attributes from environment if the exception occurred after Input Message was stored
+		IF EXISTS (rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ[])
+		THEN
+			DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+			CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rOutResp);
+		END IF;
+		
+		CREATE LASTCHILD OF rOutResp AS rOutErrors IDENTITY sc:Errors;
+		SET rOutErrors.sc:Error = errorMsg;
+		SET rOutErrors.sc:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOutErrors.sc:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOutErrors.sc:Error.(XMLNSC.Attribute)Type = 3;
+		
+		DELETE FIELD rEnv.ErrorSummary;
+		
+		-- Add response msg to log event
+		SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF (LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateAmenityOrderItems response message', 'xml', rEnv);
+		END IF;				
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+		
+		-- Copy Exception List etc before sending it to error handler
+		CALL CopyEntireMessage(); 
+					
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+/* ------------------------------------------------------------------------------------
+ *  ***********                            OWNER                              *********
+ * ------------------------------------------------------------------------------------
+ * COMPANY           :     Norwegian Cruise Line
+ * PROJECT           :     WESB-AIS Migration
+ * FLOW NAME         :     NCL_CruiseCreateAmenityOrderItems
+ * MODULE NAME       :     ProcessResponse
+ * Description       :     This module processes the response sent by ValidateBookingSource and
+ *							prepares the request to StoreAmenity Order if the agency is verified
+ *							
+ * ------------------------------------------------------------------------------------
+ *  ***********                      MODIFICATION HISTORY                     *********
+ * ------------------------------------------------------------------------------------
+ * Current Team Revision: $Revision$    
+
+ * VERSION  CRNUM       DATE       Author        Descr of Revision
+ * 1.0               11/10/2017   Prolifics      Initial version
+ * 1.1        
+ * ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseCreateAmenityOrderItems_ProcessResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rIn,rResp,rEnvXmlNsc,rWarn,rError,rOut, rOutMsg REFERENCE TO Environment.Variables;
+		--DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE bPayload BLOB;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		CREATE LASTCHILD OF rEnv AS rEnvXmlNsc DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF rEnvXmlNsc AS rResp IDENTITY sc:UpdateAmenityOrder_OUT;
+		DECLARE rAmenityOrderResp REFERENCE TO InputRoot.XMLNSC.UpdateAmenityOrder_OUT;
+		-- Copy root level attributes from environment
+		CALL com.ncl.ais.utils.CopyAttributes (rEnvInMsg, rResp);	
+		
+		-- Log the ValidateBookingSource Response payload
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'ValidateBookingSource response message', 'xml', rEnv);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Response received from ValidateBookingSource service...', rEnv);
+				
+		
+		DECLARE cTts CHARACTER CURRENT_GMTTIMESTAMP;
+		DECLARE cTs  CHARACTER;
+		DECLARE sailDate CHARACTER;
+		--DECLARE sailDate TIMESTAMP;
+		DECLARE queryResult ROW ;
+		DECLARE rVXReq, rAmenityOrder,rAmOrderHdr,rAmOrderItem,rAmOrderItems,rInvoiceItems,rInvoiceItem REFERENCE TO Environment.Variables;		
+		DECLARE rEnvIn REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateAmenityOrderItemsRQ;
+		DECLARE rEnvInAmOrder REFERENCE TO rEnvIn.*:AmenityOrder;
+		DECLARE rEnvInReqInfo REFERENCE TO rEnvInAmOrder.*:RequestorInfo;
+		DECLARE rEnvInAmOrderInfo REFERENCE TO rEnvInAmOrder.*:AmenityOrderInfo;
+		
+		-- Compute the sailDate		
+		-- SET queryResult = PASSTHRU('SELECT RH.SAIL_DATE_FROM FROM SEA.RES_HEADER RH WHERE RH.RES_ID=?',
+		--					rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);
+		
+		-- SET sailDate = queryResult.SAIL_DATE_FROM;
+			 
+		SET sailDate = THE(SELECT ITEM RH.SAIL_DATE_FROM FROM Database.SEA.RES_HEADER AS RH 
+						WHERE RH.RES_ID = rEnvIn.*:AmenityOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);
+				
+		-- Compute AmenityCount	
+		SET rEnv.InitialAmenityCount = com.ncl.ais.utils.GetAmenityCountByResID(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)ID);	 
+		
+		-- Convert the GMT Timestamp to the required format
+		SET cTs = SUBSTRING (cTts FROM 15 FOR 10)||'T'|| SUBSTRING (cTts FROM 26 FOR 12 ) || 'Z';
+		
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking StoreAmenity service...', rEnv);
+		
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		-- Prepare the request message to call Versonix Store Amenity API
+		CREATE FIRSTCHILD OF OutputRoot.XMLNSC TYPE XMLNSC.XmlDeclaration NAME 'XmlDeclaration'; 
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Version = '1.0'; 
+		SET OutputRoot.XMLNSC.(XMLNSC.XmlDeclaration)*.(XMLNSC.Attribute)Encoding = 'UTF-8';
+		
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rVXReq IDENTITY UpdateAmenityOrder_IN;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.sessionID,rVXReq);
+--		SET rVXReq.MsgHeader.Version = VersonixAPIVersion;
+--		SET rVXReq.MsgHeader.SessionGUID = rEnv.sessionID;
+		SET rVXReq.Options.Store = 'Y';
+		
+		CREATE LASTCHILD OF rVXReq AS rAmenityOrder IDENTITY AmenityOrder;
+		CREATE LASTCHILD OF rAmenityOrder AS rAmOrderHdr IDENTITY AmOrderHeader;	
+		
+		
+			
+		SET rAmOrderHdr.OrderID = rAmenityOrderResp.AmenityOrder.AmOrderHeader.OrderID; 
+		SET rAmOrderHdr.OrderDate = cTs; 			 
+		SET rAmOrderHdr.OrderStatus = com.ncl.ais.utils.FindVersonixCode(rEnvInAmOrder.(XMLNSC.Attribute)Status, 
+								COALESCE(rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC'));
+		SET rAmOrderHdr.OrderDescription = FIELDVALUE(rEnvInAmOrderInfo.*:OrderDescription);
+		SET rAmOrderHdr.Comments = ''; 
+		SET rAmOrderHdr.RequesterType = FIELDVALUE(rEnvInReqInfo.(XMLNSC.Attribute)OriginatorType);
+		SET rAmOrderHdr.RequesterID = COALESCE(CAST(rEnvInReqInfo.(XMLNSC.Attribute)ID AS INTEGER), 0); 
+		SET rAmOrderHdr.RequesterName = rEnvInReqInfo.*:Name.*:Surname; 
+		SET rAmOrderHdr.RequesterPhone = rEnvInReqInfo.*:Phone; 
+		SET rAmOrderHdr.RecipientType = 'FIT';
+		SET rAmOrderHdr.RecipientID = COALESCE(CAST(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)ID AS INTEGER), 0);
+		SET rAmOrderHdr.RecipientStatus = com.ncl.ais.utils.FindVersonixStatus(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)Status,
+											COALESCE(rEnvIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'NCLWEBC'));
+		SET rAmOrderHdr.OrderValid = rEnvInAmOrder.*:AmenityOrderInfo.*:ISOrderValid;
+		SET rAmOrderHdr.DispatchedDate = cTs;									
+		SET rAmOrderHdr.DispatchedOK = rEnvInAmOrder.*:AmenityOrderInfo.*:ISDispatchedOK; 
+		SET rAmOrderHdr.TerminationCompleted = rEnvInAmOrder.*:AmenityOrderInfo.*:ISTerminationCompleted;
+		SET rAmOrderHdr.GiftCardTo = rEnvInAmOrder.*:GiftCardInfo.*:GiftCardTo.*:Surname;
+		SET rAmOrderHdr.GiftCardMessage = rEnvInAmOrder.*:GiftCardInfo.*:GiftCardMessage;
+		SET rAmOrderHdr.ComplimentsOf = rEnvInAmOrder.*:GiftCardInfo.*:GiftCardComplimentsOf;
+		SET rAmOrderHdr.CancelRefundDone = rEnvInAmOrder.*:AmenityOrderInfo.*:ISRefundDoneAfterCancellation;
+		SET rAmOrderHdr.Currency = FIELDVALUE(rEnvInAmOrder.*:AmenityOrderInfo.*:Currency.(XMLNSC.Attribute)CurrencyCode);
+		SET rAmOrderHdr.InvoiceValid = rEnvInAmOrder.*:AmenityOrderInfo.*:ISInvoiceValid;
+		
+		CREATE LASTCHILD OF rAmenityOrder AS rAmOrderItems IDENTITY AmOrderItems;		
+	
+		FOR amenityItem AS rEnvInAmOrder.*:AmenityOrderItemsInfo.*:AmenityOrderItems.*:AmenityOrderItem[] 
+		DO			
+			CREATE LASTCHILD OF rAmOrderItems AS rAmOrderItem IDENTITY AmOrderItem;
+			-- TODO Mandatory fields. What should they be mapped to?
+			SET rAmOrderItem.AmOrderID = rAmenityOrderResp.AmenityOrder.AmOrderHeader.OrderID;
+			--SET rAmOrderItem.AmOrderID = rAmenityOrderResp.AmenityOrder.AmOrderHeader.OrderID;
+			--SET rAmOrderItem.AmOrderItemID = '';
+			
+			SET rAmOrderItem.AmCategory = amenityItem.*:AmenityCategory;
+			SET rAmOrderItem.AmenityType = amenityItem.(XMLNSC.Attribute)AmenityType;
+			SET rAmOrderItem.AmenityCode = amenityItem.*:AmenityCode;
+			SET rAmOrderItem.AmenityName = amenityItem.*:AmenityName;
+			SET rAmOrderItem.AmenitySubCode = amenityItem.*:AmenitySubCode;
+			SET rAmOrderItem.Quantity = amenityItem.*:Quantity;
+			SET rAmOrderItem.AmPlaceCode = amenityItem.*:AmenityPlaceCode;
+			SET rAmOrderItem.AmDeliveryType = amenityItem.*:AmenityItemDeliveryInfo.*:DeliveryType;
+			SET rAmOrderItem.DayDeliveryBasis = amenityItem.*:AmenityItemDeliveryInfo.*:DayDeliveryBasis;
+			SET rAmOrderItem.ItemDeliveryDay = COALESCE(CAST(amenityItem.*:AmenityItemDeliveryInfo.*:ItemDeliveryDay AS INTEGER), 0);
+			
+			--SET rAmOrderItem.ItemDeliveryTime = com.ncl.ais.utils.ExtractDeliveryTime(COALESCE(amenityItem.*:AmenityItemDeliveryInfo.*:ItemDeliveryDate, ''), sailDate);
+			SET rAmOrderItem.ItemDeliveryTime = com.ncl.ais.utils.ExtractDeliveryTime_WESB(COALESCE(amenityItem.*:AmenityItemDeliveryInfo.*:ItemDeliveryDate, ''), sailDate);
+			
+			IF EXISTS (amenityItem.*:Guest.(XMLNSC.Attribute)LoyaltyMembershipID[]) AND 
+				EXISTS(rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)ID[])
+			THEN
+				DECLARE guestID CHARACTER;
+				CALL com.ncl.ais.utils.FindGuestID (amenityItem.*:Guest.(XMLNSC.Attribute)LoyaltyMembershipID,
+								rEnvInAmOrder.*:RecipientInfo.(XMLNSC.Attribute)ID, guestID, rEnv);
+				SET rAmOrderItem.GuestID = COALESCE(guestID, 0);
+			ELSE
+				SET rAmOrderItem.GuestID = 0;
+			END IF;
+			 
+			SET rAmOrderItem.Comments = amenityItem.*:Comments.*:Text;	
+			
+			IF EXISTS (rAmOrderItem.*:AmenityInvoiceItems[]) 
+			THEN				 
+				-- Check if Invoice Items exist from a previous iteration. If it does not exist, create the child
+				IF EXISTS(rAmenityOrder.AmInvoiceItems[]) THEN
+					SET rInvoiceItems = rAmenityOrder.AmInvoiceItems;
+				ELSE
+					CREATE LASTCHILD OF rAmenityOrder AS rInvoiceItems IDENTITY AmInvoiceItems;
+				END IF;
+				
+				FOR invoiceItem AS rAmOrderItem.*:AmenityInvoiceItems.*:AmenityInvoiceItem[] 
+				DO
+					CREATE LASTCHILD OF rInvoiceItems AS rInvoiceItem IDENTITY AmInvoiceItem;
+					--CALL com.ncl.ais.utils.UnbundleInvoiceItems(invoiceItem,rInvoiceItem);
+					SET rInvoiceItem.AmenityCode = invoiceItem.AmenityCode;
+					SET rInvoiceItem.AmInvoiceItemType = invoiceItem.AmenityInvoiceItemType;
+					SET rInvoiceItem.AmInvoiceItemSubtype = COALESCE(invoiceItem.AmenityInvoiceItemSubType, '');
+					SET rInvoiceItem.PromoCode = COALESCE(invoiceItem.PromoCode, '');
+					SET rInvoiceItem.ItemTotal = invoiceItem.AmenityItemTotal;
+					SET rInvoiceItem.Quantity = invoiceItem.Quantity;
+					-- TODO What are the default values?
+					SET rInvoiceItem.ItemValid = COALESCE(invoiceItem.ISItemValid, 'FALSE');					
+				END FOR;	
+			END IF;
+		END FOR;		
+		-- Log the response payload
+		--SET bPayload = OutputRoot.XMLNSC;
+		--CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'StoreAmenity request message', 'xml', rEnv);
+		
+		
+				
+		RETURN TRUE;
+	END;
+
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateAmenityOrderItems_SetEndpoint
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		SET OutputRoot.MQMD = Environment.MQMD;
+		SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+		SET OutputRoot.MQRFH2.usr.Endpoint = Environment.Variables.Temp.Endpoint;
+
+		IF EXISTS(InputRoot.BLOB.BLOB[]) THEN
+
+			SET OutputRoot.BLOB.BLOB = InputRoot.BLOB.BLOB;
+		ELSE
+			SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		END IF;
+
+
+		RETURN TRUE;
+	END;
+END MODULE;
+

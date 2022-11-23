@@ -1,0 +1,216 @@
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE COMPUTE MODULE CreateUpdateClient_PrepareRequest
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rGuest REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+
+		IF(rEnvInMsg.*:Impersonate.*:AddAgentName = 'Y') THEN
+			PROPAGATE TO LABEL 'IMPERSONATE';
+			IF(rEnv.Temp.ImpersonateError = 'Y') THEN
+				-- Impersonation return error. Ignore for now.
+			END IF;
+		END IF;
+		
+		IF(rEnvInMsg.*:TPA_Extensions.*:ExtensionName = 'SecondaryBranch') THEN
+			PROPAGATE TO LABEL 'SECONDARY_AGENCY';
+		END IF;			
+		
+    	-- Further processing only if guestdetails exist
+		DECLARE rInGuestDetails REFERENCE TO rEnvInMsg.ns:ReservationInfo.ns:GuestDetails;
+		DECLARE rOut,rClient,rWarnings REFERENCE TO OutputRoot;
+		
+		FOR rGuest AS rInGuestDetails.*:GuestDetail[] DO
+			SET OutputRoot = NULL;
+			CREATE LASTCHILD OF OutputRoot as rOut DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET rOut.ns:ContactInfo = rGuest.ns:ContactInfo;
+			SET rOut.ns:LoyaltyInfo = rGuest.ns:LoyaltyInfo;
+			PROPAGATE;
+			--IF the client Creation Fails 
+			IF  COALESCE(rEnv.Temp.ManageClientError,'N') = 'Y' THEN
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY sc:NCL_CruiseCreateUpdateBookingRS;
+				CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg, rOut);							
+				CREATE LASTCHILD OF rOut AS rWarnings IDENTITY sc:Warnings;
+				CALL MapVXErrorsToWarnings(rEnv.Temp.XMLNSC.Errors,rWarnings);
+				SET rEnv.Temp.ManageClientError = 'Y';				
+				PROPAGATE TO LABEL 'ROUTETOCALLER';				
+				SET rEnv.Temp.ReplySent = 'Y';				
+				RETURN FALSE;				
+			END IF;		
+		END FOR;
+		SET OutputRoot = NULL;
+		DECLARE cGuestRefNum CHARACTER;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE FIELD OutputRoot.XMLNSC.createUpdateClientResponse.Response as rOut;
+		DECLARE cQuery CHARACTER 'INSERT INTO NCL_HOUSEHOLD_SPLIT(CLIENT_ID,OLD_HOUSEHOLD_ID,NEW_HOUSEHOLD_ID) VALUES(?,?,?)';
+		DECLARE INDEX INTEGER 1;
+		FOR rGuest AS rInGuestDetails.*:GuestDetail[] DO
+			SET  cGuestRefNum = FIELDVALUE(rGuest.ns:ContactInfo.(XMLNSC.Attribute)GuestRefNumber);			
+			SET rOut.clients[INDEX].guestRef =cGuestRefNum;
+			SET rOut.clients[INDEX].clientId = rEnv.Households.{cGuestRefNum}.ClientID;
+			SET rOut.clients[INDEX].HouseholdID=rEnv.Households.{cGuestRefNum}.HouseholdID;
+			SET rOut.clients[INDEX].OldHouseholdID=rEnv.Households.{cGuestRefNum}.OldHouseholdID;
+			IF COALESCE(rEnv.Households.{cGuestRefNum}.OldHouseholdID,'') <> '' THEN
+				PASSTHRU(cQuery,rEnv.Households.{cGuestRefNum}.ClientID,rEnv.Households.{cGuestRefNum}.OldHouseholdID,rEnv.Households.{cGuestRefNum}.HouseholdID);
+			END IF;
+			
+			SET INDEX = INDEX + 1;		
+		END FOR;			
+		
+		SET rEnv.Temp.CompletedManageClients = 'Y';
+		
+		PROPAGATE TO TERMINAL 'out2';
+		RETURN FALSE;
+	END;
+		
+END MODULE;
+
+
+CREATE COMPUTE MODULE CreateUpdateClient_ProcessVXResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rOut,rWarnings,rguestRefMapClient,rResp,rResponse, rOutCli, rOutHHold REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;		
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.ManageClients_OUT;		
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE rbmcr REFERENCE TO rEnv.Temp.BMCR;
+						
+		-- If errors are returned, map them to Warnings and send response message to caller
+		IF EXISTS(rIn.Errors.Error[]) THEN
+			IF COALESCE(rEnv.Temp.ReplySent, '') = 'Y' THEN
+				RETURN FALSE;
+			ELSE
+				-- Generate a Warning Response back to caller with SailingInfo copied from request
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY sc:NCL_CruiseCreateUpdateBookingRS;
+				CALL com.ncl.ais.utils.CopyAttributes(rEnvInMsg, rOut);
+							
+				CREATE LASTCHILD OF rOut AS rWarnings IDENTITY sc:Warnings;
+				CALL MapVXErrorsToWarnings(rIn.Errors,rWarnings);
+				
+				SET rOut.sc:SailingInfo = rEnvInMsg.*:SailingInfo;
+						
+				IF(LogPayLoad) THEN
+					DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+					CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'CruiseCreateUpdateBooking Response message', 'xml', rEnv);
+				END IF;
+				
+				SET rEnv.Temp.ManageClientError = 'Y';
+				
+				PROPAGATE TO LABEL 'ROUTETOCALLER';
+				
+				SET rEnv.Temp.ReplySent = 'Y';
+				
+				RETURN FALSE;
+			END IF;
+		END IF;
+		
+		IF COALESCE(rEnv.Temp.CompletedManageClients, '') = 'Y' THEN
+			-- moving the reference to message stored in env
+			MOVE rIn TO rEnv.Temp.ManageClients_OUT;
+			
+			CREATE LASTCHILD OF OutputRoot.XMLNSC AS rResp IDENTITY createUpdateClientResponse;	
+			CREATE LASTCHILD OF rResp AS rResponse NAME 'Response';
+			-- Clear out related Env variables 
+			DETACH	rbmcr.clientsGuestRefMap;
+			
+			IF EXISTS(rIn.Households.Household[]) THEN
+				FOR rguestDetail AS rInResInfo.*:GuestDetails.*:GuestDetail[] DO
+					IF NOT EXISTS(rbmcr.clientsGuestRefMap[]) THEN
+						CREATE FIELD rbmcr.clientsGuestRefMap;
+					END IF;
+					
+					CREATE LASTCHILD OF rbmcr.clientsGuestRefMap AS rguestRefMapClient NAME 'Client';
+					
+					SET rguestRefMapClient.GuestRefNum = GetGuestRefID(rguestDetail);
+					SET rguestRefMapClient.ClientID = findClientIdFromManageClientOut(rguestDetail,rIn,rbmcr);					
+				END FOR;
+			END IF;
+			
+			CALL SetResponseClientInfo(rInResInfo.*:GuestDetails, rResponse, rEnv);		
+			
+			-- deleting message which is not required further
+			SET rEnv.Temp.ManageClients_OUT = NULL;
+			
+			RETURN TRUE;
+		ELSE
+			-- save response of manageclient store
+			IF COALESCE(rEnv.Temp.SaveManageClientResponse, '') = 'Y' THEN
+				FOR rCli AS InputRoot.XMLNSC.ManageClients_OUT.Clients.Client[] DO
+					CREATE LASTCHILD OF rEnv.Temp.ManageClients_OUT.Households.Household.HouseholdHeader.Clients AS rOutCli NAME 'Client';
+					SET rOutCli = rCli;
+				END FOR;
+								
+				SET rEnv.Temp.SaveManageClientResponse = '';
+			END IF;
+			
+			IF COALESCE(rEnv.Temp.Guest, '') <> 'UPDATE' THEN 
+				SET rEnv.Temp.ClientIds = '';
+				SET rEnv.Temp.HouseholdIDs = '';
+				
+				-- save the client ids in env
+				FOR rClient AS InputRoot.XMLNSC.ManageClients_OUT.Clients.Client[] DO
+					SET rEnv.Temp.ClientIds = rEnv.Temp.ClientIds || ' ' || rClient.ClientHeader.ClientID;
+				END FOR;
+
+				-- clients inside the household structure
+				FOR rHH AS InputRoot.XMLNSC.ManageClients_OUT.Households.Household[] DO
+					FOR rClient AS rHH.HouseholdHeader.Clients.Client[] DO
+						SET rEnv.Temp.ClientIds = rEnv.Temp.ClientIds || ' ' || rClient.ClientHeader.ClientID;
+					END FOR;
+				END FOR;
+								
+				SET rEnv.Temp.ClientIds = SUBSTRING(rEnv.Temp.ClientIds FROM 2);
+	
+				-- save the household ids in env
+				FOR rHouseHold AS InputRoot.XMLNSC.ManageClients_OUT.Households.Household[] DO
+					SET rEnv.Temp.HouseholdIDs = rEnv.Temp.HouseholdIDs || ' ' || rHouseHold.HouseholdHeader.HouseholdID;
+				END FOR;
+				
+				SET rEnv.Temp.HouseholdIDs = SUBSTRING(rEnv.Temp.HouseholdIDs FROM 2);
+			END IF;
+						
+			RETURN FALSE;
+		END IF;
+	END;	
+END MODULE;
+
+
+CREATE COMPUTE MODULE CreateUpdateClient_BuildResPromos
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rEnvProms, rEnvAir REFERENCE TO Environment.Variables;
+		DECLARE rEnvInMsg REFERENCE TO rEnv.InMsg.XMLNSC.*:NCL_CruiseCreateUpdateBookingRQ;
+		DECLARE rInResInfo REFERENCE TO rEnvInMsg.*:ReservationInfo;
+		DECLARE collectionResID, cabinHeldResID INTEGER 0;
+		SET collectionResID = rEnv.TempCollection.collectionResId; -- Collection RES ID.
+		SET cabinHeldResID = rEnv.ResID;					-- ResID got from ResLock (loadBooking with statekey).
+		
+		CALL CopyEntireMessage();
+		
+		-- Build vxPromotions and store in Environment for using while calling UpdateBooking etc	
+		IF EXISTS(rInResInfo.*:GuestDetails.*:GuestDetail[]) THEN
+			CREATE FIELD rEnv.Temp.Objects.VXPromotions AS rEnvProms;
+			
+			CALL BuildPromotions(rEnvInMsg, rEnvProms);
+			CALL RemoveGroupFareCodes(rEnv.Temp.Objects);
+		END IF;			
+		
+		-- Route to the correct terminal. If request has res id or got booking from reslock statekey or collection res ID then route to res ID Terminal.	
+		IF EXISTS(rInResInfo.*:ReservationID.(XMLNSC.Attribute)ID[]) OR collectionResID > 0 OR cabinHeldResID > 0 THEN			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;				
+		-- New booking case.
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+

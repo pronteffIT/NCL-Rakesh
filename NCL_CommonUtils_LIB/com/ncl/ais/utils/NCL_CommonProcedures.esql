@@ -1,0 +1,544 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE sc NAMESPACE 'http://nclapi/schemas';
+DECLARE CACHE SHARED ROW;
+
+
+/** Common function to Create versonix API MsgHeader **/
+CREATE FUNCTION CreateVersonixHeader(IN SessionId CHARACTER, INOUT rVxHeader REFERENCE ) 
+BEGIN
+            SET rVxHeader.MsgHeader.Version =  com.ncl.ais.utils.GetVersonixAPIVersion();
+            IF LENGTH(COALESCE(SessionId,'')) > 0 THEN
+                  
+                  SET rVxHeader.MsgHeader.SessionGUID = SessionId;
+            ELSE
+                  CREATE FIELD rVxHeader.MsgHeader.CallerInfo.UserInfo.Internal;
+            END IF;     
+      
+END;
+
+/** Common function to retrun versonix API version **/
+CREATE FUNCTION GetVersonixAPIVersion() RETURNS CHARACTER
+BEGIN
+	RETURN '1.0';
+END;
+
+/** This procedure splits string value based on delimiter and save it as list **/
+CREATE PROCEDURE StringTokenize(IN cString CHARACTER, IN cDelimiter CHARACTER, INOUT rStore REFERENCE)
+BEGIN
+	DECLARE cInStr CHARACTER cString;
+	
+	IF NOT ENDSWITH(cInStr, cDelimiter) THEN
+		SET cInStr = cInStr || cDelimiter;
+	END IF;
+	
+	WHILE cInStr <> '' DO
+		CREATE LASTCHILD OF rStore NAME 'Token' VALUE SUBSTRING(cInStr BEFORE cDelimiter);
+		SET cInStr = SUBSTRING(cInStr AFTER cDelimiter);
+	END WHILE;			
+END;
+
+/** function to convert GTM time to local time using offset **/
+CREATE FUNCTION ConvertGmtToLocalTimeUsingOffset(IN gmtTs CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE localTime CHARACTER '';
+	DECLARE gmt GMTTIMESTAMP CAST(gmtTs AS GMTTIMESTAMP FORMAT 'IU');
+	DECLARE offSet CHARACTER CAST((LOCAL_TIMEZONE + INTERVAL '1' HOUR) AS INTERVAL HOUR TO MINUTE);
+	
+	SET offSet = SUBSTRING(SUBSTRING(offSet AFTER 'INTERVAL ''') BEFORE ''' HOUR');
+	
+	SET localTime = CAST((gmt + LOCAL_TIMEZONE + INTERVAL '1' HOUR) AS CHARACTER FORMAT 'IU');
+	SET localTime = REPLACE(localTime, 'Z', offSet);
+		
+	RETURN localTime;
+END;
+
+/** function to convert GTM time to local time **/
+CREATE FUNCTION ConvertGmtToLocalTime(IN gmtTs CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE localTime CHARACTER '';
+	DECLARE gmt GMTTIMESTAMP CAST(gmtTs AS GMTTIMESTAMP FORMAT 'IU');
+
+	SET localTime = CAST(CAST(gmt AS TIMESTAMP) AS CHARACTER FORMAT 'IU');
+	
+	RETURN localTime;
+END;
+
+/** Function to check if a value is numeric or string **/
+CREATE FUNCTION isNumeric(IN val CHARACTER) RETURNS BOOLEAN
+BEGIN
+	DECLARE temp CHARACTER '';
+	DECLARE digits CHARACTER '0123456789';
+
+	IF IsEmpty(val) THEN
+		RETURN FALSE;
+	END IF;
+	SET temp = TRANSLATE(val, digits, '');
+
+	IF LENGTH(temp) > 0 THEN
+		RETURN FALSE;
+	ELSE
+		RETURN TRUE;
+	END IF;
+END;
+
+/** Function to convert the field Sex returned by Versonix API to Gender **/
+CREATE FUNCTION ConvertSexToGender(IN sex CHARACTER) RETURNS CHARACTER 
+BEGIN
+	CASE sex
+	WHEN 'M' THEN
+		RETURN 'Male';
+	WHEN 'F' THEN
+		RETURN 'Female';
+	ELSE
+		RETURN 'Unknown';
+	END CASE;	
+END;
+
+
+/** Function to calculate the age **/
+/** The birthdate value passed from Input should be in Character Format **/
+/** The age value returned would be an Integer **/
+
+CREATE FUNCTION getAge(IN birthDate CHARACTER) RETURNS INTEGER
+BEGIN
+	DECLARE age INTEGER;
+	DECLARE dob DATE CAST(birthDate AS DATE);
+	SET age = (CURRENT_DATE-dob)YEAR;
+
+	DECLARE currdayVal,dobDayVal INTEGER;
+
+	SET currdayVal = EXTRACT(DAYOFYEAR FROM CURRENT_DATE);
+	SET dobDayVal = EXTRACT(DAYOFYEAR FROM dob);
+	IF currdayVal < dobDayVal THEN
+		SET age = age-1;
+	END IF;
+	RETURN age;
+END;
+
+/** Procedure to map VerifyAgency errors or warnings to corresponding OTA errors or warnings **/
+CREATE PROCEDURE MapVAErrorsToOTAResponse(IN rVAIn REFERENCE , INOUT rResponse REFERENCE) 
+BEGIN
+	DECLARE rErrors,rError, rWarnings,rWarning REFERENCE TO rResponse;
+	IF EXISTS(rVAIn.runtimeError[])
+	THEN
+		CREATE LASTCHILD OF rResponse AS rErrors IDENTITY sc:Errors;
+		--CREATE LASTCHILD OF rErrors AS rError IDENTITY sc:Error;		
+		--SET rError = COALESCE(FIELDVALUE(rVAIn.runtimeError),'');	
+		SET rErrors.sc:Error = 	COALESCE(FIELDVALUE(rVAIn.runtimeError), '');
+		-- TODO The callable flow actually returns a code which is not used here 
+		-- Using the generic error code (as in the existing WESB code) to map
+		--The input reference attributes have become elements even though they're in XMLNSC domain.		
+		SET rErrors.sc:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rErrors.sc:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';	
+		SET rErrors.sc:Error.(XMLNSC.Attribute)Type = rVAIn.runtimeError.Type;
+		
+	ELSE
+		-- This is agency not found or login error
+		CREATE LASTCHILD OF rResponse AS rWarnings IDENTITY sc:Warnings;
+		CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY sc:Warning;
+		
+		IF EXISTS(rVAIn.agencyNotFound[])
+		THEN
+			SET rWarning = COALESCE(FIELDVALUE(rVAIn.agencyNotFound),'');	
+			SET rWarning.(XMLNSC.Attribute)Code = rVAIn.agencyNotFound.Code;
+			SET rWarning.(XMLNSC.Attribute)Type = rVAIn.agencyNotFound.Type;
+			SET rWarning.(XMLNSC.Attribute)ShortText = FIELDVALUE(rVAIn.agencyNotFound.ShortText);
+		ELSE
+			-- This is a login Error. Map fields accordingly
+			-- The input reference attributes have become elements even though they're in XMLNSC domain.
+			SET rWarning = COALESCE(FIELDVALUE(rVAIn.loginError.ShortText),'');	
+			SET rWarning.(XMLNSC.Attribute)Code = '12228';
+			SET rWarning.(XMLNSC.Attribute)Type = rVAIn.loginError.Type;
+			SET rWarning.(XMLNSC.Attribute)ShortText = 'System error from backend Try Later';
+
+		END IF;
+	END IF;			
+END;
+
+
+
+/** Procedure to map VerifyAgency errors or warnings to corresponding OTA errors **/
+CREATE PROCEDURE MapVAErrorsToOTAErrors(IN rVAIn REFERENCE , INOUT rResponse REFERENCE) 
+BEGIN
+	DECLARE rErrors,rError, rWarnings,rWarning REFERENCE TO rResponse;
+	IF EXISTS(rVAIn.runtimeError[])
+	THEN
+		CREATE LASTCHILD OF rResponse AS rErrors IDENTITY sc:Errors;
+		--CREATE LASTCHILD OF rErrors AS rError IDENTITY sc:Error;		
+		--SET rError = COALESCE(FIELDVALUE(rVAIn.runtimeError),'');	
+		SET rErrors.sc:Error = 	COALESCE(FIELDVALUE(rVAIn.runtimeError), '');
+		-- TODO The callable flow actually returns a code which is not used here 
+		-- Using the generic error code (as in the existing WESB code) to map
+		--The input reference attributes have become elements even though they're in XMLNSC domain.		
+		SET rErrors.sc:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rErrors.sc:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';	
+		SET rErrors.sc:Error.(XMLNSC.Attribute)Type = rVAIn.runtimeError.Type;
+		
+	ELSE
+		-- This is agency not found or login error
+		CREATE LASTCHILD OF rResponse AS rErrors IDENTITY sc:Errors;
+		CREATE LASTCHILD OF rErrors AS rError IDENTITY sc:Error;
+		
+		IF EXISTS(rVAIn.agencyNotFound[])
+		THEN
+			SET rError = COALESCE(FIELDVALUE(rVAIn.agencyNotFound),'');	
+			SET rError.(XMLNSC.Attribute)Code = rVAIn.agencyNotFound.Code;
+			SET rError.(XMLNSC.Attribute)ShortText = FIELDVALUE(rVAIn.agencyNotFound.ShortText);
+			SET rError.(XMLNSC.Attribute)Type = rVAIn.agencyNotFound.Type;
+		ELSE
+			-- This is a login Error. Map fields accordingly
+			-- The input reference attributes have become elements even though they're in XMLNSC domain.
+			SET rError = COALESCE(FIELDVALUE(rVAIn.loginError.ShortText),'');	
+			SET rError.(XMLNSC.Attribute)Code = '12228';
+			SET rError.(XMLNSC.Attribute)ShortText = 'System error from backend Try Later';			
+			SET rError.(XMLNSC.Attribute)Type = rVAIn.loginError.Type;
+		END IF;
+	END IF;			
+END;
+
+/** Function to formatDate **/
+CREATE FUNCTION ExtractDeliveryTime(IN deliveryDate CHARACTER, IN sailDate CHARACTER) RETURNS CHARACTER 
+BEGIN
+	DECLARE pattern CHARACTER 'IU';
+	
+	IF deliveryDate = '' THEN
+		RETURN SUBSTRING(sailDate FROM 12 FOR 10)||'T'|| SUBSTRING(sailDate FROM 23 FOR 8) || 'Z' ;
+		--RETURN '1899-12-30T12:00:00.000';
+	ELSE
+		DECLARE tempDeliveryDate GMTTIMESTAMP;
+		DECLARE tempDeliveryDateStr CHARACTER;
+		IF NOT CONTAINS(deliveryDate, 'T') THEN
+			SET tempDeliveryDateStr = deliveryDate || ' 00:00:00.000';
+			--SET tempDeliveryDate = CAST(deliveryDate || ' 00:00:00.000' AS GMTTIMESTAMP);
+			SET tempDeliveryDate = CAST(tempDeliveryDateStr AS GMTTIMESTAMP);
+		ELSE
+		--DECLARE tempDeliveryDate GMTTIMESTAMP CAST(TRANSLATE(TRANSLATE(deliveryDate,'T',' '),'Z','') AS GMTTIMESTAMP);
+			SET tempDeliveryDateStr = TRANSLATE(TRANSLATE(deliveryDate,'T',' '),'Z','');
+			--SET tempDeliveryDate = CAST(TRANSLATE(TRANSLATE(deliveryDate,'T',' '),'Z','') AS GMTTIMESTAMP);
+			SET tempDeliveryDate = CAST(tempDeliveryDateStr AS GMTTIMESTAMP);
+		END IF;
+		
+		DECLARE tempSailDate GMTTIMESTAMP CAST(SUBSTRING(sailDate FROM 12 FOR 19) AS GMTTIMESTAMP);
+		
+		IF tempDeliveryDate > tempSailDate THEN
+			--RETURN deliveryDate;
+			RETURN SUBSTRING(tempDeliveryDateStr FROM 1 FOR 10) || 'T' || '00:00:00.000' || 'Z' ;
+		ELSE			
+			-- Extract timestamp part from delivery date and add that to saildate			
+			DECLARE deliveryTimestamp CHARACTER COALESCE(NULLIF(SUBSTRING(deliveryDate FROM 12 FOR 12), ''),'00:00:00.000') ;	
+			RETURN SUBSTRING(sailDate FROM 12 FOR 10)||'T'|| deliveryTimestamp || 'Z' ;
+			--RETURN '1899-12-30T'|| deliveryTimestamp || 'Z';
+		END IF;
+	END IF;		   
+END;
+
+
+/** Function to formatDate (As per existing WESB code) **/
+CREATE FUNCTION ExtractDeliveryTime_WESB(IN deliveryDate CHARACTER, IN sailDate CHARACTER) RETURNS CHARACTER 
+BEGIN
+	--DECLARE pattern CHARACTER 'IU';
+	DECLARE defaultDate CHARACTER '1899-12-30T12:00:00.000';
+	DECLARE defaultTime CHARACTER '00:00:00.000';
+	DECLARE tempItemDeliveryDate CHARACTER;
+	
+	IF deliveryDate = '' THEN
+		RETURN defaultDate;
+	ELSE
+		-- DeliveryDate could be a date or a date timestamp value. Check if it is datetimestamp
+		IF NOT CONTAINS(deliveryDate, 'T') 
+		THEN
+			SET tempItemDeliveryDate = 	deliveryDate || ' ' || defaultTime; 
+		ELSE 
+			-- Remove the T and Z for parsing in the next step
+			SET tempItemDeliveryDate = TRANSLATE(TRANSLATE(deliveryDate,'T',' '),'Z','');
+		END IF;
+		
+		DECLARE formattedTempItemDeliveryDate CHAR;		
+		DECLARE tempDeliveryDate GMTTIMESTAMP CAST(tempItemDeliveryDate AS GMTTIMESTAMP);
+		DECLARE tempSailDate GMTTIMESTAMP CAST(SUBSTRING(sailDate FROM 12 FOR 19) AS GMTTIMESTAMP);
+		IF tempDeliveryDate > tempSailDate OR tempDeliveryDate = tempSailDate THEN
+			SET formattedTempItemDeliveryDate = SUBSTRING(tempItemDeliveryDate FROM 1 FOR 10) || 'T' || SUBSTRING(tempItemDeliveryDate FROM 12 FOR 12) || 'Z';
+			RETURN formattedTempItemDeliveryDate;
+		ELSE			
+			-- Extract timestamp part from delivery date and add that to defaultDate. 
+			-- If it is '00:00:00.000', default it to '12:00:00.000' because for some reason '1899-12-30T00:00:00.000' doesn't get returned back by StoreAmenity_OUT	
+			DECLARE deliveryTimestamp CHARACTER COALESCE(NULLIF(SUBSTRING(tempItemDeliveryDate FROM 12 FOR 12),defaultTime), '12:00:00.000') ;	
+			--RETURN SUBSTRING(defaultDate FROM 12 FOR 11) || deliveryTimestamp || 'Z' ;
+			RETURN SUBSTRING(defaultDate FROM 1 FOR 11) || deliveryTimestamp || 'Z' ;
+		END IF;
+	END IF;		   
+END;
+
+/** Function to extract amenity count from the database given the Res ID **/
+CREATE FUNCTION GetAmenityCountByResID(IN ResID CHARACTER) RETURNS INTEGER 
+BEGIN
+	DECLARE queryResult ROW;
+	SET queryResult = PASSTHRU('SELECT COUNT(1) AS AMCOUNT FROM SEA.AM_ORDER_HEADER OH WHERE OH.RES_ID=? AND OH.CREATED_FROM_ADDON =''N''', ResID);
+	
+	RETURN CAST(queryResult.AMCOUNT AS INTEGER);
+END;
+
+/* Procedure to create error response from VX DBSearch api errors */
+CREATE PROCEDURE CreateResponseFromDBSearchErrors(IN rDBSearch REFERENCE, INOUT rResponse REFERENCE) 
+BEGIN
+	SET rResponse = rDBSearch.Errors.Error.ErrorMessage; 
+	SET rResponse.(XMLNSC.Attribute)Code = '12228';
+	SET rResponse.(XMLNSC.Attribute)ShortText = rDBSearch.Errors.Error.ErrorMessage;
+	SET rResponse.(XMLNSC.Attribute)Type = '3';
+END;
+
+CREATE PROCEDURE getAdvisoryCode(IN ErrorCode CHARACTER,IN CmpnyCode CHARACTER,INOUT rEnv REFERENCE)
+
+BEGIN
+
+	DECLARE ADVISORY_TABLE CHARACTER;
+
+	SET ADVISORY_TABLE = 'AdvisoryCondition';
+
+	IF ErrorCode <> '' AND CmpnyCode <> '' THEN
+		-- call the External method for db call
+		CALL lookupExternalCode(ErrorCode,CmpnyCode,ADVISORY_TABLE,rEnv);
+	END IF;
+	-- return the response if above thing fails
+END;
+
+CREATE PROCEDURE lookupExternalCode(IN ErrorCode CHARACTER,IN CmpnyCode CHARACTER,IN ADVISORY_TABLE CHARACTER,INOUT rEnv REFERENCE)
+
+BEGIN
+
+	IF ErrorCode <> '' AND CmpnyCode <> '' THEN
+		-- call the External method for db call
+		DECLARE query CHARACTER;
+
+		SET query = 'SELECT'|| ' DETAILS.EXTERNAL_CODE,'|| ' DETAILS.SW_CODE,'|| ' DETAILS.DESCRIPTION,'|| ' DETAILS.EXTERNAL_XREF_DETAIL_ID,'|| ' DETAILS.long_description, '|| ' details.external_xref_id'
+		|| ' FROM'|| ' SEA.EXTERNAL_XREF_DETAIL DETAILS'|| ' INNER JOIN'|| ' ('|| ' SELECT'|| ' XREF.EXTERNAL_XREF_ID,'|| ' XREF.EXTERNAL_TABLE'|| ' FROM'|| ' SEA.EXTERNAL_XREF XREF'|| ' INNER JOIN'
+		|| ' SEA.EXTERNAL_NAMES NAMES ON'|| ' XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID'|| ' Where'|| ' NAMES.EXTERNAL_NAME = ?) TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? ' || ' AND DETAILS.SW_CODE = ?';
+		--1st param of query EXTERNAL_NAME = CmpnyCode
+		--2nd param of query EXTERNAL_TABLE = AdvisoryCondition
+		--3rd param of querySW_Code= ErrorCode
+		-- CAll the above query in DB and return the Result set and retrieve the few values from result set
+
+		SET rEnv.Temp.FinalResp[] = PASSTHRU(query VALUES(CmpnyCode,ADVISORY_TABLE,ErrorCode));
+		--The result rest obtained from the above thing just extract the external_code and description
+	END IF;
+
+END;
+
+
+/** Procedure to copy all attributes from the source reference to the target reference **/
+CREATE PROCEDURE CopyAttributes(IN rInMsg REFERENCE , INOUT rOutMsg REFERENCE) 
+BEGIN
+	DECLARE cursor REFERENCE TO rInMsg.(XMLNSC.Attribute)*;   
+	
+	WHILE LASTMOVE(cursor) DO
+		IF FIELDNAME(cursor) = 'TimeStamp' THEN
+			SET rOutMsg.(XMLNSC.Attribute){FIELDNAME(cursor)} = CAST(CURRENT_TIMESTAMP AS CHARACTER FORMAT 'IU');
+		ELSE
+			SET rOutMsg.(XMLNSC.Attribute){FIELDNAME(cursor)} = FIELDVALUE(cursor);
+		END IF;
+		  
+		-- Move to the next sibling of the same TYPE to avoid the Title value        
+		-- which is not an XML.Attribute                                                 
+		MOVE cursor NEXTSIBLING REPEAT TYPE; 
+	END WHILE;			
+END;
+
+
+CREATE PROCEDURE BuildStateKey(IN channel CHARACTER, IN pcc CHARACTER, IN agencyId CHARACTER, IN cabinNumber CHARACTER, IN voyageId CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE stateKey CHARACTER '';
+	
+	SET stateKey = channel || '_';
+
+	IF COALESCE(pcc, '') <> '' THEN
+		SET stateKey = stateKey || pcc || '_';
+	END IF;
+	
+	IF COALESCE(agencyId, '') <> '' THEN
+		SET stateKey = stateKey || agencyId || '_';
+	END IF;
+	
+	IF COALESCE(voyageId, '') <> '' THEN
+		SET stateKey = stateKey || voyageId || '_';
+	END IF;
+
+	IF COALESCE(cabinNumber, '') <> '' THEN
+		SET stateKey = stateKey || cabinNumber;
+	END IF;
+
+	RETURN stateKey;
+END;
+
+-- Crude function to compare addresses
+CREATE FUNCTION AddressDBMatch(IN rAddr REFERENCE, IN addrCity CHARACTER, IN stateCode CHARACTER, IN countryCode CHARACTER, IN addrLine1 CHARACTER, 
+						IN addrLine2 CHARACTER, IN addrLine3 CHARACTER, IN addrLine4 CHARACTER) RETURNS BOOLEAN
+BEGIN
+	DECLARE isEqual BOOLEAN TRUE;
+		
+	IF NOT(UPPER(rAddr.*:CityName) = UPPER(addrCity)) THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	IF NOT(UPPER(FIELDVALUE(rAddr.*:StateProv.(XMLNSC.Attribute)StateCode)) = UPPER(stateCode)) THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	IF NOT(UPPER(COALESCE(rAddr.*:CountryName.(XMLNSC.Attribute)Code, '')) = UPPER(countryCode)) THEN
+		SET isEqual = FALSE;
+	END IF;
+
+	--IF NOT(rAddr.*:CountryName.(XMLNSC.Attribute)Code = countryCode) THEN
+	--	SET isEqual = FALSE;
+	--END IF;
+	
+	IF NOT(UPPER(COALESCE(rAddr.*:AddressLine[1],'')) = UPPER(COALESCE(addrLine1,'')) AND 
+		UPPER(COALESCE(rAddr.*:AddressLine[2],'')) = UPPER(COALESCE(addrLine2,'')) AND 
+		UPPER(COALESCE(rAddr.*:AddressLine[3],'')) = UPPER(COALESCE(addrLine3,'')) AND 
+		UPPER(COALESCE(rAddr.*:AddressLine[4],'')) = UPPER(COALESCE(addrLine4,''))) 
+	THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	RETURN isEqual;
+END;
+
+
+-- Crude function to compare addresses
+CREATE FUNCTION AddressMatch(IN rAddr1 REFERENCE, IN rAddr2 REFERENCE) RETURNS BOOLEAN
+BEGIN
+	DECLARE isEqual BOOLEAN TRUE;
+		
+	IF NOT(UPPER(rAddr1.*:CityName) = UPPER(rAddr2.*:CityName)) THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	IF NOT(UPPER(rAddr1.*:StateProv.(XMLNSC.Attribute)StateCode) = UPPER(rAddr2.*:StateProv.(XMLNSC.Attribute)StateCode)) THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	IF NOT(UPPER(COALESCE(rAddr1.*:CountryName.(XMLNSC.Attribute)Code, '')) = UPPER(COALESCE(rAddr2.*:CountryName.(XMLNSC.Attribute)Code, ''))) THEN
+		SET isEqual = FALSE;
+	END IF;	
+
+	IF NOT(UPPER(COALESCE(rAddr1.*:AddressLine[1],'')) = UPPER(COALESCE(rAddr2.*:AddressLine[1],'')) AND UPPER(COALESCE(rAddr1.*:AddressLine[2],'')) = UPPER(COALESCE(rAddr2.*:AddressLine[2],'')) 
+		AND UPPER(COALESCE(rAddr1.*:AddressLine[3],'')) = UPPER(COALESCE(rAddr2.*:AddressLine[3],'')) AND UPPER(COALESCE(rAddr1.*:AddressLine[4],'')) = UPPER(COALESCE(rAddr2.*:AddressLine[4],''))) 
+	THEN
+		SET isEqual = FALSE;
+	END IF;
+	
+	RETURN isEqual;
+END;
+
+
+/** Function to check if the string input field is null or empty **/
+CREATE FUNCTION IsEmpty(IN inStr CHARACTER) RETURNS BOOLEAN 
+BEGIN
+	IF (inStr IS NULL OR inStr = '') THEN
+		RETURN TRUE;
+	ELSE
+		RETURN FALSE;
+	END IF;	
+END;
+
+/** Identify Group Fare Codes **/
+CREATE FUNCTION FareCodeIsGroup(IN fareCode CHARACTER, IN prefix CHARACTER) RETURNS BOOLEAN
+BEGIN
+	IF fareCode IS NULL OR prefix IS NULL
+	THEN
+		RETURN FALSE;
+	ELSE
+		DECLARE code INTEGER;
+		BEGIN
+			DECLARE EXIT HANDLER FOR SQLSTATE LIKE '%'
+  			BEGIN	
+				RETURN FALSE;
+			END;
+			
+			IF SUBSTRING(fareCode FROM 1 FOR LENGTH(prefix)) = prefix 
+			THEN
+				SET code = CAST(SUBSTRING(fareCode FROM (LENGTH(prefix)+1)) AS INTEGER);
+			END IF;
+		END;
+		IF(code > 0)
+		THEN
+			RETURN TRUE;
+		END IF;	
+	END IF;
+	RETURN FALSE; 	
+END;
+
+
+CREATE FUNCTION TranformCCExpDate(IN ExpireDate CHARACTER) RETURNS CHARACTER BEGIN
+	DECLARE nCentury INTEGER 2000;
+	DECLARE nYear INTEGER;
+	DECLARE cMonth CHARACTER '';
+	
+	SET nYear = CAST(SUBSTRING(ExpireDate FROM 3 FOR 2) AS INTEGER);
+	SET nYear = nCentury + nYear;
+	SET cMonth = COALESCE(SUBSTRING(ExpireDate FROM 1 FOR 2),'');
+
+	RETURN (COALESCE(CAST(nYear AS CHARACTER),'') || '-' || cMonth);
+END;
+
+
+CREATE FUNCTION LookupCCType(IN CCTypeExternal CHARACTER) RETURNS CHARACTER BEGIN
+	
+	IF EXISTS(CACHE.CCExternal.{CCTypeExternal}[]) THEN
+		RETURN FIELDVALUE(CACHE.CCExternal.{CCTypeExternal});
+	ELSE
+		DECLARE cctype CHARACTER COALESCE(THE(SELECT ITEM C.CC_TYPE from Database.SEA.CC_TYPE_MST AS C where C.CC_TYPE_EXT=CCTypeExternal),'');
+		SET CACHE.CCExternal.{CCTypeExternal} = cctype;
+		RETURN cctype;
+	END IF;
+END;		
+
+
+-- THis Proc will split the GuestRefs and place the values under rEnv.Split
+CREATE PROCEDURE SplitGuestRef (IN cGuestRefs CHARACTER, INOUT rEnv REFERENCE )
+BEGIN
+	
+	IF NOT com.ncl.ais.utils.IsEmpty(cGuestRefs) THEN
+		DECLARE StrLen INTEGER;
+		DECLARE DelimiterPosition INT 0;
+		DECLARE TempString,SourceString CHARACTER;
+	
+		SET StrLen = LENGTH (cGuestRefs);
+		
+		SET DelimiterPosition = POSITION(' ' IN cGuestRefs);
+		
+		DETACH rEnv.Split;
+		
+		IF StrLen <= 1 AND DelimiterPosition = 0 THEN
+			
+			CREATE LASTCHILD OF rEnv.Split NAME 'VALUE' VALUE cGuestRefs;
+			
+		ELSE
+			
+			SET SourceString = cGuestRefs;
+			
+			WHILE DelimiterPosition  > 0 DO
+			
+				SET TempString = SUBSTRING(SourceString BEFORE ' ');
+				
+				CREATE LASTCHILD OF rEnv.Split NAME 'VALUE' VALUE TempString;
+				
+				SET SourceString = SUBSTRING(SourceString FROM DelimiterPosition+1 FOR StrLen);
+				
+				SET StrLen = LENGTH(SourceString);
+				SET DelimiterPosition = POSITION(' ' IN SourceString);
+				
+				IF DelimiterPosition = 0 THEN
+			
+					CREATE LASTCHILD OF rEnv.Split NAME 'VALUE' VALUE  SourceString;
+					
+				END IF;
+			
+			END WHILE;
+			
+		END IF;
+	END IF;	
+END; 
+
+

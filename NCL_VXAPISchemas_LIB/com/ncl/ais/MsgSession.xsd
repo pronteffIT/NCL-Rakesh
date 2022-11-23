@@ -1,0 +1,1255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation>This schema defines user session management related calls</xs:documentation>
+	</xs:annotation>
+	<xs:complexType name="UserInfoDetail">
+		<xs:all>
+			<xs:element name="AgentID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>returned for TravelAgent</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgencyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>returned for TravelAgent and Consumer (will be reated as a secondary Agency)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MainAgencyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>May be returned for TravelAgent and Consumer</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ClientID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>may be returned for Consumer</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>may be returned for all types of user</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Supervisor" type="Boolean" minOccurs="0"/>
+			<xs:element name="Country" type="CountryCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="EMail" type="AddressLine" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="SessionInfo">
+		<xs:annotation>
+			<xs:documentation>Additional session information that comes from login and cannot be changed</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="OfficeLocation" type="OfficeLocation" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>may be returned for all types of use</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DistributionChannel" type="LongCode" minOccurs="0"/>
+			<xs:element name="Terminal" type="Terminal" minOccurs="0"/>
+			<xs:element name="TimeOut" type="SessionTimeOut" minOccurs="0"/>
+			<xs:element name="ExpiresAt" type="xs:dateTime"/>
+			<xs:element name="ExtSystemInfo" type="ExternalSystemInfo" minOccurs="0"/>
+			<xs:element name="AccessCodes" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="AccessCode" type="UserAccessCode" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Objects" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Locked objects associated with the session</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Object" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="ObjType" type="ObjectType"/>
+									<xs:element name="ObjID" type="RecordID"/>
+									<xs:element name="ExpiresAt" type="xs:dateTime"/>
+									<xs:element name="AutoExtend" type="Boolean"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:element name="BatchUserInfo">
+		<xs:annotation>
+			<xs:documentation>User information that is put into SW_QUEUE_DETAIL to create corresponding session in batch server during processing</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:all>
+				<xs:element name="Username" type="Username"/>
+				<xs:element name="UserType" type="UserType"/>
+				<xs:element name="AgentID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>returned for TravelAgent</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="AgencyID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>returned for TravelAgent and Consumer (will be reated as a secondary Agency)</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ClientID" type="RecordID" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>may be returned for Consumer</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>may be returned for all types of user</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OfficeLocation" type="OfficeLocation" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>may be returned for all types of use</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:all>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="ConversionParameters">
+		<xs:annotation>
+			<xs:documentation>Conversion related parameters (used if ConversionMode=Y)</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="SWQSubqSeqN" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines override for Subqueue number for all Seaware Queue items which are created as part of processing of all requests within this session.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GLBatchFakeID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines GL Batch ID value for all new GL entries to be used  instead of FAKE GL Batch ID</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ArApSeqID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Defines AR/AP Seq ID value for all new AR/AP transactions. That prevents these transactions from being included into regular invoices.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:simpleType name="ObjectType">
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="COUPON"/>
+			<xs:enumeration value="AGENCY"/>
+			<xs:enumeration value="AGENT"/>
+			<xs:enumeration value="CLIENT"/>
+			<xs:enumeration value="HOUSEHOLD"/>
+			<xs:enumeration value="TRAVEL-WITH"/>
+			<xs:enumeration value="RES"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="SessionTimeOut">
+		<xs:annotation>
+			<xs:documentation>Timeout specific values for new session to be created. If session is not ended manually by Logout_IN call it is supposed to be destroyed automatically according to values defined by children of this element.</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Total" type="xs:integer" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Maximum Session duration (in minutes). Session will be destroyed after specified amount of minutes regardless of user activity.
+						<xhtml:span class="attention">NB! It applies if Inactivity is not provided.</xhtml:span>
+					</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Inactivity" type="xs:integer" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Maximum Inactivity duration (in minutes). Session will be destroyed if user activity was not registered within specified amount of time (even if maximum session duration was not exceeded).</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!--=============================================== Login/Logout-->
+	<xs:element name="Login_IN">
+		<xs:annotation>
+			<xs:documentation>Create new user session</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Version" type="APIVersion">
+					<xs:annotation>
+						<xs:documentation>XML API version</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="UserInfo" type="UserInfo">
+					<xs:annotation>
+						<xs:documentation>Details about user to log in</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Language" type="LanguageCode" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>The language preferrable for message translation.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Office code user or agent belongs to. <xhtml:span class="attention">Must be provided for Internal Users.</xhtml:span>
+						</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Terminal" type="Terminal" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>The identifier of check-in terminal. Is supposed to be used for check-in operations only.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TimeOut" type="SessionTimeOut" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Timeout specific values for new session to be created. If session is not ended manually by Logout_IN call it is supposed to be destroyed automatically according to values defined by children of this element.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtSystemInfo" type="ExternalSystemInfo" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Information about user credentials in external system. It can be provided if this session is created on behalf of some user in external system. This info is used for reference purposes only.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="DocSection" type="DocSection" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Can be provided to choose document section in DOC_STORAGE other than default.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="DistributionChannel" type="LongCode" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines the way reservations come from. Possible values could be: company’s call center, internet (web application), some external system, etc. From some point of view distribution channel can be considered as a sale channel.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OfficeLocation" type="OfficeLocation" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Defines some less formal sub-division within office code. If not explicitly specified, the value will be taken from the OFFICE_LOCATION environment variable.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="RequiredEngineVersion" type="EngineVersion" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Version ID of the BookingEngine executable that is required for this user session. If actual version is not equal to the required one than session is not created and error message is returned.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ConversionMode" type="Boolean" default="N" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Value "Y" tells system than this session should be created for some specific tasks (like conversion of reservation data). <xhtml:span class="warning">Use carefully!</xhtml:span> In this mode SeaWare behaves differently in many cases (for example, some validation can be suppressed, etc.). Normally this parameter shouldn't be touched (default value "N" should be used).</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Login_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for Login_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Message header. Contains ID of created user session (SessionGUID). This ID should be used in all subsequent calls that should be performed within the context of this session.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="UserInfoDetail" type="UserInfoDetail" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Details of the user that has just logged in.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="SessionInfo" type="SessionInfo" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Some details of the created user session</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="EngineVersion" type="EngineVersion" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Version ID of the Booking Engine executable.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="EngineLocation" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Computer location of the engine where Login request was executed</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ComputerName" minOccurs="0">
+								<xs:simpleType>
+									<xs:restriction base="xs:string">
+										<xs:whiteSpace value="collapse"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:element>
+							<xs:element name="IP_Address" minOccurs="0">
+								<xs:simpleType>
+									<xs:restriction base="xs:string">
+										<xs:whiteSpace value="collapse"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="DBVersion" type="EngineVersion" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Version ID of the Seaware database (stored procedures).</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TnsName" type="xs:string" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Oracle TnsName used by BizLogic server.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="SchemaName" type="OracleUsername" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Oracle schema name used by BizLogic server.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ConversionParams" type="ConversionParameters" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Present only if ConversionMode=Y in the input message</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Logout_IN">
+		<xs:annotation>
+			<xs:documentation>End session.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Logout_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for Logout_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ChangePassword_IN">
+		<xs:annotation>
+			<xs:documentation>Change user password.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="OldPassword" type="Password">
+					<xs:annotation>
+						<xs:documentation>Old user password.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="NewPassword" type="Password">
+					<xs:annotation>
+						<xs:documentation>New user password.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ChangePassword_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ChangePassword_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Impersonate_IN">
+		<xs:annotation>
+			<xs:documentation>Impersonate - set session parameters as if login was made by given client or agent.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>If not set - impersonation ends and session parameters are reset to their initial 'after-login' values.</xs:documentation>
+					</xs:annotation>
+					<xs:element name="TravelAgent">
+						<xs:annotation>
+							<xs:documentation>Impersonate as a travel agent</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="AgentID" type="RecordID">
+									<xs:annotation>
+										<xs:documentation>AGENT_ID in SeaWare AGENT table</xs:documentation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Consumer">
+						<xs:annotation>
+							<xs:documentation>Impersonate as a consumer (client)</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="ClientID" type="RecordID" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>CLIENT_ID in SeaWare CLIENT table</xs:documentation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>Implemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="Country" type="CountryCode" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Country code (usually ISO 3166 code, though can be different depending on SeaWare setup)</xs:documentation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>ToBeImplemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="Currency" type="CurrencyCode" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Currency code (usually ISO 4217 code, though can be different depending on SeaWare setup)</xs:documentation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>ToBeImplemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="ResAgent">
+						<xs:annotation>
+							<xs:documentation>Impersonate as cruise line company staff member</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="Username" type="OracleUsername">
+									<xs:annotation>
+										<xs:documentation>Oracel username that should be created for any staff memeber who is supposed to use SeaWare</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Partner">
+						<xs:annotation>
+							<xs:documentation>Impersonate as consumer that comes from partner's system (web site, for example)</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="AgencyID" type="RecordID">
+									<xs:annotation>
+										<xs:documentation>AGENCY_ID in SeaWare AGENCY table</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Internal">
+						<xs:annotation>
+							<xs:documentation>Can be used to temporary switch to an unrestricted mode within current session.</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:all minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>not implemented</xs:documentation>
+								</xs:annotation>
+								<xs:element name="Username" type="Username"/>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Impersonate_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for Impersonate_IN.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowSessionDetail_IN">
+		<xs:annotation>
+			<xs:documentation>Return Session related information</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowSessionDetail_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ShowSessionDetail_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="UserInfoDetail" type="UserInfoDetail" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>This data may be affected by the Impersonate call.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="LoggedInUserInfo" type="UserInfoDetail" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>This data always corresponds to the user defined by Login_IN. It is not affected by Impersonate calls.</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="SessionInfo" type="SessionInfo" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="PrintRequests" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence minOccurs="0">
+							<xs:element name="PrintRequest" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="QueueItemID" type="RecordID"/>
+										<xs:element name="Delivery" type="DocDelivery"/>
+										<xs:element name="FileID" type="RecordID" minOccurs="0"/>
+										<xs:element name="ErrorMessage" minOccurs="0">
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+													<xs:whiteSpace value="collapse"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ConversionParams" type="ConversionParameters" minOccurs="0"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="UserProfile">
+		<xs:sequence>
+			<xs:element name="ClientID" type="RecordID" minOccurs="0"/>
+			<xs:element name="AgentID" type="RecordID" minOccurs="0"/>
+			<xs:element name="ProfileType" type="LongCode" minOccurs="0"/>
+			<xs:element name="ApplicationName" type="LongCode" minOccurs="0"/>
+			<xs:element name="ProfileData" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Populated with current profile data as character string.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="ManageUserProfile_IN">
+		<xs:annotation>
+			<xs:documentation>Get/Set arbitrary data associated with the current user. Data is stored permanently in the database as a part of user profile. It is stored and returned in form of XML object exactly as specified in child ProfileData element.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="ProfileData" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>If set - profile data will be updated, otherwise currently stored data will be returned.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+						<xs:anyAttribute processContents="skip"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ProfileType" type="LongCode" minOccurs="0"/>
+				<xs:element name="ApplicationName" type="LongCode" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ManageUserProfile_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ManageUserProfile_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader" minOccurs="0"/>
+				<xs:element name="ProfileData" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Populated with current profile data.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+						<xs:anyAttribute processContents="skip"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Profile" type="UserProfile" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>Populated if 'ProfileDataAsText' = 'Y' in the input message Options.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--=============================================== Extended Data-->
+	<xs:element name="CreateExtData_IN">
+		<xs:annotation>
+			<xs:documentation>Set Key/Value pairs (map) associated with the current session. Stored data is available until user session is destroyed (either manually by logout or automatically by timeout).</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtItems">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="ExtItem" type="ExtItem" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="CreateExtData_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for CreateExtData_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtItems">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="ExtItem" type="ExtItem" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowExtData_IN">
+		<xs:annotation>
+			<xs:documentation>Retrieve  Key/Value pairs associated with the current session (all or per key)</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Options" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:all>
+							<xs:element name="ShowData" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>If Y - the Data element will be included into the responce message.</xs:documentation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="ShowAll" type="Boolean" default="N" minOccurs="0">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:all>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ExtItems" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Key" type="ExtKey" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ShowExtData_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for ShowExtData_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ExtItems" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="ExtItem" type="ExtItem" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!---->
+	<!--=============================================== Error-->
+	<xs:element name="WrongFormat">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Errors" type="Errors" minOccurs="0"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!--============================================== Reset Password -->
+	<xs:complexType name="SecurityQuestion">
+		<xs:sequence>
+			<xs:element name="QuestionSequenceNumber" type="xs:integer">
+				<xs:annotation>
+					<xs:documentation>Current Sequence Number of the Question in set of questions defined for current user.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:choice minOccurs="0">
+				<xs:element name="CustomQuestionString" type="SecurityQuestionString">
+					<xs:annotation>
+						<xs:documentation>Free style Question. Used to provide the new Question string when it is defined by customer.
+</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="CommonQuestionCode" type="xs:string">
+					<xs:annotation>
+						<xs:documentation>Unique Code of the Question in table of Common Questions</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="ResetPassword_IN">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:choice>
+					<xs:element name="Initiate" maxOccurs="1">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Question" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:all>
+											<xs:element name="SecurityAnswer" type="SecurityAnswerString"/>
+											<xs:element name="SecurityQuestion" type="SecurityQuestion"/>
+										</xs:all>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Reset">
+						<xs:complexType>
+							<xs:all>
+								<xs:element name="SecurityCode" type="SecurityCode"/>
+								<xs:element name="NewPassword" type="Password"/>
+							</xs:all>
+						</xs:complexType>
+					</xs:element>
+				</xs:choice>
+				<xs:choice>
+					<xs:element name="RESAGENT" type="OracleUsername"/>
+					<xs:element name="TRAVELAGENT" type="Username"/>
+					<xs:element name="CONSUMER" type="Username"/>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="ResetPassword_OUT">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SetSecurityQuestions_IN">
+		<xs:annotation>
+			<xs:documentation>Call with empty node "Questions" will return all existing Questions with Answers with "SetSecurityQuestions_OUT" message. Call with some "Question" nodes defined will update the "Answer" for existing "Question" records, delete the "Question" record if "Answer" node is missing or add "Question"/"Answer" pair if the "Question" hasn't been defined yet. User must be Logged in. </xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Questions" maxOccurs="1">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Question" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="SecurityQuestion" type="SecurityQuestion"/>
+										<xs:element name="SecurityAnswer" type="SecurityAnswerString" minOccurs="1"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SetSecurityQuestions_OUT">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader"/>
+				<xs:element name="Questions" maxOccurs="1">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="Question" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="SecurityQuestion" type="SecurityQuestion"/>
+										<xs:element name="SecurityAnswer" type="SecurityAnswerString"/>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="DBUserHeader">
+		<xs:all>
+			<xs:element name="UserID" type="RecordID" minOccurs="0"/>
+			<xs:element name="LoginName" type="OracleUsername" minOccurs="1"/>
+			<xs:element name="LastName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="FirstName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="MiddleName" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="30"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="EMail" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Email address</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="80"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0"/>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="ResAgent">
+		<xs:sequence>
+			<xs:element name="DBUserHeader" type="DBUserHeader"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="UpdateResAgent_IN">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResAgent" type="ResAgent">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="UpdateResAgent_OUT">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResAgent" type="ResAgent" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

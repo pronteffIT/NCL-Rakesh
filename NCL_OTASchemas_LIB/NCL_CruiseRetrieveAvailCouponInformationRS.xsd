@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://nclapi/schemas" version="3.0" xmlns="http://nclapi/schemas">
+	<xs:include schemaLocation="OTA_CommonPrefs.xsd"/>
+	<xs:include schemaLocation="OTA_CommonTypes.xsd"/>
+	<xs:include schemaLocation="OTA_SimpleTypes.xsd"/>
+	<xs:include schemaLocation="OTA_CruiseCommonTypes.xsd"/>
+	<xs:annotation>
+		<xs:documentation xml:lang="en">All Schema files in the OTA 
+specification are made available according to the terms defined by the OTA 
+License Agreement at 
+http://www.opentravel.org/ota_downloads_form.cfm</xs:documentation>
+	</xs:annotation>
+	<xs:element name="NCL_CruiseRetrieveAvailCouponInformationRS">
+		<xs:annotation>
+			<xs:documentation xml:lang="en">
+The RetrieveAvail Coupon Information message retrieves all the coupons available for a given Client ID
+</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="Success" type="SuccessType">
+						<xs:annotation>
+							<xs:documentation> Standard way to indicate successful 
+processing of an OTA message. Returning an empty element of this type indicates 
+success.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element minOccurs="0" name="Warnings" type="WarningsType">
+						<xs:annotation>
+							<xs:documentation> Standard way to indicate successful 
+processing of an OTA message, but one in which warnings are 
+generated.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+
+					<xs:element ref="GuestInfo"/>
+				</xs:sequence>
+				<xs:element minOccurs="0" name="Errors" type="ErrorsType">
+					<xs:annotation>
+						<xs:documentation> A collection of errors that occurred during 
+the processing of a message.</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:attributeGroup ref="OTA_PayloadStdAttributes"/>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GuestInfo">
+		<xs:complexType>
+			<xs:sequence>
+
+				<xs:element maxOccurs="8" minOccurs="0" ref="Guest"/>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Guest">
+		<xs:annotation>
+										<xs:documentation>Specifies Guest information and in this message it is Client ID</xs:documentation>
+									</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+
+				<xs:element ref="Coupons"/>
+			</xs:sequence>
+			<xs:attributeGroup ref="LoyaltyInfoGroup"/>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Coupons">
+		<xs:complexType>
+			<xs:sequence>
+
+				<xs:element maxOccurs="unbounded" minOccurs="0" ref="Coupon">
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="Coupon">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="VacationRange">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="From" type="DateOrDateTimeType"/>
+							<xs:element name="To" type="DateOrDateTimeType"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ValidityRange">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="From" type="DateOrDateTimeType"/>
+							<xs:element name="To" type="DateOrDateTimeType"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="IsActive" type="BooleanType"/>
+				<xs:element name="IsUsed" type="BooleanType"/>
+				<xs:element name="Currency">
+					<xs:annotation>
+																			<xs:documentation xml:lang="en">The amount on the Coupon that is used.</xs:documentation>
+																		</xs:annotation>
+					<xs:complexType>
+						<xs:attributeGroup ref="CurrencyCodeGroup"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="AmountOnTheCoupon">
+					<xs:annotation>
+																			<xs:documentation xml:lang="en">The original amount on the Coupon that was available to be used</xs:documentation>
+																		</xs:annotation>
+					<xs:complexType>
+						<xs:attributeGroup ref="CurrencyAmountGroup"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="AmountRemaining">
+					<xs:annotation>
+																			<xs:documentation xml:lang="en">The amount balance left on the Coupon.</xs:documentation>
+																		</xs:annotation>
+					<xs:complexType>
+						<xs:attributeGroup ref="CurrencyAmountGroup"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element minOccurs="0" name="CouponClass" type="xs:string"/>
+				<xs:element name="IsUsedAsDiscount" type="BooleanType"/>
+				<xs:element name="IsUsedAsPayment" type="BooleanType"/>
+				<xs:element minOccurs="0" name="Comments" type="xs:string"/>
+				<xs:element minOccurs="0" name="GrantedToClient">
+					<xs:complexType>
+						<xs:attributeGroup ref="IdentifierGroup"/>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+			<xs:attributeGroup ref="IdentifierGroup"/>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

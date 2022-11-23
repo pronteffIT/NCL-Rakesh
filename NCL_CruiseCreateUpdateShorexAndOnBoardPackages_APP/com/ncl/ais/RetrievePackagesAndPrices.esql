@@ -1,0 +1,476 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE TrackActivityInterval EXTERNAL CHARACTER ''; 
+DECLARE PCODE SHARED ROW;
+
+CREATE COMPUTE MODULE RetrievePackagesAndPrices_RetrievePackagesReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rStoreBkgRes REFERENCE TO InputRoot.XMLNSC.StoreBooking_OUT;
+		DECLARE rUpdBkgRes REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		--DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+		--DECLARE rUpdtBkngReq REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		
+		IF EXISTS(InputRoot.XMLNSC.StoreBooking_OUT[]) 
+		THEN
+			DECLARE bFatalError BOOLEAN FALSE;
+			DECLARE rError REFERENCE TO rStoreBkgRes.Errors.Error[1];
+
+			--CALL CopyEntireMessage();
+		
+			WHILE LASTMOVE(rError) AND (NOT bFatalError) DO
+				IF rError.BookingValidation.CanBeStored = 'N' OR
+					EXISTS(rError.ErrorMessage[]) OR rError.ErrorSeverity = 'E' OR
+				 	rError.ErrorSeverity =  'F' OR rError.ErrorSeverity = 'OPERATION' 
+				THEN
+					SET bFatalError = TRUE;
+				END IF;		
+				MOVE rError NEXTSIBLING;
+			END WHILE;
+			
+			
+			--insert track activity record
+			IF NOT bFatalError THEN
+				DECLARE strSQL CHARACTER;
+				DECLARE DB ROW;
+				SET strSQL = 'INSERT INTO NCLSEA.NCL_TRACK_GUEST_ACTIVITY (RES_ID, GUEST_ID,RES_PACKAGE_ID, PACKAGE_TYPE_TXT, CHANNEL_TXT, CREATED_DAT) ' ||
+						        'SELECT rp.res_id, rp.guest_id, res_package_id, package_type, ?, rp.effective_date ' || 
+								'FROM  res_package rp,res_guest rg WHERE rg.guest_id=rp.guest_id AND rg.res_id=rp.res_id ' ||
+						        'AND rp.res_id= ? and rp.effective_date > sysdate -INTERVAL '''|| TrackActivityInterval ||''' MINUTE';
+						        
+				SET DB.result[] = PASSTHRU(strSQL VALUES(rOrgMsg.*:POS.*:Source.*:RequestorID.*:CompanyName.(XMLNSC.Attribute)Code, rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID));
+			END IF; 
+			   
+		   SET rEnv.Temp.Message.UpdateBkgRes = rStoreBkgRes;
+			
+			--IF rStoreBkgRes.Errors.Error.BookingValidation.CanBeStored = 'N' OR
+			--	EXISTS(rStoreBkgRes.Errors.Error.ErrorMessage[]) OR rStoreBkgRes.Errors.Error.ErrorSeverity = 'E' OR
+			--	 rStoreBkgRes.Errors.Error.ErrorSeverity =  'F' OR rStoreBkgRes.Errors.Error.ErrorSeverity = 'OPERATION' 
+			IF bFatalError = TRUE
+			THEN
+				CALL CopyEntireMessage();
+				PROPAGATE TO LABEL 'GENERIC_WARN';
+				RETURN FALSE;
+			ELSE
+				-- Check if there are non-fatal errors and store them in Env
+				IF EXISTS (rStoreBkgRes.Errors.Error[]) 
+				THEN					
+					CALL StoreErrorsAsWarnings (rStoreBkgRes.Errors, rEnv, rOutRoot);				
+				END IF;
+			END IF;			
+		END IF;
+		
+		IF EXISTS(InputRoot.XMLNSC.UpdateBooking_OUT.Errors.Error[])
+		THEN					
+			CALL StoreErrorsAsWarnings(rUpdBkgRes.Errors, rEnv, rOutRoot);				
+		END IF;	
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		SET OutputLocalEnvironment.CallableFlow.EndPoint = rEnv.Temp.Endpoint;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseRetrievePackagesRQ AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:POS = rOrgMsg.*:POS;
+		SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID;
+		SET rOut.ns:RetrieveAmenities = 'false';
+		--SET rOut.ns:SessionId.ns:SessionToken = rOrgMsg.*:SessionId.*:SessionToken;
+		SET rOut.ns:SessionId.ns:SessionToken = rEnv.Temp.SessionId;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling RetrievePackages ...', rEnv);
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE RetrievePackagesAndPrices_PriceBookingReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rUpdtBkngReq,rResGuest,rOut,rTrans,rAvailGtwResp,rResShipReq,rWarning REFERENCE TO Environment.Variables;
+		DECLARE rWarnings REFERENCE TO rEnv.Temp.Warnings;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rRetPkgRes REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseRetrievePackagesRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE rUpdtBkgRes REFERENCE TO rEnv.Temp.Message.UpdateBkgRes;
+		
+		
+		IF EXISTS(rRetPkgRes.*:Errors.*:Error.(XMLNSC.Attribute)ShortText[])
+		THEN
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			SET rOut.ns:Warnings = rRetPkgRes.*:Warnings;			
+			SET rOut.ns:Errors = rRetPkgRes.*:Errors;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		
+		-- Store non fatal Warnings in Env
+		FOR rWarn AS rRetPkgRes.*:Warnings.*:Warning[]
+		DO					
+			IF NOT EXISTS(rEnv.Temp.Warnings[]) THEN
+				CREATE FIELD rEnv.Temp.Warnings AS rWarnings;				
+			END IF;					
+			CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY ns:Warning;			
+			SET rWarning = rWarn;			
+		END FOR;
+		
+		-- Backup the details of this response in rEnv.Temp.Message
+		CREATE FIELD rEnv.Temp.Message.NCL_CruiseRetrievePackagesRS;		
+		--SET rEnv.Temp.Message.NCL_CruiseRetrievePackagesRS = rRetPkgRes;
+		SET rEnv.Temp.Message.NCL_CruiseRetrievePackagesRS = InputRoot.XMLNSC.*:NCL_CruiseRetrievePackagesRS;
+	/*	
+		SET OutputLocalEnvironment.CallableFlow.State = 'STATEFUL';
+		-- Added on 03/01 for PriceBooking
+		SET OutputLocalEnvironment.Service.State = 'STATEFUL';
+		SET OutputLocalEnvironment.Service.sessionID = rEnv.Temp.SessionId;
+        SET OutputLocalEnvironment.Service.agencyID = rEnv.Temp.agencyId;
+	--    SET OutputLocalEnvironment.Service.officeCode = rEnv.officeCode;
+	    SET OutputLocalEnvironment.Service.endPoint = rEnv.Temp.Endpoint;
+		-- Create PriceBooking Request
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulPriceBookingRQ AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+
+		--SET rOut.ns:SessionId.ns:SessionToken = rOrgMsg.*:SessionId.*:SessionToken;
+		SET rOut.ns:SessionId.ns:SessionToken = rEnv.Temp.SessionId;		
+		SET rOut.ns:POS = rOrgMsg.*:POS;
+		SET rOut.ns:ReservationInfo.ns:ReservationID.(XMLNSC.Attribute)ID = rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID;
+	
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling Stateful PriceBooking ...', rEnv); 
+	*/	
+	
+	
+	-- Construct UpdateBooking Requset inplace of PriceBooing
+	-- prepare update res tranport
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'application/xml;charset=utf-8';
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+		
+		CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rUpdtBkngReq;
+		
+--		SET rUpdtBkngReq.MsgHeader.Version = VersonixAPIVersion;
+--		SET rUpdtBkngReq.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+--		SET rUpdtBkngReq.MsgHeader.CallerInfo = rUpdtBkgRes.MsgHeader.CallerInfo;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rUpdtBkngReq);
+		SET rUpdtBkngReq.Options.CloneMode='Y';
+		
+		-- create custom xslt transform for VX api
+		CREATE FIELD rUpdtBkngReq.MsgHeader.Transform AS rTrans; 
+		CALL CreateUpdateBookingTransform(rTrans,rEnv.Temp);
+		
+		--SET rUpdtBkngReq.Options.CloneMode = rOrgMsg.*:CloneMode;
+		-- Added as part of AirBundle changes
+		SET rUpdtBkngReq.Options.CalcFields.PenaltyInfo = 'Y';  
+		SET rUpdtBkngReq.Options.CalcFields.InvoiceInfo = 'Y';  
+		SET rUpdtBkngReq.ResShell.ResHeader = rUpdtBkgRes.ResShell.ResHeader;			
+	
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Calling update booking api for res transportation ...', rEnv);
+		
+		RETURN TRUE;
+
+	END;
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE RetrievePackagesAndPrices_PriceBookingResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rWarning, rPackages, rRetPkg, rUnlockBkng REFERENCE TO Environment.Variables;
+		DECLARE rWarnings,rBkgPrice REFERENCE TO rEnv.Temp.Warnings;
+		DECLARE rOrgMsg,rPay,rGuestPrice,rPriceInfo REFERENCE TO rEnv.Temp.Message.NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRQ;
+		DECLARE rUpdtBkgRes REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+		DECLARE rRetPkgRes REFERENCE TO rEnv.Temp.Message.NCL_CruiseRetrievePackagesRS;
+		DECLARE rOutRoot REFERENCE TO OutputRoot;
+		DECLARE PRICING ROW;
+		DECLARE rAggrPrice REFERENCE TO PRICING;
+		DECLARE cResId CHARACTER rUpdtBkgRes.ResShell.ResHeader.ResID;
+		DECLARE cOrigReqResId CHARACTER;
+		DECLARE cLookupCode, cPriceCode CHARACTER '';
+		DECLARE iPayNum INTEGER 1;
+		DECLARE bPayload BLOB;
+		DECLARE rpcode REFERENCE TO PCODE;
+		
+		
+		IF ((EXISTS (rUpdtBkgRes.Errors.Error[])) 
+			AND (EXISTS(SELECT E.* FROM rUpdtBkgRes.Errors.Error[] AS E 
+						WHERE (E.ErrorSeverity IN ('E','F','OPERATION','EXCEPTION','FATAL') OR
+								COALESCE(E.BookingValidation.CanBeStored, '') ='N' ))))
+		THEN
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+	
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+			
+			SET rOut.ns:Warnings = rUpdtBkgRes.Errors.Error;	
+			SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = rEnv.Temp.ReservationId;	
+			SET rOut.ns:SailingInfo = rRetPkgRes.*:SailingInfo;
+			SET rOut.ns:GuestInfo = rRetPkgRes.*:GuestInfo;
+			SET rOut.ns:Packages = rRetPkgRes.*:Packages;
+			SET rOut.ns:StandardDinings = rRetPkgRes.*:StandardDinings;
+			SET rOut.ns:Errors = rUpdtBkgRes.Errors.Error;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		END IF;
+		
+		CALL LookupAgencyByResID (rEnv.Temp.ReservationId, rEnv);
+		
+--		-- Backup the details of this response in rEnv.Temp.Message
+--		CREATE FIELD rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRS;		
+--		SET rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRS = rPriceBkgRes;		
+--		
+		-- Capture expiration time from res_lock table before it is deleted
+		--SET rEnv.Temp.ExpiryTime = LookupResLockExpiration(rEnv.Temp.ReservationId, rEnv.Temp.SessionId);
+		DECLARE expireTS TIMESTAMP CAST(rEnv.Temp.LockExpirationTime AS TIMESTAMP FORMAT 'IU');
+		SET rEnv.Temp.ExpiryTime = CAST(expireTS AS CHARACTER FORMAT 'yyyy-MM-dd HH:mm:ss');
+		
+		
+		IF rOrgMsg.*:ModeOfOperation = 'Store' 
+		THEN
+			-- Invoke UnlockBooking explicitly and capture errors if invoke is unsuccessful
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+			CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			
+			CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS rUnlockBkng;
+			
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionId,rUnlockBkng);
+--			SET rUnlockBkng.MsgHeader.Version = VersonixAPIVersion;
+--			SET rUnlockBkng.MsgHeader.SessionGUID = rEnv.Temp.SessionId;
+			
+			IF LENGTH(rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID) > 0 THEN
+				SET rUnlockBkng.ResID = FIELDVALUE(rOrgMsg.*:ReservationInfo.*:ReservationID.(XMLNSC.Attribute)ID);
+			ELSE
+				SET rUnlockBkng.ResID = rEnv.Temp.ReservationId;
+			END IF;
+			
+			PROPAGATE TO TERMINAL 'out2';
+			--RETURN FALSE;
+		END IF;
+		
+		CREATE LASTCHILD OF rEnv.Temp.CretaeUpdtShrxResp DOMAIN('XMLNSC') NAMESPACE ns NAME 'NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS';
+		CREATE FIELD rEnv.Temp.CretaeUpdtShrxResp.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		CREATE LASTCHILD OF rOut IDENTITY ns:Success;			
+		CREATE LASTCHILD OF rOut AS rWarnings IDENTITY ns:Warnings;
+		DECLARE rTempWarning REFERENCE TO rEnv.Temp.Warnings.Warning;
+		FOR	rTempWarning AS rEnv.Temp.Warnings.*:Warning[]
+		DO
+		    CREATE LASTCHILD OF rWarnings AS rWarning IDENTITY ns:Warning;
+			SET rWarning.(XMLNSC.Attribute)Code = FIELDVALUE(rTempWarning.(XMLNSC.Attribute)Code);
+			SET rWarning.(XMLNSC.Attribute)ShortText = FIELDVALUE(rTempWarning.(XMLNSC.Attribute)ShortText);
+			SET rWarning.(XMLNSC.Attribute)Type = '2';		
+		END FOR;
+		
+		--SET rOut.ns:BookingLockExpirationTime = LookupResLockExpiration(rEnv.Temp.ReservationId, rEnv.Temp.SessionId);
+		SET rOut.ns:BookingLockExpirationTime = rEnv.Temp.ExpiryTime;
+		
+		SET rOut.ns:ReservationID.(XMLNSC.Attribute)ID = rEnv.Temp.ReservationId;
+		--SET rOut.ns:SailingInfo = rRetPkgRes.*:SailingInfo;
+		SET rOut.ns:SailingInfo = rEnv.Temp.Message.NCL_CruiseRetrievePackagesRS.*:SailingInfo;
+		SET rOut.ns:GuestInfo = rRetPkgRes.*:GuestInfo;
+
+		-- Delete Primary Package
+		CREATE FIELD rOut.ns:Packages AS rPackages;
+		DECLARE cVoyageID CHARACTER FIELDVALUE(rRetPkgRes.*:SailingInfo.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+		FOR rRetPkg AS rRetPkgRes.*:Packages.*:Package[] 
+		DO
+			-- Do not copy if Package ID is equal to Voyage ID
+			IF NOT(FIELDVALUE(rRetPkg.(XMLNSC.Attribute)ID) = cVoyageID ) THEN
+				DECLARE rPkg REFERENCE TO rPackages;
+				CREATE LASTCHILD OF rPackages AS rPkg IDENTITY ns:Package; 
+				SET rPkg = rRetPkg;
+			END IF;			
+		END FOR;
+		
+		SET rOut.ns:StandardDinings = rRetPkgRes.*:StandardDinings;
+		----
+	-- CHnages for Removing PriceBooking
+	
+		-- map pricing
+			CREATE LASTCHILD OF PRICING DOMAIN 'XMLNSC' PARSE(rUpdtBkgRes.MsgHeader.TransformResult CCSID 1208 ENCODING 546);
+			
+			FOR rInvoice AS PRICING.XMLNSC.root.invoices.invoice[] DO
+				IF rInvoice.seqn = '0' THEN
+					-- groups
+					FOR rGroup AS rInvoice.groups.group[] DO
+						--SET cPriceCode = com.ncl.ais.utils.XrefExternalCodes(rEnv.Temp.Channel, BridgeStatementCodeType, rGroup.code, rEnv, rOutRoot);
+						SET cPriceCode = LookupPriceCode(rEnv.Temp.Channel, BridgeStatementCodeType, rGroup.code, rpcode);
+												
+						IF LENGTH(cPriceCode) > 0 THEN
+							SET PRICING.BookingPrice.{cPriceCode} = ROUND(CAST(rGroup.value AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP) +
+																	CAST(COALESCE(PRICING.BookingPrice.{cPriceCode}, 0) AS DECIMAL);
+						END IF;
+					END FOR; -- group loop
+					
+					-- total
+					IF EXISTS(rInvoice.total.group[]) THEN
+						--SET cPriceCode = com.ncl.ais.utils.XrefExternalCodes(rEnv.Temp.Channel, BridgeStatementCodeType, rInvoice.total.group.code, rEnv, rOutRoot);
+						SET cPriceCode = LookupPriceCode(rEnv.Temp.Channel, BridgeStatementCodeType, rInvoice.total.group.code, rpcode);
+						
+						IF LENGTH(cPriceCode) > 0 THEN
+							SET PRICING.BookingPrice.{cPriceCode} = ROUND(CAST(rInvoice.total.group.value AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP) +
+																	CAST(COALESCE(PRICING.BookingPrice.{cPriceCode}, 0) AS DECIMAL);
+						END IF;
+					END IF;
+				END IF;
+			END FOR; -- invoice loop
+			
+			-- map the consolidated booking price
+			MOVE rAggrPrice TO PRICING.BookingPrice.*[1];
+			
+			WHILE LASTMOVE(rAggrPrice) DO
+				CREATE LASTCHILD OF rOut.ns:BookingPayment.ns:BookingPrices AS rBkgPrice NAMESPACE ns NAME 'BookingPrice';
+				
+				SET rBkgPrice.(XMLNSC.Attribute)PriceTypeCode = FIELDNAME(rAggrPrice);
+				SET rBkgPrice.(XMLNSC.Attribute)Amount = rAggrPrice;
+				
+				MOVE rAggrPrice NEXTSIBLING;
+			END WHILE;	
+			
+			-- payment schedule mapping
+			CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'PaymentSchedule';	
+			FOR rResPaySch AS rUpdtBkgRes.ResShell.ResPaymentSchedule.ResPaySchItem[] DO
+			
+				CREATE LASTCHILD OF rEnv.PaymentSchedule AS rPay  DOMAIN('XMLNSC') NAME 'Payment';
+				
+				SET rPay.(XMLNSC.Attribute)Amount = ROUND(CAST(rResPaySch.Amount AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP);
+			--	SET rPay.(XMLNSC.Attribute)PaymentNumber = iPayNum;
+				SET rPay.(XMLNSC.Attribute)DueDate = rResPaySch.DueDate || 'Z';
+				SET rPay.(XMLNSC.Attribute)DueType = rResPaySch.DueType;
+				
+			--	SET iPayNum = iPayNum + 1;
+			END FOR; -- ResPaySchItem loop
+			
+			-- Invoking XSL transformation for Sorting of Payments based on Due dates changed on 02/18/2019
+			IF EXISTS(rEnv.PaymentSchedule.*:Payment[]) THEN
+				SET OutputRoot.Properties.Encoding = InputRoot.Properties.Encoding; 
+				SET OutputRoot.Properties.CodedCharSetId = InputRoot.Properties.CodedCharSetId;
+				
+				CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+				CREATE FIELD OutputRoot.XMLNSC.PaymentSchedule;
+				SET OutputRoot.XMLNSC.PaymentSchedule = rEnv.PaymentSchedule;
+				
+				PROPAGATE TO LABEL 'SORTPAYMENT';
+				SET OutputRoot = NULL;
+				SET rOut.ns:BookingPayment.ns:PaymentSchedule = rEnv.SortedPayment;
+				DELETE FIELD rEnv.PaymentSchedule;
+				
+			END IF;	
+		
+			
+			-- guest price mapping
+			FOR rResGuest AS rUpdtBkgRes.ResShell.ResGuests.ResGuest[] DO
+				CREATE LASTCHILD OF rOut.ns:BookingPayment.ns:GuestPrices AS rGuestPrice NAMESPACE ns NAME 'GuestPrice';				
+				SET rGuestPrice.(XMLNSC.Attribute)GuestRefNumber = rResGuest.GuestSeqN;
+
+				-- map transportation
+				FOR rResComp AS rUpdtBkgRes.ResShell.ResComponents.ResComponent[] DO
+					IF rResComp.GuestRefs = rResGuest.GuestSeqN AND rResComp.Type IN('AIR-RET', 'AIR-OUT') THEN
+						IF rResComp.Type = 'AIR-OUT' THEN
+							SET rGuestPrice.ns:GuestTransportation.ns:GatewayCity.(XMLNSC.Attribute)CodeContext = 'IATA';
+							SET rGuestPrice.ns:GuestTransportation.ns:GatewayCity.(XMLNSC.Attribute)LocationCode = rResComp.Code;
+							SET rGuestPrice.ns:GuestTransportation.ns:GatewayCity.(XMLNSC.Attribute)LocationActionTime = rResComp.DateTimeRange.From;
+						END IF;
+
+						IF rResComp.Type = 'AIR-RET' THEN
+							SET rGuestPrice.ns:GuestTransportation.ns:GatewayCityRet.(XMLNSC.Attribute)CodeContext = 'IATA';
+							SET rGuestPrice.ns:GuestTransportation.ns:GatewayCityRet.(XMLNSC.Attribute)LocationCode = rResComp.SubCode1;
+							SET rGuestPrice.ns:GuestTransportation.ns:GatewayCityRet.(XMLNSC.Attribute)LocationActionTime = rResComp.DateTimeRange.From;
+						END IF;
+					END IF;
+				END FOR; -- ResComponent loop
+				
+				IF EXISTS(rGuestPrice.ns:GuestTransportation[]) THEN
+					SET rGuestPrice.ns:GuestTransportation.(XMLNSC.Attribute)Mode = '14';				
+				END IF;
+				
+				-- map price info				
+				FOR rInvoice AS PRICING.XMLNSC.root.invoices.invoice[] DO
+					IF rInvoice.seqn = rResGuest.GuestSeqN THEN
+						-- groups
+						FOR rGroup AS rInvoice.groups.group[] DO
+							--SET cPriceCode = com.ncl.ais.utils.XrefExternalCodes(rEnv.Temp.Channel, BridgeStatementCodeType, rGroup.code, rEnv, rOutRoot);
+							SET cPriceCode = LookupPriceCode(rEnv.Temp.Channel, BridgeStatementCodeType, rGroup.code, rpcode);
+							
+							IF LENGTH(cPriceCode) > 0 THEN
+								SET PRICING.GuestPrice.{cPriceCode} = ROUND(CAST(rGroup.value AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP) +
+																		CAST(COALESCE(PRICING.GuestPrice.{cPriceCode}, 0) AS DECIMAL);
+							END IF;
+						END FOR;
+						
+						-- total
+						IF EXISTS(rInvoice.total.group[]) THEN
+							--SET cPriceCode = com.ncl.ais.utils.XrefExternalCodes(rEnv.Temp.Channel, BridgeStatementCodeType, rInvoice.total.group.code, rEnv, rOutRoot);
+							SET cPriceCode = LookupPriceCode(rEnv.Temp.Channel, BridgeStatementCodeType, rInvoice.total.group.code, rpcode);
+							
+							IF LENGTH(cPriceCode) > 0 THEN
+								SET PRICING.GuestPrice.{cPriceCode} = ROUND(CAST(rInvoice.total.group.value AS DECIMAL) * 100, 0 MODE ROUND_HALF_UP) +
+																		CAST(COALESCE(PRICING.GuestPrice.{cPriceCode}, 0) AS DECIMAL);
+							END IF;
+						END IF;
+					END IF;
+				END FOR; -- invoice loop
+
+				-- map the consolidated guest prices
+				MOVE rAggrPrice TO PRICING.GuestPrice.*[1];
+				
+				WHILE LASTMOVE(rAggrPrice) DO
+					CREATE LASTCHILD OF rGuestPrice.ns:PriceInfos AS rPriceInfo NAMESPACE ns NAME 'PriceInfo';
+
+					SET rPriceInfo.(XMLNSC.Attribute)PriceTypeCode = FIELDNAME(rAggrPrice);
+					SET rPriceInfo.(XMLNSC.Attribute)Amount = rAggrPrice;
+					
+					MOVE rAggrPrice NEXTSIBLING;
+				END WHILE;
+				
+				-- cleaning up values before next iteration
+				SET PRICING.GuestPrice = NULL;				
+			END FOR; -- ResGuest loop
+		
+		
+	--	SET rOut.ns:BookingPayment = rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRS.*:BookingPayment;
+		
+		SET rOut.ns:AgencyInfo.ns:AgencyID = rEnv.Temp.AgencyInfo.AGENCYID;
+		SET rOut.ns:AgencyInfo.ns:AgencyName = rEnv.Temp.AgencyInfo.AGENCYNAME;
+		SET rOut.ns:AgencyInfo.ns:AgencyType = rEnv.Temp.AgencyInfo.AGENCYTYPE;
+		SET rOut.ns:AgencyInfo.ns:OfficeCode = rEnv.Temp.AgencyInfo.OFFICECODE;
+		SET rOut.ns:AgencyInfo.ns:AgencyPrimaryPhone = rEnv.Temp.AgencyInfo.AGENCYPHONE;			
+
+		--DETACH rEnv.Temp.Message.NCL_CruiseStatefulPriceBookingRS;
+		--DETACH rEnv.Temp.Message.NCL_CruiseRetrievePackagesRS;
+		SET OutputRoot.XMLNSC.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS = rEnv.Temp.CretaeUpdtShrxResp.ns:NCL_CruiseStatefulCreateUpdateShorexAndOnBoardPackagesRS;
+
+		RETURN TRUE;
+	END;
+
+	
+
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_StatefulPriceBooking_SortPayment
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,rPayment REFERENCE TO Environment.Variables;
+		CREATE LASTCHILD OF rEnv AS rPayment DOMAIN 'XMLNSC' NAME 'SortedPayment';
+		SET rPayment = InputRoot.XMLNSC.PaymentSchedule;
+		
+		RETURN FALSE;
+	END;
+END MODULE;

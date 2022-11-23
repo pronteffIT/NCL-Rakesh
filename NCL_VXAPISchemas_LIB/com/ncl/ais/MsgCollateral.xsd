@@ -1,0 +1,1003 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+    <xs:include schemaLocation="BaseTypes.xsd"/>
+    <xs:include schemaLocation="MsgAccounting.xsd"/>
+    <!--=============================================== Collateral Maintenance: basic data types-->
+    
+    <xs:simpleType name="CollateralOrderStatus">
+        <xs:annotation>
+            <xs:documentation>Statuses that collateral order may have.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+            <xs:maxLength value="15"/>
+            <xs:whiteSpace value="collapse"/>
+            <xs:enumeration value="FULLFILLED"/>
+            <xs:enumeration value="NEW"/>
+            <xs:enumeration value="PENDING"/>
+            <xs:enumeration value="READY"/>
+            <xs:enumeration value="PRINTING"/>
+            <xs:enumeration value="CANCELED"/>
+        </xs:restriction>
+    </xs:simpleType>
+    
+    <xs:simpleType name="CollateralAddressType">
+        <xs:annotation>
+            <xs:documentation>Collateral order address type.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+            <xs:maxLength value="15"/>
+            <xs:whiteSpace value="collapse"/>
+            <xs:enumeration value="DEFAULT"/>
+            <xs:enumeration value="ORDER SPECIFIC"/>
+            <xs:enumeration value="OTHER"/>
+        </xs:restriction>
+    </xs:simpleType>
+    
+    <xs:simpleType name="CollateralCode">
+        <xs:annotation>
+            <xs:documentation>Collateral code.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="Code"/>
+    </xs:simpleType>
+
+    <xs:simpleType name="CollateralOrderCategory">
+        <xs:annotation>
+            <xs:documentation>Collateral order category ('COUPON', 'INTERNET', 'CONSUMER', 'BRAND TV', 'PROMOTIONS', 'SMS', etc.).</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="Code"/>
+    </xs:simpleType>
+    
+    <xs:simpleType name="CollateralRequesterType">
+        <xs:annotation>
+            <xs:documentation>Collateral order requester type.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="xs:string">
+            <xs:maxLength value="15"/>
+            <xs:whiteSpace value="collapse"/>
+            <xs:enumeration value="INDIVIDUAL"/>
+            <xs:enumeration value="TRAVEL AGENT"/>
+            <xs:enumeration value="AGENCY"/>
+        </xs:restriction>
+    </xs:simpleType>
+    
+    <xs:simpleType name="CollateralProviderCode">
+        <xs:annotation>
+            <xs:documentation>Collateral order provider code.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="Code"/>
+    </xs:simpleType>
+    
+    <xs:simpleType name="CollateralDeliveryCode">
+        <xs:annotation>
+            <xs:documentation>Collateral order delivery code ('STANDARD', 'OVERNIGHT', 'SPECIAL', etc.).</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:restriction base="Code"/>
+    </xs:simpleType>
+    
+    <!--=============================================== Collateral Maintenance: collateral data types-->
+    
+    <xs:complexType name="CollateralOrder">
+        <xs:annotation>
+            <xs:documentation>Collateral order.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:all>
+            <xs:element name="OrderHeader" type="CollateralOrderHeader">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+            </xs:element>
+            <xs:element name="OrderItems" minOccurs="0">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="Item" minOccurs="0" maxOccurs="unbounded" type="CollateralOrderItem">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+		        </xs:element>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+            <xs:element name="CollateralOrderAltAddress" type="CollateralOrderAltAddress" minOccurs="0">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+            </xs:element>
+        </xs:all>
+    </xs:complexType>
+    
+    <xs:complexType name="CollateralOrderHeader">
+        <xs:annotation>
+            <xs:documentation>Collateral order data.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:all>
+            <xs:element name="OrderID" type="RecordID" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="OrderDate" type="xs:dateTime" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="RequesterID" type="RecordID" >
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="RequesterType" type="CollateralRequesterType" >
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="OrderCategory" type="CollateralOrderCategory" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="OrderStatus" type="CollateralOrderStatus" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="ProviderCode" type="CollateralProviderCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="DeliveryCode" type="CollateralDeliveryCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="DueDate" type="xs:dateTime" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="AuthorizationDate" type="xs:dateTime" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="ShippingDate" type="xs:dateTime" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="AddressType" type="CollateralAddressType" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="Comments" type="ShortComment" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="NeedConfirm" type="Boolean" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="ReferralSource" type="LongCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="ReferralDate" type="xs:dateTime" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="AddressID" type="RecordID" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="SourceCode" type="SourceCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="OfficeLocation" type="OfficeLocation" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="AddressSummary" type="LongComment" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+        </xs:all>
+    </xs:complexType>
+    
+    <xs:complexType name="CollateralOrderItem">
+        <xs:annotation>
+            <xs:documentation>Collateral order item.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:all>
+            <xs:element name="ItemID" type="RecordID" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="OrderID" type="RecordID" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="CollateralCode" type="CollateralCode" >
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="ItemQty" type="Quantity" >
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="Comments" type="LongComment" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+        </xs:all>
+    </xs:complexType>
+    
+    <xs:complexType name="CollateralOrderAltAddress">
+        <xs:annotation>
+            <xs:documentation>Collateral order alternative address.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:all>
+            <xs:element name="OrderID" type="RecordID" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="AltAddressID" type="RecordID" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="Line1" type="AddressLine" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="Line2" type="AddressLine" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="City" type="CityCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="State" type="StateCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="ZIP" type="ZipCode" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="Country" type="CountryCode" >
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="AttentionTo" type="ShortComment" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            <xs:element name="Comments" type="ShortComment" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+        </xs:all>
+    </xs:complexType>
+    
+    <!--=============================================== Collateral Maintenance: Requests -->
+    
+    <xs:element name="GetListOfCollateralOrders_IN">
+        <xs:annotation>
+            <xs:documentation>Return list of collateral orders for Requester Type('AGENCY','AGENT','INDIVIDUAL')  and ID.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:choice>
+                    <xs:element name="ClientID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                    <xs:element name="AgentID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                    <xs:element name="AgencyID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                </xs:choice>
+                <xs:element name="DateRange" type="DateTimeRange" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    
+    <xs:element name="GetListOfCollateralOrders_OUT">
+        <xs:annotation>
+            <xs:documentation>Return list of collateral orders.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Orders" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="Order" maxOccurs="unbounded" type="CollateralOrder" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    
+    <xs:element name="GetAvailableCollateralCodes_IN">
+        <xs:annotation>
+            <xs:documentation>
+                If RequesterType is set: Return list of collateral codes eligible for the requester type and current date. if requester type='' then only effective date will be used for search.
+                If OrderID is set: Return list of collateral codes eligible for collateral order specified by ID. if Order ID=0 then for new order with default values.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:choice minOccurs="0">
+                    <xs:element name="OrderID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+                    <xs:element name="RequesterType" type="CollateralRequesterType" >
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+                </xs:choice>                
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    
+    <xs:element name="GetAvailableCollateralCodes_OUT">
+        <xs:annotation>
+            <xs:documentation>Response for GetAvailableCollateralCodes_IN request.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="AvailableCollateralCodes">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="Code" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:all>
+                                        <xs:element name="Code" type="CollateralCode">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                        <xs:element name="RequesterType" type="CollateralRequesterType">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                        <xs:element name="DateTimeRange" type="DateTimeRange">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                        <xs:element name="MaxQty" type="Quantity" minOccurs="0">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                        <xs:element name="PerOrder" type="Boolean" minOccurs="0">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                        <xs:element name="Name" type="ShortComment" minOccurs="0">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                        <xs:element name="Comments" type="ShortComment" minOccurs="0">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+                                    </xs:all>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    
+    <xs:element name="LoadCollateralOrder_IN">
+        <xs:annotation>
+            <xs:documentation>Return collateral order data. If Order ID=0 then a new order will be created.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Options" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+                    <xs:complexType>
+                        <xs:all>
+                            <xs:element name="Lock" type="Boolean" default="N" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+                        </xs:all>
+                    </xs:complexType>
+                </xs:element>
+                
+                <xs:element name="OrderID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    
+    <xs:element name="LoadCollateralOrder_OUT">
+        <xs:annotation>
+            <xs:documentation>Return collateral order data.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Order" minOccurs="0" type="CollateralOrder">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    
+    <xs:element name="UnlockCollateralOrder_IN">
+        <xs:annotation>
+            <xs:documentation>Unlock collateral order.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="OrderID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="UnlockCollateralOrder_OUT">
+        <xs:annotation>
+            <xs:documentation>Response for UnlockCollateralOrder_IN request.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="CancelCollateralOrder_IN">
+        <xs:annotation>
+            <xs:documentation>Change status of collateral order to cancel and save the order in DB.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="OrderID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="CancelCollateralOrder_OUT">
+        <xs:annotation>
+            <xs:documentation>Response for the CancelCollateralOrder_IN request.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="StoreCollateralOrder_IN">
+        <xs:annotation>
+            <xs:documentation>Save Collateral order in DB.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Order" type="CollateralOrder">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="StoreCollateralOrder_OUT">
+        <xs:annotation>
+            <xs:documentation>Response for the StoreCollateralOrder_IN request.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Order" minOccurs="0" type="CollateralOrder">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="RebuildCollateralOrder_IN">
+        <xs:annotation>
+            <xs:documentation>Update collateral order object without store.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Order" type="CollateralOrder" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="RebuildCollateralOrder_OUT">
+        <xs:annotation>
+            <xs:documentation>Response for RebuildCollateralOrder_IN request. Returns updated order data.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Order" minOccurs="0" type="CollateralOrder">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="DeleteCollateralOrder_IN">
+        <xs:annotation>
+            <xs:documentation>Delete collateral order from Seaware DB.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="OrderID" type="RecordID">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="DeleteCollateralOrder_OUT">
+        <xs:annotation>
+            <xs:documentation>Response for DeleteCollateralOrder_IN request.</xs:documentation>
+		<xs:appinfo source="Versonix">
+			<XMLBridge>Implemented</XMLBridge>
+		</xs:appinfo>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="MsgHeader" type="MsgHeader">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+                <xs:element name="Errors" type="Errors" minOccurs="0">
+			<xs:annotation>
+				<xs:appinfo source="Versonix">
+					<XMLBridge>Implemented</XMLBridge>
+				</xs:appinfo>
+			</xs:annotation>
+		</xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

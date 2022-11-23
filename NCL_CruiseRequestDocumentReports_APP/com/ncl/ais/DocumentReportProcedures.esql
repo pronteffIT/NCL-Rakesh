@@ -1,0 +1,282 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+/** Common procedures for this service **/
+-- procedure to create response message from advisory code
+CREATE PROCEDURE CreateResponseFromAdvisoryCode(IN cExternalCodeDetails CHARACTER, IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER, 
+												INOUT rOrgMsg REFERENCE, INOUT rOut REFERENCE) 
+BEGIN
+	DECLARE cAdvCode, cExternalCode CHARACTER '';
+	
+	SET cExternalCode = cExternalCodeDetails;
+	
+	IF cExternalCode = '' THEN
+		IF (cErrorCode = '' OR cChannel = '') THEN
+			SET cAdvCode = '12228';
+		ELSE
+			SET cExternalCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(cChannel, cErrorCode, cCodeType);
+		END IF;
+	END IF;
+	
+	SET cAdvCode = SUBSTRING(cExternalCode BEFORE '#1#');
+
+	CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+	
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = cAdvCode;
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'No email or fax available';
+	SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';		
+END;
+
+
+/* validate document report parameters */
+CREATE PROCEDURE ValidateDocumentReport(IN channel CHARACTER, IN resId CHARACTER, IN collectionId CHARACTER, IN groupId CHARACTER, IN agencyId CHARACTER, 
+										IN agentId CHARACTER, IN clientId CHARACTER, IN lang CHARACTER, IN report CHARACTER) RETURNS INTEGER
+BEGIN
+	/*	return - 0     no errors
+	 *       
+	 *	return - 1		requested group report with no collecionId
+	 *	return - 2		requested group report with no groupId
+	 *       
+	 *	return - 3		agency, reservation, booking source not valid
+	 *	return - 4		agent, reservation, booking source not valid
+	 *	return - 5		client, reservation, booking source not valid
+	 *       
+	 *	return - 6		requested too soon from last request
+	 *       
+	 *	return - 7		missing reservation
+	 */
+	
+	DECLARE status INTEGER 22;
+	DECLARE cQuery CHARACTER '';
+	DECLARE cTimeLimit CHARACTER '180';
+	DECLARE DB ROW;
+	
+	-- validate collection
+	SET status = ValidateCollection(collectionId, report, resId, groupId);
+	
+	IF status > 0 THEN
+		RETURN status;
+	END IF;
+	
+	-- validate agency
+	SET status = 22;
+	
+	IF LENGTH(agencyId) > 0 THEN
+		SET status = ValidateAgency(agencyId, channel, resId, collectionId, groupId, report);
+		
+		IF status > 0 THEN
+			RETURN status;
+		END IF;
+	END IF;
+
+	-- validate agent
+	IF LENGTH(agentId) > 0 THEN
+		SET status = ValidateAgent(agentId, channel, resId, collectionId, groupId, report);
+		
+		IF status > 0 THEN
+			RETURN status;
+		END IF;
+	END IF;
+
+	-- validate client
+	IF LENGTH(clientId) > 0 THEN
+		SET status = ValidateClient(clientId, channel, resId, collectionId, groupId, report);
+		
+		IF status > 0 THEN
+			RETURN status;
+		END IF;
+	END IF;
+	
+	-- get timelimit from seaware settings
+	SET DB.result[] = SELECT SS.PARAM_VALUE from Database.SEA.SEAWARE_SETTINGS AS SS WHERE SS.PARAM_CODE = 'DOCUMENT PROCESSING TIME LIMIT';
+	
+	
+	IF EXISTS(DB.result[]) THEN
+		SET cTimeLimit = DB.result.PARAM_VALUE;
+	END IF;
+	
+	SET cQuery = 'SELECT COUNT(*) CT FROM NCL_DOC_PROCESSING_QUEUE PQ ' || 
+					' WHERE PQ.PROCESSING_COMPLETE = ''OK'' AND PQ.LANGUAGE_CODE = ? AND PQ.REPORT_NAME = ? AND PQ.LAST_REQUEST_TIME > (SYSDATE - (? / (24*60))) ';
+	
+	IF LENGTH(resId) > 3 AND NOT(SUBSTRING(report FROM 1 FOR 5) IN('GROUP', 'FS GR')) THEN
+		SET cQuery = cQuery || ' AND PQ.RES_ID = ''' || resId || '''';
+	END IF;
+
+	IF LENGTH(collectionId) > 3 AND SUBSTRING(report FROM 1 FOR 5) = 'FS GR' THEN
+		SET cQuery = cQuery || ' AND PQ.COLLECTION_ID = ''' || collectionId || '''';
+	END IF;
+
+	IF LENGTH(groupId) > 3 AND SUBSTRING(report FROM 1 FOR 5) = 'GROUP' THEN
+		SET cQuery = cQuery || ' AND PQ.RES_ID = ''' || groupId || '''';
+	END IF;
+
+	IF LENGTH(agencyId) > 0 THEN
+		SET cQuery = cQuery || ' AND PQ.AGENCY_ID = ''' || agencyId || '''';
+	END IF;
+
+	IF LENGTH(agentId) > 0 THEN
+		SET cQuery = cQuery || ' AND PQ.AGENT_ID = ''' || agentId || '''';
+	END IF;
+
+	IF LENGTH(clientId) > 0 THEN
+		SET cQuery = cQuery || ' AND PQ.CLIENT_ID = ''' || clientId || '''';
+	END IF;
+	IF CONTAINS(MASTER_CHANNELS,channel) THEN
+		RETURN 0;
+	ELSE
+		SET DB.result[] = PASSTHRU(cQuery VALUES(lang, report, cTimeLimit));
+		SET status = DB.result.CT;
+		IF status > 0 THEN
+			RETURN 6;
+		ELSE
+			RETURN 0;
+		END IF;
+	END IF;
+END;
+
+CREATE PROCEDURE ValidateCollection(IN collectionId CHARACTER, IN report CHARACTER, IN resId CHARACTER, IN groupId CHARACTER) RETURNS INTEGER
+BEGIN
+	DECLARE grpRpt1 CHARACTER 'FS GROUP CONTRACT';
+	DECLARE grpRpt2 CHARACTER 'FS GROUP DETAIL REPORT';
+	DECLARE status INTEGER 0;
+	
+	IF SUBSTRING(report FROM 1 FOR 5) = 'FS GR' THEN
+		IF LENGTH(collectionId) < 3 THEN
+			IF report IN(grpRpt1, grpRpt2) THEN
+				RETURN 1;
+			ELSE
+				RETURN 0;
+			END IF;
+		ELSE
+			RETURN 0;
+		END IF;
+	ELSEIF SUBSTRING(report FROM 1 FOR 5) = 'GROUP' THEN
+		IF LENGTH(groupId) < 3 THEN
+			IF report IN(grpRpt1, grpRpt2) THEN
+				RETURN 2;
+			ELSE
+				RETURN 0;
+			END IF;
+		ELSE
+			RETURN 0;
+		END IF;
+	END IF;
+	
+	IF LENGTH(resId) < 3 THEN
+		RETURN 7;
+	END IF;
+	
+	RETURN status;
+END;	
+
+CREATE PROCEDURE ValidateAgency(IN agencyId CHARACTER, IN channel CHARACTER, IN resId CHARACTER, IN collectionId CHARACTER, IN groupId CHARACTER, IN report CHARACTER) 
+RETURNS INTEGER 
+BEGIN
+	DECLARE status INTEGER 0;
+	DECLARE query CHARACTER 'SELECT COUNT(*) CT ';
+	DECLARE DB ROW;
+	
+	IF LENGTH(resId) > 3 AND NOT(SUBSTRING(report FROM 1 FOR 5) IN('GROUP', 'FS GR')) THEN
+		SET query = query || ' FROM RES_HEADER RH WHERE RH.AGENCY_ID = ? AND RH.RES_ID = ''' || resId || '''';
+	END IF;
+
+	IF LENGTH(collectionId) > 3 AND SUBSTRING(report FROM 1 FOR 5) = 'FS GR' THEN
+		SET query = query || ' FROM RES_HEADER RH WHERE RH.AGENCY_ID = ? AND RH.COLLECTION_ID = ''' || collectionId || '''';
+	END IF;
+
+	IF LENGTH(groupId) > 3 AND SUBSTRING(report FROM 1 FOR 5) = 'GROUP' THEN
+		SET query = query || ' FROM GROUP_BOOKING GP WHERE GP.AGENCY_ID = ? AND GP.GROUP_ID = ''' || groupId || '''';
+	END IF;
+	
+	SET DB.result[] = PASSTHRU(query VALUES(agencyId));
+	SET status = DB.result.CT;
+	
+	IF status > 0 THEN
+		RETURN 0;
+	ELSE
+		RETURN 3;
+	END IF;
+END;
+
+CREATE PROCEDURE ValidateAgent(IN agentId CHARACTER, IN channel CHARACTER, IN resId CHARACTER, IN collectionId CHARACTER, IN groupId CHARACTER, IN report CHARACTER) 
+RETURNS INTEGER 
+BEGIN
+	DECLARE status INTEGER 0;
+	DECLARE query CHARACTER 'SELECT COUNT(*) CT ';
+	DECLARE DB ROW;
+	
+	IF LENGTH(resId) > 3 AND NOT(SUBSTRING(report FROM 1 FOR 5) IN('GROUP', 'FS GR')) THEN
+		SET query = query || ' FROM RES_HEADER RH WHERE RH.AGENT_ID = ? AND RH.RES_ID = ''' || resId || '''';
+	END IF;
+
+	IF LENGTH(collectionId) > 3 AND SUBSTRING(report FROM 1 FOR 5) = 'FS GR' THEN
+		SET query = query || ' FROM RES_HEADER RH WHERE RH.AGENT_ID = ? AND RH.COLLECTION_ID = ''' || collectionId || '''';
+	END IF;
+
+	IF LENGTH(groupId) > 3 AND SUBSTRING(report FROM 1 FOR 5) = 'GROUP' THEN
+		SET query = query || ' FROM GROUP_BOOKING GP WHERE GP.AGENT_ID = ? AND GP.GROUP_ID = ''' || groupId || '''';
+	END IF;
+	
+	SET DB.result[] = PASSTHRU(query VALUES(agentId));
+	SET status = DB.result.CT;
+	
+	IF status > 0 THEN
+		RETURN 0;
+	ELSE
+		RETURN 4;
+	END IF;
+END;
+
+CREATE PROCEDURE ValidateClient(IN clientId CHARACTER, IN channel CHARACTER, IN resId CHARACTER, IN collectionId CHARACTER, IN groupId CHARACTER, IN report CHARACTER) 
+RETURNS INTEGER 
+BEGIN
+	DECLARE status INTEGER 0;
+	DECLARE query CHARACTER 'SELECT COUNT(*) CT FROM RES_HEADER RH, RES_GUEST RG WHERE RG.CLIENT_ID = ? AND RH.RES_ID = RG.RES_ID ';
+	DECLARE DB ROW;
+	
+	IF LENGTH(resId) > 3 THEN
+		SET query = query || ' AND RH.RES_ID = ''' || resId || '''';
+	END IF;
+
+	IF LENGTH(collectionId) > 3 THEN
+		SET query = query || ' AND RH.COLLECTION_ID = ''' || collectionId || '''';
+	END IF;
+
+	IF LENGTH(groupId) > 3 THEN
+		SET query = query || ' AND RH.GROUP_ID = ''' || groupId || '''';
+	END IF;
+	
+	SET DB.result[] = PASSTHRU(query VALUES(clientId));
+	SET status = DB.result.CT;
+	
+	IF status > 0 THEN
+		RETURN 0;
+	ELSE
+		RETURN 5;
+	END IF;
+END;
+
+
+CREATE PROCEDURE GenerateDocumentErrMsg(IN errorNum CHARACTER, IN report CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE errMsg CHARACTER 'RPT: ' || report || ' unknown Err:' || errorNum;
+	
+	IF errorNum = '1' THEN
+		SET errMsg = 'RPT: ' || report || ' missing collectionId';
+	ELSEIF errorNum = '2' THEN
+		SET errMsg = 'RPT: ' || report || ' missing groupId';
+	ELSEIF errorNum = '3' THEN
+		SET errMsg = 'RPT: ' || report || ' AgencyID not on Res/Grp';
+	ELSEIF errorNum = '4' THEN
+		SET errMsg = 'RPT: ' || report || ' AgentID not on Res/Grp';
+	ELSEIF errorNum = '5' THEN
+		SET errMsg = 'RPT: ' || report || ' ClientID not on Res/Grp';
+	ELSEIF errorNum = '6' THEN
+		SET errMsg = 'RPT: ' || report || ' requested too soon';
+	ELSEIF errorNum = '7' THEN
+		SET errMsg = 'RPT: ' || report || ' missing reservationID';
+	END IF;
+	
+	RETURN errMsg;
+END;

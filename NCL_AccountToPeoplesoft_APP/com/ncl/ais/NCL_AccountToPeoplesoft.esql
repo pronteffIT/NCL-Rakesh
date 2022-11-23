@@ -1,0 +1,227 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ToEmailId_Success EXTERNAL CHARACTER '';
+DECLARE ToEmailId_Error EXTERNAL CHARACTER '';
+DECLARE FromEmailId EXTERNAL CHARACTER '';
+DECLARE NoOfServiceRetry EXTERNAL INTEGER 3;
+DECLARE PeoplesoftHostname EXTERNAL CHARACTER '';
+DECLARE LogPayload EXTERNAL BOOLEAN False;
+
+CREATE COMPUTE MODULE NCL_AccountToPeoplesoft_MapToPeoplesoft
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.IBRequest;
+		DECLARE rOut REFERENCE TO OutputRoot;
+		
+		DECLARE bPayload BLOB;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+		DECLARE cCDATA CHARACTER '';
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+						
+		-- extract elements from CDATA
+		SET cCDATA = rIn.ContentSections.ContentSection.Data;
+		SET rEnv.Temp.InvoiceId = SUBSTRING(SUBSTRING(SUBSTRING(cCDATA AFTER 'INVOICE_ID IsChanged=') AFTER '>') BEFORE '<');
+		SET rEnv.Temp.VendorId = SUBSTRING(SUBSTRING(SUBSTRING(cCDATA AFTER 'VENDOR_ID IsChanged') AFTER '>') BEFORE '<');
+		SET rEnv.Temp.InvoiceDate = SUBSTRING(SUBSTRING(SUBSTRING(cCDATA AFTER 'INVOICE_DT IsChanged=') AFTER '>') BEFORE '<');
+		SET rEnv.Temp.GrossAmt = SUBSTRING(SUBSTRING(cCDATA AFTER '<GROSS_AMT>') BEFORE '<');
+
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(InputRoot.MQRFH2.usr.WMQFTEFileName, InputRoot.MQRFH2.usr.FileName), 'RECALL', rEnv.Temp.InvoiceId, rEnv.Temp.VendorId, '', rEnv);
+
+		-- log payload
+		IF LogPayload THEN
+			SET bPayload = ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Request message from recall', 'xml', rEnv);
+		END IF;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking Peoplesoft service ...', rEnv);
+		
+		-- add http request header
+		SET OutputRoot.HTTPRequestHeader."Content-Type" = 'text/xml; charset=UTF-8';
+		SET OutputRoot.HTTPRequestHeader.Host = PeoplesoftHostname;
+		SET OutputRoot.HTTPRequestHeader.Connection = 'Keep-Alive';
+		
+		-- map the message to peoplesoft format
+		SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+		
+		CREATE FIRSTCHILD OF OutputRoot.XMLNSC.IBRequest NAME 'OperationType' VALUE rIn.MessageType;
+		CREATE FIRSTCHILD OF OutputRoot.XMLNSC.IBRequest NAME 'ExternalOperationName' VALUE rIn.MessageName;
+		
+		SET OutputRoot.XMLNSC.IBRequest.MessageName = NULL;
+		SET OutputRoot.XMLNSC.IBRequest.MessageType = NULL;
+		
+		-- saving msg in environment for retry
+		SET rEnv.Temp.Peoplesoft.HTTPRequestHeader = OutputRoot.HTTPRequestHeader;
+	
+		-- saving the input message for archiving
+		SET rEnv.Temp.OrgMsg = InputRoot;
+
+		RETURN TRUE;
+	END;
+	
+ 
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_AccountToPeoplesoft_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQRFH2.usr.mqaJobId, InputRoot.MQMD.MsgId);
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+		
+		SET rEnv.Temp.ErrorEmailSubject = 'IIB Error in AccToPs';
+		
+		SET OutputRoot = InputRoot;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AccountToPeoplesoft_SuccessEmailReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Sending success email ...', rEnv);
+		
+		CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+		
+		SET rEmail.EmailSubject = 'AccToPs vendor:' || COALESCE(rEnv.Temp.VendorId, '') || 
+								  ' Invoice:' || COALESCE(rEnv.Temp.InvoiceId, '') || 
+								  ' Date:' || COALESCE(rEnv.Temp.InvoiceDate, '');
+		SET rEmail.EmailContent = ' Amt: ' || COALESCE(rEnv.Temp.GrossAmt, '');
+		SET rEmail.EmailAddress.FromAddress = FromEmailId;
+		SET rEmail.EmailAddress.ToAddress = ToEmailId_Success;
+
+		SET rEnv.Temp.Status = 'SUCCESS';
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AccountToPeoplesoft_ServiceRetryAndSendFailureEmail
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rEmail REFERENCE TO OutputRoot;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE crlf CHARACTER CAST(x'0D0A' AS CHARACTER CCSID 1208);
+				
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+		END IF;
+		
+		-- check if service retry required
+		IF CONTAINS(COALESCE(rEnv.ErrorSummary.ErrorText, ''), 'Web Service request has detected a SOCKET error') AND
+		   COALESCE(rEnv.Temp.ServiceRetryCount, 0) < NoOfServiceRetry			
+		THEN
+		    DECLARE rOut REFERENCE TO OutputRoot;
+			-- retry peoplesoft service
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Peoplesoft service connection failure. Retrying ...', rEnv);
+			SET rEnv.Temp.ServiceRetryCount = COALESCE(rEnv.Temp.ServiceRetryCount, 0) + 1;
+			CALL BUILD_REQUEST(rOut,rEnv.Temp.OrgMsg);
+			DELETE FIELD rEnv.ErrorSummary;
+			
+			PROPAGATE TO LABEL 'RETRY';
+		ELSE
+			CREATE FIELD OutputRoot.XMLNSC.EmailRequest AS rEmail;
+			
+			SET rEmail.EmailSubject = COALESCE(rEnv.Temp.ErrorEmailSubject, 'fail on http');
+			SET rEmail.EmailContent = 'Error: ' || REPLACE(COALESCE(rEnv.ErrorSummary.ErrorText, ''), '&', '#') || crlf || crlf ||
+									  'vendor:' || COALESCE(rEnv.Temp.VendorId, '') || 
+									  ' Invoice:' || COALESCE(rEnv.Temp.InvoiceId, '') || 
+									  ' Date:' || COALESCE(rEnv.Temp.InvoiceDate, '') ||
+									  ' Amt:' || COALESCE(rEnv.Temp.GrossAmt, '');
+			SET rEmail.EmailAddress.FromAddress = FromEmailId;
+			SET rEmail.EmailAddress.ToAddress = ToEmailId_Error;
+		
+			-- add audit trail
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Sending failure email ...', rEnv);
+			
+			-- make the transaction as error
+			CALL com.ncl.iib.log.UpdateAuditLogEventWithError('', rEnv);
+			
+			-- saving the error text in original message
+			SET rEnv.Temp.OrgMsg.MQRFH2.usr.ErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+			
+			SET rEnv.Temp.Status = 'ERROR';
+			 
+			DELETE FIELD rEnv.ErrorSummary;
+			
+			PROPAGATE;
+		END IF;
+
+		RETURN FALSE;
+	END;
+	
+	CREATE PROCEDURE BUILD_REQUEST(INOUT rOut REFERENCE, IN rInputRoot REFERENCE )
+	BEGIN
+		DECLARE rIn REFERENCE TO rInputRoot.XMLNSC.IBRequest;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET rOut = NULL;  		
+			-- add http request header
+		SET rOut.HTTPRequestHeader."Content-Type" = 'text/xml; charset=UTF-8';
+		SET rOut.HTTPRequestHeader.Connection = 'Keep-Alive';
+		SET rOut.HTTPRequestHeader = rEnv.Temp.Peoplesoft.HTTPRequestHeader;		
+		
+		CREATE LASTCHILD OF rOut DOMAIN('XMLNSC') NAME 'XMLNSC';			
+		
+		CREATE FIRSTCHILD OF rOut.XMLNSC.IBRequest NAME 'OperationType' VALUE rIn.MessageType;
+		CREATE FIRSTCHILD OF rOut.XMLNSC.IBRequest NAME 'ExternalOperationName' VALUE rIn.MessageName;
+		SET rOut.XMLNSC.IBRequest.From = rIn.From;
+		SET rOut.XMLNSC.IBRequest.ContentSections.ContentSection.NonRepudiation = rIn.ContentSections.ContentSection.NonRepudiation;		
+		--Extract CDATA as STRING
+		DECLARE wholeMsgBlob BLOB ASBITSTREAM(rInputRoot.XMLNSC CCSID 1208 ENCODING 546 );
+		DECLARE wholeMsgChar CHAR CAST(wholeMsgBlob AS CHAR CCSID 1208);
+		DECLARE startCDATA INTEGER POSITION('<![CDATA[' IN wholeMsgChar)+9;
+		DECLARE endCDATA INTEGER POSITION(']]>' IN wholeMsgChar FROM startCDATA);
+		SET rOut.XMLNSC.IBRequest.ContentSections.ContentSection.(XMLNSC.CDataField)Data=SUBSTRING(wholeMsgChar FROM startCDATA FOR endCDATA-startCDATA);
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_AccountToPeoplesoft_Archive
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+
+		-- add audit trail
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Archiving input message ...', rEnv);
+		
+		SET OutputRoot.MQMD = rEnv.Temp.OrgMsg.MQMD;
+		SET OutputRoot.MQRFH2 = rEnv.Temp.OrgMsg.MQRFH2;
+		SET OutputRoot.XMLNSC = rEnv.Temp.OrgMsg.XMLNSC;
+		
+		SET OutputLocalEnvironment = InputLocalEnvironment;
+		
+		IF rEnv.Temp.Status = 'ERROR' THEN
+			SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'NCL_ACC_TO_PEOPLESOFT_ERR';
+		ELSE
+			SET OutputLocalEnvironment.Destination.MQ.DestinationData[1].queueName = 'NCL_ACC_TO_PEOPLESOFT_ARCH';
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

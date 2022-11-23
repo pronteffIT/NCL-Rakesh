@@ -1,0 +1,1465 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified"
+	attributeFormDefault="unqualified">
+	<xs:include schemaLocation="BaseTypes.xsd"/>
+	<xs:include schemaLocation="Agency.xsd"/>
+	<xs:include schemaLocation="Client.xsd"/>
+	<xs:include schemaLocation="ResShell.xsd"/>
+	<xs:include schemaLocation="CouponShell.xsd"/>
+	<xs:include schemaLocation="GroupShell.xsd"/>
+	<xs:include schemaLocation="MsgSession.xsd"/>
+	<xs:simpleType name="TemplateName">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="EngineType">
+		<xs:annotation>
+			<xs:documentation>Document creation engine</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="20"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="XSL_TRANSFORM"/>
+			<xs:enumeration value="REPORTING_SERVICES"/>
+			<xs:enumeration value="CRYSTAL"/>
+			<xs:enumeration value="XSL_EXTERNAL"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ParameterType">
+		<xs:annotation>
+			<xs:documentation>Parameter type</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="20"/>
+			<xs:whiteSpace value="collapse"/>
+			<xs:enumeration value="INTEGER"/>
+			<xs:enumeration value="STRING"/>
+			<xs:enumeration value="BOOLEAN"/>
+			<xs:enumeration value="FLOAT"/>
+			<xs:enumeration value="DATE"/>
+			<xs:enumeration value="TIME"/>
+			<xs:enumeration value="DATETIME"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="DocBody">
+		<xs:annotation>
+			<xs:documentation>Encoded document body.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="xs:base64Binary">
+				<xs:attribute name="Binary" type="Boolean" default="N">
+					<xs:annotation>
+						<xs:documentation>If 'Y' - document body was encoded as-is, in other words, data stream produced by the reporting engine was just base64 encoded. Otherwise, document body was recognized as a string, converted to UTF8 encoding and then base64 encoded.</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:simpleType name="DocBusinessArea">
+		<xs:annotation>
+			<xs:documentation>Business Area for the document function. May affect list of available documents and their format. Possible values are stored in the DOC_BIZ_AREA table.
+</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="30"/>
+			<xs:whiteSpace value="collapse"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="DocRecipientInt">
+		<xs:annotation>
+			<xs:documentation>Specifies internal representation of recipient of documents</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="ClientID" type="RecordID" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Client ID in case of Recipient is Client</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgentID" type="RecordID" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Agent ID in case of Recipient is Agent</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgencyID" type="RecordID" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Agency ID in case of Recipient is Agency</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelCode" type="HotelCode" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Hotel Code in case of Recipient is Hotel</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AltResRecipient" type="RecordID">
+				<xs:annotation>
+					<xs:documentation>Alternative agency recipient defined for the given reservation</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="DocRecipient">
+		<xs:annotation>
+			<xs:documentation>Specifies recipient of documents</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="ClientID" type="RecordID" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Client ID in case of Recipient is Client</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgentID" type="RecordID" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Agent ID in case of Recipient is Agent</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgencyID" type="RecordID" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Agency ID in case of Recipient is Agency</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="HotelCode" type="HotelCode" nillable="true">
+				<xs:annotation>
+					<xs:documentation>Hotel Code in case of Recipient is Hotel</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AltRecipient">
+				<xs:annotation>
+					<xs:documentation>Alternative Agency or Client Recipient</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="15"/>
+						<xs:whiteSpace value="collapse"/>
+						<xs:enumeration value="CLIENT"/>
+						<xs:enumeration value="AGENCY"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="ExpandableString">
+		<xs:annotation>
+			<xs:documentation>Defines a way of transformation or macro-substitution an input XML to provide a result value</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="MacroString" type="LongComment">
+				<xs:annotation>
+					<xs:documentation>String with macros in the form of XPATH expressions, for example:
+'Dear &amp;//Client[1]/Salutation&amp;. &amp;//Client[1]/LastName&amp;. ....'
+XPATH expressions assume that the source XML conforms to the schema
+</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MacroStringPointer" type="LongComment">
+				<xs:annotation>
+					<xs:documentation>Format is the same as MacroString but result is the name of transformation control XML (XSLBatchTransform) in Doc.Storage</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Transform" type="XSLBatchTransform">
+				<xs:annotation>
+					<xs:documentation>Transformation control XML</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DocStorage" type="DocCode">
+				<xs:annotation>
+					<xs:documentation>Name of transformation control XML (XSLBatchTransform) in Doc.Storage</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:simpleType name="DocScheduleContext">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="30"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="BusinessAreaInfo">
+		<xs:annotation>
+			<xs:documentation>Current business area with its attributes.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="Name" type="DocBusinessArea">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Attributes" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Attribute" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="Name" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>Parameter Name</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Type" type="ParameterType" default="STRING"
+										minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Type of Parameter Value</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>ToBeImplemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Value" type="xs:string" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Parameter Value</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<!--============================================= Input types-->
+	<xs:complexType name="DocEntityRef">
+		<xs:annotation>
+			<xs:documentation>Entity choice that is used to produce DocEntityShell</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="ResID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CollectionID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="CouponID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ClientID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgencyID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AmenityOrderID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TransID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="InvoiceID" type="RecordID">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Not Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="DocEntityShell">
+		<xs:annotation>
+			<xs:documentation>Entity Shell that can be used for applicability template calls</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:choice>
+			<xs:element name="ResShell" type="ResShell">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GroupShell" type="GroupShell"/>
+			<xs:element name="CouponShell" type="CouponShell"/>
+			<xs:element name="ClientShell" type="Client"/>
+			<xs:element name="AgencyShell" type="Agency"/>
+			<xs:element name="Transaction" type="AccTransaction">
+				<xs:annotation>
+					<xs:documentation>Accounting Transaction Shell</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="DocFile">
+		<xs:annotation>
+			<xs:documentation>Result of IssueDocs for FILE delivery. Can be used as input to delivery previously generated files</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Body" type="DocBody" minOccurs="0"/>
+			<xs:element name="FileName" type="DocFileName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>If body is provided, contains an original file name; otherwise contains a reference to a real file</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RenderFormat" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="RenderingFormat"/>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Extension" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used to provide a real file extension for UNK rendering format</xs:documentation>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:whiteSpace value="collapse"/>
+						<xs:maxLength value="10"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:sequence minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Provided to be put into DOC_TEMP_FILE_ tables</xs:documentation>
+				</xs:annotation>
+				<xs:element name="DocCode" type="DocCode"/>
+				<xs:element name="KeyString" type="LongComment"/>
+				<xs:element name="DataString" type="LongComment"/>
+			</xs:sequence>
+		</xs:sequence>
+	</xs:complexType>
+	<!--============================================= Transformation output types-->
+	<xs:complexType name="DocInstanceParameter">
+		<xs:annotation>
+			<xs:documentation>Real parameters values or link to set of possible values provided by applicability templates for instances</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Code" type="xs:string"/>
+			<xs:element name="Type" type="ParameterType" default="STRING" minOccurs="0"/>
+			<xs:choice>
+				<xs:element name="Value">
+					<xs:simpleType>
+						<xs:restriction base="xs:string">
+							<xs:maxLength value="255"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:element>
+				<xs:element name="UserInput">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:choice minOccurs="0">
+								<xs:element name="DomainCode" type="LongCode">
+									<xs:annotation>
+										<xs:documentation>used to provide lookup ability and validate user input.
+It refers to Seaware domains but there can also be built-in additional domains,
+ like ALL_RES_AGENCIES, ALL_RES_HOTELS, etc.</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="ValidValues" type="ExpandableString">
+									<xs:annotation>
+										<xs:documentation>String that contains a list of possible values (delimited by ";")</xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:choice>
+							<xs:element name="IsMandatory" type="Boolean"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Comments" type="ShortComment" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DocInstanceSortAttr">
+		<xs:annotation>
+			<xs:documentation>Information to be used for sorting/grouping instances on UI</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Name" type="Code"/>
+			<xs:element name="Value" type="ShortComment"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DocInstance">
+		<xs:annotation>
+			<xs:documentation>Document's occurrence with its identification (KeyString and DataString) and parameters</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="DocCode" type="DocCode" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Mandatory for attachments</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="KeyString" type="LongComment" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>used to identify document instance in the printing history, for example, for document code 'HOTEL VOUCHER' we will need hotel code, dates, client or guest ID to be part of the key string in order for the system to be able to show
+whether this document was printed or not.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DataString" type="LongComment" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>used to combine significant fields into a single string in order to be able to make automatic re-printing of the document in case of changes in the reservation.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="FilePrefix" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be used as macro parameter %FilePrefix% for the DocDelivery.File.FileName element </xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="255"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="DefaultFileName" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default user-friendly file name to be used in UI prompts and email attachments. Should contain only name portion of the file name (no path or extension). If not set - DocCode will be used for email attachments.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="255"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Quantity" type="xs:nonNegativeInteger" default="1" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>used in case of identical documents, for example, meal coupons.</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Params" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Param" type="DocInstanceParameter" minOccurs="0"
+							maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SortAttrs" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>ToBeImplemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SortAttr" type="DocInstanceSortAttr" minOccurs="0"
+							maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:complexType name="DocAttachment">
+		<xs:annotation>
+			<xs:documentation>Individual item in a document group.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="Instance" type="DocInstance">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Recipient" type="DocRecipient" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Overridden value of Recipient for the Instance</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<!--============================================= Description of the requested document-->
+	<xs:complexType name="IssueDocUserInfo">
+		<xs:annotation>
+			<xs:documentation>User information to be passed to the batch</xs:documentation>
+		</xs:annotation>
+		<xs:all>
+			<xs:element name="AgentID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>returned for TravelAgent</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="AgencyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>returned for TravelAgent and Consumer (will be treated as a secondary Agency)</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="MainAgencyID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>May be returned for TravelAgent and Consumer</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ClientID" type="RecordID" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>may be returned for Consumer</xs:documentation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OfficeCode" type="OfficeCode" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="OfficeLocation" type="OfficeLocation" minOccurs="0"/>
+			<xs:element name="DocSection" type="DocSection" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Current document section in DOC_STORAGE</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:all>
+	</xs:complexType>
+	<xs:group name="IssueDocInfo">
+		<xs:annotation>
+			<xs:documentation>Base request information describing document to be produced</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:choice minOccurs="0">
+				<xs:element name="Entity" type="DocEntityRef">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="InputXML">
+					<xs:annotation>
+						<xs:documentation>used for transforming  separately created XML (eg.combining different XML items)</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>ToBeImplemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+						<xs:anyAttribute processContents="skip"/>
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Recipient" type="DocRecipient" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Delivery" type="DocDelivery">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BusinessArea" type="BusinessAreaInfo">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Document" type="IssueDocument">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:group>
+	<xs:complexType name="IssueDocBatchInfo">
+		<xs:annotation>
+			<xs:documentation>Used internally when printing requests are redirected to SwBatch</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:group ref="IssueDocInfo"/>
+			<xs:element name="Requester" type="OracleUsername" minOccurs="0"/>
+			<xs:element name="PreparedBy" type="OracleUsername" minOccurs="0"/>
+			<xs:element name="HistoryID" type="RecordID" minOccurs="0"/>
+			<xs:element name="ReturnForDelivery" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Used to redirect output back to SwMain which requested printing: Preview (no children), local printer or local file</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:choice minOccurs="0">
+							<xs:element name="Printer">
+								<xs:complexType>
+									<xs:all>
+										<xs:element name="Type" type="DeviceType" minOccurs="0"/>
+										<xs:element name="Name" minOccurs="0">
+											<xs:simpleType>
+												<xs:restriction base="xs:string">
+												<xs:maxLength value="250"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:element>
+									</xs:all>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="File">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Folder" type="DocFilePath" nillable="true"
+										/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:choice>
+						<xs:element name="TempFileID" type="RecordID" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Used to return information to requester</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="IssueDocs" type="IssueDocBatchInfo">
+		<xs:annotation>
+			<xs:documentation>Passed to Seaware Batch in SW_QUEUE_DETAIL.XML</xs:documentation>
+		</xs:annotation>
+	</xs:element>
+	<!--============================================= Sorting and Grouping-->
+	<xs:simpleType name="SimpleOrder">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:whiteSpace value="collapse"/>
+			<xs:maxLength value="4"/>
+			<xs:enumeration value="ASC"/>
+			<xs:enumeration value="DESC"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="DocGroupingItem">
+		<xs:annotation>
+			<xs:documentation>Defines how to group and/or sort previously prepared list of applicable documents</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>ToBeImplemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence minOccurs="0">
+			<xs:element name="Attribute" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name">
+							<xs:simpleType>
+								<xs:list itemType="Code"/>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Type" type="ParameterType" minOccurs="0"/>
+						<xs:choice minOccurs="0">
+							<xs:element name="Order" type="SimpleOrder"/>
+							<xs:element name="Item" type="ShortComment" maxOccurs="unbounded"/>
+						</xs:choice>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GroupingItem" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="DocGroupingItem">
+							<xs:attribute name="Value1" type="ShortComment"/>
+							<xs:attribute name="Value2"/>
+							<xs:attribute name="Value3"/>
+							<xs:attribute name="Value4"/>
+							<xs:attribute name="Value5"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="DocGrouping" type="DocGroupingItem"/>
+	<!--============================================= Requests-->
+	<xs:element name="IssueDocs_IN">
+		<xs:annotation>
+			<xs:documentation>Send out documents</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice>
+					<xs:element name="QueueItemID" type="RecordID">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+					<xs:sequence>
+						<xs:element name="Options" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>ToBeImplemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:all>
+									<xs:element name="CallApplTemplate" type="Boolean" default="Y"
+										minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Y (default value): call applicability template for each instance to check, if all necessary instance parameters are defined</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="DocPrepareTimeout"
+										type="xs:nonNegativeInteger" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Seconds to wait a response from batch server if involved. If set and the document cannot be prepared in time by the batch - the QueueItemID is returend in the response, which allows the calling program to poll the queue. If Timeout is not set - the system will still wait for a limited time (defined by the PrepareDocTimeout setting) and return an error message if document is not prepared.</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="StatusPollQty" type="xs:nonNegativeInteger"
+										minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>0 means no waiting</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="StatusPollFreq" type="xs:nonNegativeInteger"
+										minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>Interval in seconds between pollings</xs:documentation>
+											<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+										</xs:annotation>
+									</xs:element>
+								</xs:all>
+							</xs:complexType>
+						</xs:element>
+						<xs:group ref="IssueDocInfo">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+							</xs:annotation>
+						</xs:group>
+					</xs:sequence>
+					<xs:element name="QueueItem">
+						<xs:annotation>
+							<xs:documentation>Used for subsequent attempts of local delivery in case of previous attempt returned QueueItemID. </xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="QueueItemID" type="RecordID">
+									<xs:annotation>
+										<xs:appinfo source="Versonix">
+											<XMLBridge>ToBeImplemented</XMLBridge>
+										</xs:appinfo>
+									</xs:annotation>
+								</xs:element>
+								<xs:element name="FileName" type="DocFileName" minOccurs="0">
+									<xs:annotation>
+										<xs:documentation>Used to redirect Local Delivery into File instead of returning result as Body element of IssueDocs_OUT message </xs:documentation>
+									</xs:annotation>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="IssueDocs_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for IssueDocs_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice minOccurs="0">
+					<xs:element name="Files">
+						<xs:annotation>
+							<xs:documentation>Populated for Delivery = File</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:choice>
+								<xs:element name="File" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:choice>
+											<xs:sequence>
+												<xs:element name="DocCode" type="DocCode"/>
+												<xs:element name="DataString" type="LongComment"/>
+												<xs:choice>
+												<xs:element name="Body" type="DocBody"/>
+												<xs:element name="FileName" type="DocFileName"/>
+												</xs:choice>
+												<xs:element name="RenderFormat"
+												type="RenderingFormat"/>
+											</xs:sequence>
+										</xs:choice>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="TempFileID" type="RecordID"/>
+							</xs:choice>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="QueueItemID" type="RecordID">
+						<xs:annotation>
+							<xs:documentation>Might be returned for local delivery if preparing is redirected to batch server</xs:documentation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>ToBeImplemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+				</xs:choice>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetDefaultDelivery_IN">
+		<xs:annotation>
+			<xs:documentation>Default delivery for recipient</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Recipient">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:choice>
+							<xs:element name="ClientID" type="RecordID" nillable="true">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="AgentID" type="RecordID" nillable="true">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="AgencyID" type="RecordID" nillable="true">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="HotelCode" type="HotelCode" nillable="true">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:choice>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="DeliveryType" type="DeliveryType" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>If not provided, default delivery type for the recipient is used. Required for 040808 version</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:choice minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>May be provided for using alternative addresses</xs:documentation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:element name="ResShellRef" type="RecordID">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:element>
+					<xs:group ref="ResOrCargoShell">
+						<xs:annotation>
+							<xs:appinfo source="Versonix">
+								<XMLBridge>Implemented</XMLBridge>
+							</xs:appinfo>
+						</xs:annotation>
+					</xs:group>
+				</xs:choice>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetDefaultDelivery_OUT">
+		<xs:annotation>
+			<xs:documentation>Response message for GetDefaultDelivery_IN</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Delivery" type="DocDelivery" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<!--============================================= Additional Delivery related requests for compatibility with 040808 version (not implemented in Main version)-->
+	<xs:complexType name="DeliveryInfo">
+		<xs:annotation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:sequence minOccurs="0">
+			<xs:element name="GuestSeqN" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:positiveInteger">
+						<xs:minInclusive value="1"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Carrier" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DeliveryDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DeliveryInstruction" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DeliveryReason" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="DeliveryFeedback" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PickupLocation" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="TrackingNumber" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ShippingDate" type="xs:dateTime" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Address" type="DocAddr" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PhoneNumber" type="PhoneNumber" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="PhoneExtension" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:maxLength value="6"/>
+						<xs:whiteSpace value="collapse"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="CompanyName" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestID" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Not Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="RequestStatus" type="xs:string" minOccurs="0">
+				<xs:annotation>
+					<xs:appinfo source="Versonix">
+						<XMLBridge>Not Implemented</XMLBridge>
+					</xs:appinfo>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:element name="GetDocDeliveryInfo_IN">
+		<xs:annotation>
+			<xs:documentation>Request for documents delivery info.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResId" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="GetDocDeliveryInfo_OUT">
+		<xs:annotation>
+			<xs:documentation>Document delivery info.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Deliveries" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence minOccurs="0">
+							<xs:element name="Delivery" type="DeliveryInfo" minOccurs="0"
+								maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SetDocDeliveryInfo_IN">
+		<xs:annotation>
+			<xs:documentation>Update of documents delivery info.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ResId" type="RecordID">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Deliveries">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence minOccurs="0">
+							<xs:element name="Delivery" type="DeliveryInfo" minOccurs="0"
+								maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="SetDocDeliveryInfo_OUT">
+		<xs:annotation>
+			<xs:documentation>Updated document delivery info.</xs:documentation>
+			<xs:appinfo source="Versonix">
+				<XMLBridge>Implemented</XMLBridge>
+			</xs:appinfo>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="MsgHeader" type="MsgHeader">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="Deliveries">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence minOccurs="0">
+							<xs:element name="Delivery" type="DeliveryInfo" minOccurs="0"
+								maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Errors" type="Errors" minOccurs="0">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+							<XMLBridge>Implemented</XMLBridge>
+						</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="IssueDocument">
+		<xs:sequence>
+			<xs:element name="DocHeader" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Documents with the same DocHeader will be sent as attachments (if delivery allows)</xs:documentation>
+					<xs:appinfo source="Versonix">
+									<XMLBridge>Implemented</XMLBridge>
+								</xs:appinfo>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Subject" type="LongComment" minOccurs="0">
+							<xs:annotation>
+								<xs:appinfo source="Versonix">
+												<XMLBridge>Implemented</XMLBridge>
+											</xs:appinfo>
+							</xs:annotation>
+						</xs:element>
+						<xs:choice minOccurs="0">
+							<xs:element name="Message" type="LongComment">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+													<XMLBridge>Implemented</XMLBridge>
+												</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="UseAttachment" type="xs:positiveInteger">
+								<xs:annotation>
+									<xs:appinfo source="Versonix">
+													<XMLBridge>ToBeImplemented</XMLBridge>
+												</xs:appinfo>
+								</xs:annotation>
+							</xs:element>
+						</xs:choice>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:choice minOccurs="0">
+				<xs:element name="Attachment" type="DocAttachment" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:appinfo source="Versonix">
+										<XMLBridge>Implemented</XMLBridge>
+									</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="File" type="DocFile" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:documentation>Used internally for "Send only" mode</xs:documentation>
+						<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="TempFileID" type="RecordID">
+					<xs:annotation>
+						<xs:documentation>Record ID of prepared and stored document to deliver</xs:documentation>
+						<xs:appinfo source="Versonix">
+										<XMLBridge>ToBeImplemented</XMLBridge>
+									</xs:appinfo>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

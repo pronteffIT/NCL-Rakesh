@@ -1,0 +1,97 @@
+BROKER SCHEMA com.ncl.ais
+
+
+/** Common procedures for this service **/
+CREATE PROCEDURE CallDBSearch(IN Environment REFERENCE, IN rPackages REFERENCE, IN rPackageID CHARACTER, IN rDBOutput REFERENCE, IN rEnv REFERENCE, INOUT rPkgs REFERENCE)
+BEGIN 	
+	DECLARE rPkg, rCmpont, rCmponts, rGuests, rGuest REFERENCE TO rEnv;
+	DECLARE  rDBSearchReq REFERENCE TO rDBOutput;					
+	CREATE LASTCHILD OF rDBOutput DOMAIN('XMLNSC') NAME 'XMLNSC';
+	CREATE LASTCHILD OF rDBOutput.XMLNSC AS rDBSearchReq IDENTITY DbSearch_IN;
+	CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.Temp.SessionGUID,rDBSearchReq);
+	SET rDBSearchReq.MsgHeader.CallerInfo.UserInfo.Internal = '';
+	SET rDBSearchReq.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+	SET rDBSearchReq.Packages.PackageID = rPackageID;
+	PROPAGATE TO LABEL 'InvokeDBSearch';
+	
+	DECLARE envDbSearch REFERENCE TO Environment.Variables.Temp.Message.DBSearchResponse;
+	DECLARE envPackage REFERENCE TO envDbSearch.Packages.Package;
+	
+	IF (rPackageID = envPackage.PackageID) AND EXISTS(envPackage.Components.Component[]) THEN
+		
+	 	CREATE LASTCHILD OF rPkgs AS rPkg IDENTITY Package;
+		SET rPkg.(XMLNSC.Attribute)ID = envPackage.PackageID;
+		
+		CREATE LASTCHILD OF rPkg AS rCmponts IDENTITY Components;
+		FOR rInComponent AS envPackage.Components.Component[] DO
+			
+			CREATE LASTCHILD OF rCmponts AS rCmpont IDENTITY Component;
+			
+			SET rCmpont.(XMLNSC.Attribute)ID = rInComponent.CompRecordID;
+			SET rCmpont.SeqenceNumber = rInComponent.SeqN;
+			SET rCmpont.Type = rInComponent.Type;
+			SET rCmpont.BaseType = rInComponent.BaseType;					
+			SET rCmpont.Code = rInComponent.code;
+			SET rCmpont.DateTimeFrom = rInComponent.DateTime.From;
+			SET rCmpont.DateTimeTo = rInComponent.DateTime.To;
+			SET rCmpont.SubCode1 = rInComponent.SubCode1;
+			SET rCmpont.SubCode2 = rInComponent.SubCode2; 
+			SET rCmpont.SubCode3 = rInComponent.SubCode3;	
+			SET rCmpont.LocationFrom = rInComponent.Location.From.Code;
+			SET rCmpont.LocationFromType = rInComponent.Location.From.Type;
+			SET rCmpont.LocationTo = rInComponent.Location.To.Code;
+			SET rCmpont.LocationToType = rInComponent.Location.To.Type;
+			SET rCmpont.BookMode = rInComponent.BookMode;
+			SET rCmpont.Description = rInComponent.Description;
+			
+			IF rEnv.Temp.ReservationId IS NOT NULL THEN
+				DECLARE OptCompRecordID ROW; 
+		 	  	SET OptCompRecordID.Data[] = SELECT B FROM rPackages.*:Options.*:Option[] AS B WHERE B.CompRecordID =rInComponent.CompRecordID;
+			  	
+			  	DECLARE rInOptCompRecID REFERENCE TO OptCompRecordID.Data;
+				CREATE LASTCHILD OF rCmpont AS rGuests IDENTITY Guests;
+				
+				IF NOT EXISTS(OptCompRecordID.Data[]) THEN				
+			 		DECLARE isCompRecIDRefs CHARACTER TRIM(rPackages.GuestRefs);
+					CALL com.ncl.ais.utils.SplitGuestRef(isCompRecIDRefs,rEnv);
+			 		FOR rSplit AS rEnv.Split.VALUE[] DO
+						CREATE LASTCHILD OF rGuests AS rGuest IDENTITY Guest;
+						SET rGuest.(XMLNSC.Attribute)GuestRefNumber = FIELDVALUE(rSplit);
+						SET rGuest.(XMLNSC.Attribute)Selected = 'N';
+			 		END FOR;
+				ELSEIF FIELDNAME(rInOptCompRecID.SelectedForGuests) = 'SelectedForGuests' OR FIELDNAME(rInOptCompRecID.ExcludedForGuests) = 'ExcludedForGuests' THEN
+			
+					IF FIELDTYPE(rInOptCompRecID.SelectedForGuests) IS NOT NULL THEN
+			 			DECLARE sForGuestRefs CHARACTER TRIM(rInOptCompRecID.SelectedForGuests);
+						CALL com.ncl.ais.utils.SplitGuestRef(sForGuestRefs,rEnv);	
+			 			FOR sSplit AS rEnv.Split.VALUE[] DO	
+							CREATE LASTCHILD OF rGuests AS rGuest IDENTITY Guest;
+							SET rGuest.(XMLNSC.Attribute)GuestRefNumber = FIELDVALUE(sSplit);
+							SET rGuest.(XMLNSC.Attribute)Selected = 'Y';
+			 			END FOR;
+					END IF;
+					IF 	FIELDTYPE(rInOptCompRecID.ExcludedForGuests) IS NOT NULL THEN
+			 			DECLARE eForGuestRefs CHARACTER TRIM(rInOptCompRecID.ExcludedForGuests);
+						CALL com.ncl.ais.utils.SplitGuestRef(eForGuestRefs,rEnv);	
+			 			FOR eSplit AS rEnv.Split.VALUE[] DO
+							CREATE LASTCHILD OF rGuests AS rGuest IDENTITY Guest;
+							SET rGuest.(XMLNSC.Attribute)GuestRefNumber = FIELDVALUE(eSplit);
+							SET rGuest.(XMLNSC.Attribute)Selected = 'N';
+			 			END FOR;	
+					END IF;	
+				ELSE
+			 		DECLARE isSlectGuestRefs CHARACTER TRIM(rPackages.GuestRefs);
+					CALL com.ncl.ais.utils.SplitGuestRef(isSlectGuestRefs,rEnv);
+			 		FOR rSplit AS rEnv.Split.VALUE[] DO
+						CREATE LASTCHILD OF rGuests AS rGuest IDENTITY Guest;
+						SET rGuest.(XMLNSC.Attribute)GuestRefNumber = FIELDVALUE(rSplit);
+			 			SET rGuest.(XMLNSC.Attribute)Selected = rInOptCompRecID.IsSelected;	  			
+					END FOR;
+				END IF;
+	 		END IF;			
+		END FOR;
+	ELSE 
+		CREATE LASTCHILD OF rPkgs AS rPkg IDENTITY Package;
+		SET rPkg.(XMLNSC.Attribute)ID = rPackageID;			  		
+	END IF;
+END;

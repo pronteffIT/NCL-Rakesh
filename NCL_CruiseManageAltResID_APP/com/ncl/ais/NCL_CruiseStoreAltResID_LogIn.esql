@@ -1,0 +1,384 @@
+
+BROKER SCHEMA com.ncl.ais
+
+--DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_STORE_ALT_RESID_RESP';
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseStoreAltResID
+* MODULE NAME : LogIn
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_LogIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+
+		DECLARE rEnv ,rSendSID REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseStoreAltResIDRQ;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- add metadata to log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+		COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+		COALESCE(rIn.*:ReservationId, ''),
+		'',
+		'',
+		rEnv);
+		---add input payload to logging
+
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'StoreResId input request message', 'xml', rEnv);
+	END IF;
+	IF (rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID) > 0 THEN
+		SET rEnv.AgencyId = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+	END IF;
+	---lookup for AltResId
+	DECLARE altResId,querry CHARACTER;
+	SET altResId = rIn.*:AltReservationId;
+	SET rEnv.temp[] = PASSTHRU('select A.alt_res_id From res_header A where A.alt_res_id = ?',altResId);
+	---check fir AltResID and AgencyId
+	IF EXISTS(rEnv.XMLNSC.temp.alt_res_id[] ) THEN
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		SET rOut.ns:Warnings.ns:Warning = 'The AltResID that is entered already exists and associated with another reservation,please try another
+		including last 4 digits of the Reservation number for better uniqueness';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'The AltResID is associated with another reservation';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+			-------Agency Id not found
+
+		END IF;
+		--Preparelogin Parameter--
+		CREATE FIELD OutputRoot.XMLNSC.VerifyAgencyRequest AS rSendSID;
+		----Preapre req for SendSID
+		SET rEnv.code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rSendSID.source.BookingChannel.CompanyName.Code = rEnv.code;
+		SET rSendSID.source.RequestorID.ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET rSendSID.source.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseStoreAltResID
+* MODULE NAME : LoadBooking
+* Description : This module is used for LoadBooking.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_LoadBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,loadBookRef REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseStoreAltResIDRQ;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.VerifyAgencyResponse;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS;
+		---declaring refernce for SessionId
+		SET rEnv.SessionId = rAgency.sessionGUID;
+		SET rEnv.EndPoint = rAgency.endpoint;
+		-- This flow will decide the path to carryon based on the response obtained from the Callable flow.
+		IF EXISTS(rAgency.loginError.(XMLNSC.Attribute)Code[])
+			OR EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)Code[] ) OR EXISTS(rAgency.agencyNotFound.(XMLNSC.Attribute)Code[] ) THEN
+			-- If error exist
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			IF EXISTS(rAgency.loginError[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.loginError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.loginError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSEIF EXISTS(rAgency.runtimeError[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.runtimeError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.runtimeError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			ELSEIF EXISTS(rAgency.agencyNotFound[]) OR NOT EXISTS(ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID[])THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Agency not found ...', rEnv);
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12805';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Agency Pseudo City is not on file';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				SET rOut.ns:ReservationId = ref.*:ReservationId ;
+				SET rOut.ns:AltReservationId = ref.*:AltReservationId;
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke LoadBooking...', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+			CREATE FIELD OutputRoot.XMLNSC.LoadBooking_IN AS loadBookRef;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,loadBookRef);
+--			SET loadBookRef.MsgHeader.Version = VersonixAPIVersion;
+--			SET loadBookRef.MsgHeader.SessionGUID = rEnv.SessionId;
+			SET loadBookRef.Options.Lock = 'Y';
+			SET loadBookRef.ResShellOptions.IncludeElements = 'ResHeader';
+			SET loadBookRef.ResID = COALESCE( CAST(ref.*:ReservationId AS INTEGER),0);
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseStoreAltResID
+* MODULE NAME : StoreBooking
+* Description : This module is used for StoreBooking.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_StoreBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv,refStore,rOut REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseStoreAltResIDRQ;
+		DECLARE UpdateBooking REFERENCE TO InputRoot.XMLNSC.UpdateBooking_OUT;
+
+		IF EXISTS(UpdateBooking.Errors.Error.ErrorMessage[]) THEN
+			----UpdateBooking Error
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur While Invoking UpdateBooking  ...', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			IF EXISTS(UpdateBooking.Errors.Error.ErrorCode[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = UpdateBooking.Errors.Error.ErrorCode;
+			ELSE
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			END IF;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = UpdateBooking.Errors.Error.ErrorMessage;
+			SET rOut.ns:ReservationId = rIn.*:ReservationId ;
+			SET rOut.ns:AltReservationId = rIn.*:AltReservationId;
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			---prepare store booking
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke StoreBooking  ...', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+			CREATE FIELD OutputRoot.XMLNSC.StoreBooking_IN AS refStore;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,refStore);
+--			SET refStore.MsgHeader.Version = VersonixAPIVersion;
+--			SET refStore.MsgHeader.SessionGUID = rEnv.SessionId;
+			SET refStore.Options.Unlock = 'Y';
+			SET refStore.ResShellOptions.IncludeElements = 'ResHeader';
+			SET refStore.ResID = UpdateBooking.ResShell.ResHeader.ResID;
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+		END IF;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseStoreAltResID
+* MODULE NAME : RespOut
+* Description : This module is used for building Response.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_RespOut
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE StoreBooking REFERENCE TO InputRoot.XMLNSC.StoreBooking_OUT;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.ns:NCL_CruiseStoreAltResIDRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS;
+
+
+		IF EXISTS(StoreBooking.Errors.Error.ErrorMessage[]) THEN
+			----StoreBooking validation Warning
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			IF EXISTS(StoreBooking.Errors.Error.ErrorCode[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = StoreBooking.Errors.Error.ErrorCode;
+			ELSE
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+			END IF;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = StoreBooking.Errors.Error.ErrorMessage;
+			SET rOut.ns:ReservationId = rIn.*:ReservationId ;
+			SET rOut.ns:AltReservationId = rIn.*:AltReservationId;
+		ELSE
+			---build response
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			CREATE LASTCHILD OF rOut NAMESPACE ns NAME 'Success';
+			SET rOut.ns:ReservationId = rIn.*:ReservationId ;
+			SET rOut.ns:AltReservationId = rIn.*:AltReservationId;
+			-----added payload
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			--SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'StoreAltResID response message', 'xml', rEnv);
+		END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+	END IF;
+END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseStoreAltResID
+* MODULE NAME : UnlockBooking
+* Description : This module is used for UnlockBooking.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseStoreAltResID_UnlockBooking
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rLoadBook REFERENCE TO InputRoot.XMLNSC.LoadBooking_OUT;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseStoreAltResIDRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS;
+		DECLARE refBook REFERENCE TO OutputRoot.XMLNSC.UnlockBooking_IN;
+		DECLARE refUpdate REFERENCE TO OutputRoot.XMLNSC.UpdateBooking_IN;
+
+		IF EXISTS(rLoadBook.Errors.Error.ErrorMessage[]) THEN
+			----loadBooking Error
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur While Invoking LoadBooking  ...', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rLoadBook.Errors.Error.ErrorCode;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rLoadBook.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			----call update booking
+			CALL UnlockBooking(rIn,refBook);
+			RETURN FALSE;
+		ELSE
+			IF rLoadBook.ResShell.ResHeader.SourceCode = rEnv.code THEN
+				IF (rLoadBook.ResShell.ResHeader.ResStatus = 'RQ') OR
+					(rLoadBook.ResShell.ResHeader.ResStatus= 'BK') OR
+					(rLoadBook.ResShell.ResHeader.ResStatus = 'OF')THEN
+					-----check for agency
+					IF EXISTS(rIn.*:AgencyCheck[]) THEN
+						IF rEnv.AgencyId = rLoadBook.ResShell.ResHeader.AgencyID THEN
+							--call update booking
+							CALL UpdateBooking(rIn,rLoadBook,refUpdate);
+						ELSE
+							SET OutputRoot.MQMD = rEnv.MQMD;
+							CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+							CALL com.ncl.ais.utils.CopyAttributes(rIn ,rOut);
+							SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+							SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'The Res_ID associated with AltResID is not accessible by the requesting agency';
+							SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type ='3';
+						END IF;
+					ELSE
+						---call update booking
+						CALL UpdateBooking(rIn,rLoadBook,refUpdate);
+					END IF;
+				ELSE
+					---BKG status Invaild
+					SET OutputRoot.MQMD = rEnv.MQMD;
+					CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+					CALL com.ncl.ais.utils.CopyAttributes(rIn ,rOut);
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'Booking Status Not in RQ , BK or OF';
+					SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type ='3';
+					PROPAGATE TO TERMINAL 'out1';
+					CALL UnlockBooking(rIn,refBook);
+					RETURN FALSE;
+				END IF;
+			ELSE
+				----channel mismatch
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseStoreAltResIDRS AS rOut;
+				CALL com.ncl.ais.utils.CopyAttributes(rIn ,rOut);
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '99999';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'The Res_ID associated with AltResID does is not accessible by the requesting channel';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type ='3';
+				SET rOut.ns:ReservationId = rIn.*:ReservationId;
+				SET rOut.ns:AltReservationId = rIn.*:AltReservationId;
+				PROPAGATE TO TERMINAL 'out1';
+				CALL UnlockBooking(rIn,refBook);
+				RETURN FALSE;
+			END IF;
+		END IF;
+	END;
+	------Procedure for UnlockBooking
+	CREATE PROCEDURE UnlockBooking (INOUT refIn REFERENCE,OUT refBooks REFERENCE)
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE resId CHARACTER;
+		SET resId = refIn.*:ReservationId ;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+		CREATE FIELD OutputRoot.XMLNSC.UnlockBooking_IN AS refBooks;
+		SET rEnv.Temp[] = PASSTHRU('SELECT replace(a.external_id,?,'''') AS sessionID From res_lock  a where a.table_Rec_id = ? and a.lock_name= ?
+		and a.LOCK_OFF =? and a.external_id IS NOT NULL',resId||'.',resId,'RES.'||resId,'Y');
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,refBooks);
+--		SET refBooks.MsgHeader.Version = VersonixAPIVersion;
+--		SET refBooks.MsgHeader.SessionGUID = rEnv.SessionId;
+		SET refBooks.ResID = CAST(resId AS INTEGER);
+		PROPAGATE TO TERMINAL 'out2';
+	END;
+	-- -------Procedure for UpdateBooking
+	CREATE PROCEDURE UpdateBooking (INOUT refIn REFERENCE ,INOUT refload REFERENCE, OUT rupdate REFERENCE)
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		SET OutputRoot.HTTPRequestHeader."x-upstream" = Environment.Variables.EndPoint;
+		CREATE FIELD OutputRoot.XMLNSC.UpdateBooking_IN AS rupdate;
+		CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rupdate);
+--		SET rupdate.MsgHeader = refload.MsgHeader;
+		SET rupdate.ResShellOptions.IncludeElements = 'ResHeader';
+		SET rupdate.ResShell.ResHeader.ResID = CAST(refload.ResShell.ResHeader.ResID AS INTEGER);
+		SET rupdate.ResShell.ResHeader.AltResID = refIn.*:AltReservationId;
+	END;
+END MODULE;

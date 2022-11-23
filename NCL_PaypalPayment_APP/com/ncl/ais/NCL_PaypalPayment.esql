@@ -1,0 +1,268 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+DECLARE Default_ReplyQ EXTERNAL CHARACTER 'NCL_PAYPAL_PAYMENT_RESP';
+DECLARE PaymentForm EXTERNAL CHARACTER '';
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+
+CREATE PROCEDURE UpdatePaypalTran(IN tranId INTEGER, IN externalId CHARACTER, IN tranStatus CHARACTER, IN userId CHARACTER, OUT errCode CHARACTER, OUT errMsg CHARACTER)
+	LANGUAGE DATABASE EXTERNAL NAME "NCLSEA.NCL_UPDATE_PAYAL_TXN_STATUS";
+
+CREATE FILTER MODULE NCL_PaypalPayment_PreauthMode
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rPayment REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO Root.XMLNSC.*:NCL_CruisePaypalPaymentRQ;
+		
+		DECLARE cLocalTranId CHARACTER COALESCE(Root.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		SET rEnv.Temp.Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID), COALESCE(FIELDVALUE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode), ''));
+		SET rEnv.Temp.Channel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code), '');
+		SET rEnv.Temp.ResId = COALESCE(FIELDVALUE(rIn.*:PaymentEntity.*:SrcEntity.(XMLNSC.Attribute)ID), '');
+		SET rEnv.Temp.ClientId = COALESCE(FIELDVALUE(rIn.*:PaymentEntity.*:DestEntity.(XMLNSC.Attribute)ID), '');
+		
+		-- add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rEnv.Temp.Requestor, rEnv.Temp.Channel, rEnv.Temp.ResId, rEnv.Temp.ClientId, '', rEnv);
+
+		-- add payload to the event message
+		IF LogPayLoad THEN
+			SET bPayload =  ASBITSTREAM(Root.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Paypal request message ...', 'xml', rEnv);
+		END IF;
+		
+		-- Saving Headers in Environment
+		SET rEnv.Temp.Headers.MQMD = Root.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(Root.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = Default_ReplyQ;
+		END IF;
+
+		-- saving input message for later reference
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.InputMessage = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.InputMessage.(XMLNSC.NamespaceDecl)xmlns = NULL;
+
+		-- route based on mode
+		IF rIn.*:PaypalPaymentOption.*:Mode = 'PRE_AUTH' THEN
+			RETURN TRUE;
+		ELSE
+			RETURN FALSE;
+		END IF;		
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_PaypalPayment_CreateAccTransReq
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut, rPayment,rTransaction REFERENCE TO Environment.Variables;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruisePaypalPaymentRQ;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, UUIDASCHAR);
+		DECLARE bPayload BLOB;
+		
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		SET cLocalTranId = TRANSLATE(cLocalTranId, 'X''', '');
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+
+		SET rEnv.Temp.Requestor = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID), COALESCE(FIELDVALUE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode), ''));
+		SET rEnv.Temp.Channel = COALESCE(FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code), '');
+		SET rEnv.Temp.ResId = COALESCE(FIELDVALUE(rIn.*:PaymentEntity.*:SrcEntity.(XMLNSC.Attribute)ID), '');
+		SET rEnv.Temp.ClientId = COALESCE(FIELDVALUE(rIn.*:PaymentEntity.*:DestEntity.(XMLNSC.Attribute)ID), '');
+		
+		-- add MetaData to Log Event
+		CALL com.ncl.iib.log.CreateMetaDataSet(rEnv.Temp.Requestor, rEnv.Temp.Channel, rEnv.Temp.ResId, rEnv.Temp.ClientId, '', rEnv);
+
+		-- add payload to the event message
+		IF LogPayLoad THEN
+			SET bPayload =  ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Paypal request message ...', 'xml', rEnv);
+		END IF;
+		
+		-- Saving Headers in Environment
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MSG_EXPIRY;
+		
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = Default_ReplyQ;
+		END IF;
+		-- saving input message for later reference
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.InputMessage = rIn;
+		-- removing default namespace declaration
+		SET rEnv.Temp.Message.InputMessage.(XMLNSC.NamespaceDecl)xmlns = NULL;				
+		
+		-- manage transaction service call
+		CREATE FIELD OutputRoot.XMLNSC.ManageAccTrans_IN AS rOut;
+		
+		SET rOut.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rOut.MsgHeader.CallerInfo.UserInfo.Internal = '';		
+		SET rOut.MsgHeader.CallerInfo.ExtSystemInfo.SourceCode = rEnv.Temp.Channel;
+		IF  FIELDVALUE(rIn.*:PaypalPaymentOption.*:Mode) = 'PRE_AUTH' THEN
+			CREATE FIELD rOut.Create.Payments.Payment AS rPayment;		
+			SET rPayment.SrcEntity.{FIELDVALUE(rIn.*:PaymentEntity.*:SrcEntity.(XMLNSC.Attribute)SrcType)} = FIELDVALUE(rIn.*:PaymentEntity.*:SrcEntity.(XMLNSC.Attribute)ID);
+			SET rPayment.DestEntity.{FIELDVALUE(rIn.*:PaymentEntity.*:DestEntity.(XMLNSC.Attribute)DestType)} = FIELDVALUE(rIn.*:PaymentEntity.*:DestEntity.(XMLNSC.Attribute)ID);
+			SET  rPayment.Amount = CAST(FIELDVALUE(rIn.*:PaypalPaymentOption.*:Amount) AS DECIMAL (10,2))/100;										
+			SET rPayment.Currency = rIn.*:PaypalPaymentOption.*:CurrencyCode;
+			SET rPayment.FormOfTrans = PaymentForm;
+			SET rPayment.Comments = rIn.*:PaypalPaymentOption.*:Comments;
+			SET rPayment.ExternalIdent = rIn.*:PaypalPaymentOption.*:PaypalAuthCode;
+		ELSE
+			CREATE FIELD rOut.Accept.Transaction AS rTransaction;
+			SET rTransaction.TransID = rIn.*:PaypalPaymentOption.*:SubmissionReferenceId;
+			SET rTransaction.ExternalIdent = rIn.*:PaypalPaymentOption.*:PaypalAuthCode;
+		END IF;
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_PaypalPayment_AccTransResp
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rOut REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		DECLARE rAccTran REFERENCE TO InputRoot.XMLNSC.ManageAccTrans_OUT;
+		DECLARE rTran REFERENCE TO rAccTran.Transactions.Transaction;
+		
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePaypalPaymentRS AS rOut;
+		
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		IF EXISTS(rAccTran.Errors.Error[]) THEN			
+			SET rOut.ns:Warnings.ns:Warning = rAccTran.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '12228';
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAccTran.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = rAccTran.Errors.Error.ErrorCode;
+		ELSE
+			
+			CREATE FIELD rOut.ns:Success;
+			
+			IF rTran.Status = 'OK' THEN
+				SET rOut.ns:PaymentOption.(XMLNSC.Attribute)PaymentStatus = '1';
+			ELSEIF rTran.Status = 'VOIDED' THEN
+				SET rOut.ns:PaymentOption.(XMLNSC.Attribute)PaymentStatus = '4';
+			ELSEIF rTran.Status = 'PAYPAL QUEUE' OR rTran.Status = 'CC QUEUE' THEN
+				SET rOut.ns:PaymentOption.(XMLNSC.Attribute)PaymentStatus = '9';
+			END IF;
+			
+			SET rOut.ns:PaymentOption.(XMLNSC.Attribute)TransactionReferenceNumber = rTran.TransID;
+			IF rTran.Status = 'OK' 
+				AND FIELDVALUE(rOrgMsg.*:PaypalPaymentOption.*:Mode) = 'COMPLETION' 
+				AND EXISTS(rOrgMsg.*:ComponentDetails.*:ComponentDetail[])  THEN
+					PROPAGATE TO TERMINAL 'out1' DELETE NONE;				
+			END IF;
+			
+		END IF;
+		
+		
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_PaypalPayment_PaypalCompletion
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv, rBkgCmpnt, rOut REFERENCE TO Environment.Variables;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.InputMessage;
+		
+		DECLARE spErrCode, spErrMsg CHARACTER '';
+		
+    	-- call booking component payment if component detail exists
+		IF EXISTS(rOrgMsg.*:ComponentDetails.*:ComponentDetail[]) THEN
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseBookingComponentPaymentRQ AS rBkgCmpnt;
+			
+			CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rBkgCmpnt);
+			
+			SET rBkgCmpnt.ns:POS = rOrgMsg.*:POS;
+			
+			IF rOrgMsg.*:PaypalPaymentOption.*:PaypalPaymentStatus = 'APPROVED' THEN
+				SET rBkgCmpnt.ns:Status = 'OK';
+			ELSEIF rOrgMsg.*:PaypalPaymentOption.*:PaypalPaymentStatus = 'DECLINED' THEN
+				SET rBkgCmpnt.ns:Status = 'CC DECLINED';
+			ELSEIF rOrgMsg.*:PaypalPaymentOption.*:PaypalPaymentStatus = 'PENDING' THEN
+				SET rBkgCmpnt.ns:Status = 'CC QUEUE';
+			END IF;
+			
+			SET rBkgCmpnt.ns:TransID = rOrgMsg.*:PaypalPaymentOption.*:SubmissionReferenceId;
+			SET rBkgCmpnt.ns:SrcEntity = rOrgMsg.*:PaymentEntity.*:SrcEntity;
+			SET rBkgCmpnt.ns:ComponentDetails = rOrgMsg.*:ComponentDetails;
+			PROPAGATE TO TERMINAL 'out1';
+		END IF;				
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_PaypalPayment_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		END IF;
+
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_PaypalPayment_HandleServiceErrors
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rOrgMsg REFERENCE TO rEnv.Temp.Message.NCL_CruisePaypalPaymentRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruisePaypalPaymentRS;
+
+		DECLARE cErrorText CHARACTER 'System error from back end. Please try again later';
+		DECLARE bPayload BLOB;
+		
+		-- extract error details from exception tree
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruisePaypalPaymentRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rOrgMsg, rOut);
+		
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+		SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+		SET rOut.ns:Errors.ns:Error = cErrorText;
+
+		-- log payload
+		IF LogPayLoad THEN
+			SET bPayload = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Paypal error response', 'xml', rEnv);
+		END IF;
+		
+		RETURN TRUE;
+	END;
+END MODULE;

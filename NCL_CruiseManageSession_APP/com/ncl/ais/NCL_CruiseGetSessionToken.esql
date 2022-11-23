@@ -1,0 +1,569 @@
+BROKER SCHEMA com.ncl.ais
+
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE sch NAMESPACE 'http://versonix.com/api/schemas';
+
+DECLARE SessionMap EXTERNAL CHARACTER '';
+DECLARE AgencyMap EXTERNAL CHARACTER '';
+DECLARE CacheConfigService EXTERNAL CHARACTER '';
+DECLARE SessionConfigService EXTERNAL CHARACTER '';
+DECLARE ChannelList EXTERNAL CHARACTER '#NCLWEBC#QUEST_INTERNAL#';
+--DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_GETSESSION_TOKEN_RESP';
+
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSessionToken
+* MODULE NAME : Chk_NCLWEBC
+* Description : This module generates the session
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/28/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSessionToken_Chk_NCLWEBC
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE cErrorCode, cErrorMsg, cGetOrCreateSession,cResId,cSessionGUID CHARACTER ' ';
+		DECLARE uuid CHARACTER UUIDASCHAR;
+		DECLARE cLocalTranId CHARACTER COALESCE(InputRoot.MQMD.MsgId, uuid);
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE bPayLoadOut BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ;
+		DECLARE outResponse REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		DECLARE encryptSoapReq REFERENCE TO OutputRoot.SOAP.Body.sch:processEncryptDecryptRequest;		
+		
+		IF EXISTS(InputLocalEnvironment.Destination.CallableFlow.Reply.ReplyIdentifier[]) THEN
+			SET rEnv.Temp.Protocol = 'CALLABLE';
+		ELSE
+			SET rEnv.Temp.Protocol = 'MQ';
+		END IF;	
+
+		DECLARE sessionID CHARACTER;
+		DECLARE temp CHARACTER;
+		
+		SET rEnv.XMLNSC = InputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRQ;
+		
+		SET cGetOrCreateSession = COALESCE(rIn.*:GetOrCreateSession,'N');
+		
+		IF NOT com.ncl.ais.utils.IsEmpty(rIn.*:ReservationId) THEN
+			SET cResId = rIn.*:ReservationId;
+		ELSE
+			SET cResId = 'N';
+		END IF ;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, 'X ''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--add metadataset
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												 '','','',rEnv);
+		---addd payload
+		IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Get Session request message', 'xml', rEnv);
+		END IF;
+		
+		SET rEnv.MQMD = InputRoot.MQMD;
+		
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET Environment.Password = rIn.*:UserLogin.(XMLNSC.Attribute)Password;
+		
+		DECLARE cChannel CHARACTER rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		
+		--Get the Session from XC10 Cache
+		--IF it is available Invoke ShowSessionDetails which will validate if it is valid
+		IF (CONTAINS(ChannelList,cChannel) AND cGetOrCreateSession = 'Y' AND cResId <> 'N' ) THEN
+			SET cSessionGUID = GetDataFromCache(cResId, SessionMap, SessionConfigService);
+			
+			IF STARTSWITH(cSessionGUID, 'ERROR') OR COALESCE(cSessionGUID, '') = '' THEN
+				SET cSessionGUID = THE(SELECT ITEM RL.PARENT_LOCK FROM Database.SEA.RES_LOCK AS RL WHERE RL.TABLE_REC_ID = cResId);
+				SET cSessionGUID = SUBSTRING(cSessionGUID AFTER 'SESSION.');
+			END IF;
+						
+			/*SET rEnv.Temp.GetSessionIn.Key = cResId;
+			
+			PROPAGATE TO LABEL 'Get_Session';
+			
+			SET rEnv.Temp.CacheOut = rEnv.Temp.GetSessionOut.Value;*/
+			
+			--IF STARTSWITH(rEnv.Temp.GetSessionOut.Value, 'ERROR') THEN
+			IF STARTSWITH(cSessionGUID, 'ERROR') THEN
+				THROW USER EXCEPTION MESSAGE 2951 VALUES(cSessionGUID);
+			END IF;
+			
+			--IF LENGTH(rEnv.Temp.GetSessionOut.Value) > 0 AND (NOT STARTSWITH(rEnv.Temp.GetSessionOut.Value, 'ERROR')) THEN
+			IF LENGTH(TRIM(cSessionGUID)) > 0 THEN
+				--SET OutputRoot.MQMD = rEnv.MQMD;
+				SET rEnv.Temp.Endpoint = GetDataFromCache(cSessionGUID, SessionMap, SessionConfigService);
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.Temp.Endpoint;
+				
+				CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+				DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+				
+				SET rOut.ShowSessionDetail_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				SET rOut.ShowSessionDetail_IN.MsgHeader.SessionGUID = cSessionGUID;
+				--SET rOut.ShowSessionDetail_IN.MsgHeader.SessionGUID = rEnv.Temp.GetSessionOut.Value;
+				SET rOut.ShowSessionDetail_IN.MsgHeader.MessageID = cResId;
+				
+				PROPAGATE TO TERMINAL 'out4';
+				RETURN FALSE;							
+			END IF;			
+		END IF;
+		
+		IF (rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code = 'NCLWEBC'  AND cGetOrCreateSession = 'N') THEN
+			--SET rEnv.resultset[]=PASSTHRU('select a.LOCK_NAME,a.TIMESTAMP,a.TIMERELEASE from res_lock a where a.SESSION_USER_LOGIN =(?) and (a.USERNAME =(?) OR a.USERNAME =(?)) and a.LOCK_NAME like (?) and a.timerelease >sysdate order by a.timerelease desc','NCLSAPIENT','NCLBGEGDS', 'BIZLOGICGDS' ,'SESSION.%');
+			SET rEnv.resultset[] = PASSTHRU('select a.LOCK_NAME,a.TIMESTAMP,a.TIMERELEASE from res_lock a where a.SESSION_USER_LOGIN =(?) and (a.USERNAME =(?) OR a.USERNAME =(?)) and a.LOCK_NAME like (?) and a.timerelease >sysdate order by a.timerelease desc' VALUES('NCLSAPIENT','NCLBGEGDS', 'BIZLOGICGDS' ,'SESSION.%'));
+			SET temp = rEnv.resultset.LOCK_NAME;
+			
+			IF (STARTSWITH(temp,'SESSION.')) THEN
+				SET rEnv.sessionID = REPLACE(temp,'SESSION.', '');
+			END IF;
+			
+			IF (rEnv.sessionID <> '') THEN
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS AS outResponse;
+				CALL com.ncl.ais.utils.CopyAttributes(rIn,outResponse);
+				
+				SET outResponse.Success = '';
+				SET outResponse.SessionInfo.SessionToken = rEnv.sessionID;
+				SET outResponse.SessionInfo.SessionTimeout.Inactivity = '15';
+
+				SET bPayLoadOut = ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayLoadOut, NodeLabel, 'Cruise Get session response message', 'xml', rEnv);
+
+				PROPAGATE TO TERMINAL 'out2';
+				RETURN FALSE;
+			ELSE
+				CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+				DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+				
+				SET rOut.LoginRequest.Username = 'NCLSAPIENT';
+				SET rOut.LoginRequest.source.BookingChannel.CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+				
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+			END IF;
+		ELSEIF EXISTS(rIn.*:UserLogin.(XMLNSC.Attribute)UserLoginName[]) THEN
+			/*CREATE FIELD OutputRoot.SOAP.Body.sch:processEncryptDecryptRequest AS encryptSoapReq;
+			
+			SET encryptSoapReq.sch:Encrypt_Decrypt.sch:Action = 'ENCRYPT';
+			SET encryptSoapReq.sch:Encrypt_Decrypt.sch:DecryptString = Environment.Password;*/
+			
+			PROPAGATE TO TERMINAL 'out3';
+			RETURN FALSE;
+		ELSE
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+			
+			SET rOut.VerifyAgencyRequest.source.BookingChannel.CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET rOut.VerifyAgencyRequest.source.RequestorID.ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+			SET rOut.VerifyAgencyRequest.source.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+			--SET rOut.VerifyAgencyRequest.source.RequestorID.Type = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)Type;
+			
+			PROPAGATE TO TERMINAL 'out';
+			RETURN FALSE;
+		END IF;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSessionToken
+* MODULE NAME : Response
+* Description : This module sends the response from ValidateBookingSource
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/28/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSessionToken_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		DECLARE rInAgency REFERENCE TO InputRoot.XMLNSC.*:VerifyAgencyResponse;
+		DECLARE cSessionInfo, cCacheVal, cResId CHARACTER '';
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		
+		-- checking for errors
+		IF EXISTS(rInAgency.runtimeError[]) OR EXISTS(rInAgency.loginError[])THEN
+			IF EXISTS(rInAgency.loginError[]) THEN
+				SET rOut.Warnings.Warning = rInAgency.*:loginError;
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = COALESCE(rInAgency.*:loginError.(XMLNSC.Attribute)Code,'7748');
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = rInAgency.*:loginError.(XMLNSC.Attribute)ShortText;
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+			ELSEIF EXISTS(rInAgency.runtimeError[]) THEN
+				SET rOut.Warnings.Warning = rInAgency.*:runtimeError;
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = rInAgency.*:runtimeError.(XMLNSC.Attribute)Code;
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = rInAgency.*:runtimeError.(XMLNSC.Attribute)ShortText;
+				SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = rInAgency.*:runtimeError.(XMLNSC.Attribute)Type;
+			END IF;
+		ELSEIF EXISTS(rInAgency.agencyNotFound[]) THEN
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = COALESCE(rInAgency.agencyNotFound.(XMLNSC.Attribute)Code,'7748');
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = rInAgency.agencyNotFound.(XMLNSC.Attribute)ShortText;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			IF COALESCE(rIn.*:GetOrCreateSession, 'N') = 'Y' AND LENGTH(rInAgency.endpoint) > 0  THEN
+				SET rEnv.SessionInfo.endpoint =  COALESCE(rInAgency.endpoint);
+				SET rEnv.SessionInfo.sessionid =  COALESCE(rInAgency.*:sessionGUID);
+				SET cResId = COALESCE(rIn.*:ReservationId,'0');
+				
+				-- continue handler to continue with cache errors
+				BEGIN
+					DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN END;
+				END;
+				
+				SET cCacheVal = SaveDataInCache(rEnv.SessionInfo.sessionid, rEnv.SessionInfo.endpoint, '240', SessionMap, SessionConfigService);
+				SET cCacheVal = SaveDataInCache(cResId, rEnv.SessionInfo.sessionid, '240', SessionMap, SessionConfigService);
+				
+				/*SET rEnv.Temp.PutSessionIn.ReservationId = cResId;
+				SET rEnv.Temp.PutSessionIn.SessionToken = rEnv.SessionInfo.sessionid;
+				SET rEnv.Temp.PutSessionIn.Endpoint = rEnv.SessionInfo.endpoint;
+				
+				PROPAGATE TO LABEL 'Put_Session';*/
+			END IF;			
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+			
+			SET rOut.Success = '';
+			SET rOut.agencyID = rInAgency.agencyID;
+			SET rOut.agencyName = rInAgency.agencyName;
+			SET rOut.officeCode = rInAgency.officeCode;
+			SET rOut.agencyCurrency = rInAgency.agencyCurrency;
+			
+			SET rOut.SessionInfo.SessionToken = rInAgency.*:sessionGUID;
+			SET rOut.SessionInfo.SessionTimeout.Inactivity = CAST(rInAgency.InactivityTimeout AS INTEGER);
+			
+			IF COALESCE(rIn.*:GetOrCreateSession, 'N') = 'Y' AND LENGTH(rInAgency.endpoint) > 0  THEN
+				SET rOut.SessionInfo.Endpoint = COALESCE(rInAgency.endpoint);
+			END IF;
+			
+			SET rOut.CacheOut = rEnv.Temp.CacheOut;
+			SET rOut.ShowSessionDetailError = rEnv.Temp.ShowSessionDetailError;
+		END IF;
+		
+		IF(LogPayLoad) THEN
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Get session response message', 'xml', rEnv);
+		END IF;
+		
+--		SET OutputRoot.XMLNSC = NULL;
+--		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSessionToken
+* MODULE NAME : Login_Response
+* Description : This module sends the response from Login
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/28/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseGetSessionToken_Login_Response
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		DECLARE AgentLogin REFERENCE TO InputRoot.XMLNSC.Login_OUT;
+		DECLARE rInLogin REFERENCE TO InputRoot.XMLNSC.*:LoginResponse;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+		
+		DECLARE cCacheVal CHARACTER '';
+		
+		SET OutputRoot.MQMD = rEnv.MQMD ;
+		CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS AS rOut;
+
+		CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);
+		-- checking for errors
+		IF EXISTS(rInLogin.loginError[]) THEN
+			SET rOut.Warnings.Warning = rInLogin.*:loginError;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = COALESCE(rInLogin.*:loginError.(XMLNSC.Attribute)Code,'7748');
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = rInLogin.*:loginError.(XMLNSC.Attribute)ShortText;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+		ELSEIF EXISTS(rInLogin.runtimeError[]) THEN
+			SET rOut.Warnings.Warning = rInLogin.*:runtimeError;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = rInLogin.*:runtimeError.(XMLNSC.Attribute)Code;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = rInLogin.*:runtimeError.(XMLNSC.Attribute)ShortText;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = rInLogin.*:runtimeError.(XMLNSC.Attribute)Type;
+		ELSEIF EXISTS(AgentLogin.Errors.Error.ErrorCode[]) THEN
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Code = '7748';
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)ShortText = AgentLogin.Errors.Error.ErrorMessage;
+			SET rOut.Warnings.Warning.(XMLNSC.Attribute)Type = '3';
+		ELSE
+			---success senario
+			SET rOut.Success ='';			
+			SET rOut.SessionInfo.SessionToken = COALESCE(rInLogin.*:sessionGUID, AgentLogin.MsgHeader.SessionGUID) ;
+			SET rOut.SessionInfo.SessionTimeout.Total = rInLogin.*:Total;
+			SET rOut.SessionInfo.SessionTimeout.Inactivity = COALESCE(CAST(rInLogin.*:InactivityTimeout AS INTEGER), CAST(AgentLogin.SessionInfo.TimeOut.Inactivity AS INTEGER));
+			SET rOut.SessionInfo.Endpoint = COALESCE(InputRoot.HTTPResponseHeader."x-upstream", rInLogin.*:endpoint);
+			
+			SET cCacheVal = SaveDataInCache(rOut.SessionInfo.SessionToken, rOut.SessionInfo.Endpoint, '240', SessionMap, SessionConfigService);
+		END IF;
+		--add payload
+		DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		IF(LogPayLoad) THEN
+		CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Cruise Get session response message', 'xml', rEnv);
+	END IF;
+		SET OutputRoot.XMLNSC = NULL;
+		SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		PROPAGATE TO TERMINAL 'out';
+		RETURN FALSE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSessionToken
+* MODULE NAME : Exception
+* Description : This module handles exception
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/28/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSessionToken_Exception
+
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+
+		IF NOT EXISTS(Environment.Variables[]) THEN
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF(LogPayLoad) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL Cruise Get session request message', 'xml', rEnv);
+		END IF;
+	END IF;
+		SET OutputRoot = InputRoot;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* ********** OWNER ********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseGetSessionToken
+* MODULE NAME : EncryptDecrypt
+* Description : This module create Login Request when input contain UserLogin details
+*
+* ------------------------------------------------------------------------------------
+* ********** MODIFICATION HISTORY ********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 11/28/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseGetSessionToken_EncryptDecrypt
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		DECLARE refEncrypt REFERENCE TO InputRoot.SOAP.Body.*:processEncryptDecryptResponse.Encrypt_Decrypt;
+		----Password Encoding 
+		--DECLARE PasswordChar CHARACTER CAST(refEncrypt.EncryptString AS CHARACTER CCSID InputRoot.Properties.CodedCharSetId);
+		
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+        ---Login Request
+        SET rOut.Login_IN.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+		SET rOut.Login_IN.UserInfo.TravelAgent.Username = FIELDVALUE(rIn.*:UserLogin.(XMLNSC.Attribute)UserLoginName);
+		--SET rOut.Login_IN.UserInfo.TravelAgent.(XMLNSC.CDataField)Password =  PasswordChar;
+		SET rOut.Login_IN.UserInfo.TravelAgent.(XMLNSC.CDataField)Password = Environment.Password;
+		
+		SET rOut.Login_IN.ExtSystemInfo.SourceCode = FIELDVALUE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code);
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+CREATE COMPUTE MODULE NCL_CruiseGetSessionToken_CheckSessionValid
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE cCacheVal, cQuery, cSysName, cReqId, cPCC, retVal CHARACTER '';
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC;
+		DECLARE rSessDtlRes REFERENCE TO InputRoot.XMLNSC.ShowSessionDetail_OUT;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		
+		SET cSysName = COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, 'SABRE');
+		SET cReqId = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET cPCC = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+		
+		IF EXISTS(rSessDtlRes.Errors.Error[]) AND (NOT CONTAINS(rSessDtlRes.Errors.Error.ErrorMessage, 'Session ' || rSessDtlRes.MsgHeader.SessionGUID))
+		THEN
+			CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+
+			SET rOut.VerifyAgencyRequest.source.BookingChannel.CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+			SET rOut.VerifyAgencyRequest.source.RequestorID.ID = rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+			SET rOut.VerifyAgencyRequest.source.PseudoCityCode = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+
+			SET rEnv.Temp.ShowSessionDetailError = rSessDtlRes.Errors.Error.ErrorMessage;
+			
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;			
+		ELSE
+			-- continue handler to continue with cache errors
+			BEGIN
+				DECLARE CONTINUE HANDLER FOR SQLSTATE LIKE '%' BEGIN END;
+			END;
+			
+			IF cReqId <> '0' THEN
+				-- get agency details from cache
+				SET retVal = GetDataFromCache(cReqId, AgencyMap, CacheConfigService);
+				
+				-- if cache get failed
+				IF STARTSWITH(retVal, 'ERROR') OR COALESCE(retVal, '') = '' THEN 
+					SET cQuery = 'SELECT A.AGENCY_ID, A.AGENCY_NAME, A.DEFAULT_CURRENCY, A.OFFICE_CODE' || 
+									' FROM SEA.AGENCY A' || 
+									' WHERE A.AGENCY_ID = ? AND A.IS_ACTIVE = ''Y''';
+	
+					SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(cReqId));
+					
+					-- save agency details in cache
+					SET cCacheVal = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS CHARACTER) || '#1#' || rEnv.Temp.AgencyInfo.AGENCY_NAME || '#2#' || 
+									COALESCE(rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY, '') || '#3#' || COALESCE(rEnv.Temp.AgencyInfo.OFFICE_CODE, '');
+					SET retVal = SaveDataInCache(cReqId, cCacheVal, '', AgencyMap, CacheConfigService);
+				ELSE
+					-- parse the cache value
+					SET rEnv.Temp.AgencyInfo.AGENCY_ID = SUBSTRING(retVal BEFORE '#1#');
+					SET rEnv.Temp.AgencyInfo.AGENCY_NAME = SUBSTRING(SUBSTRING(retVal BEFORE '#2#') AFTER '#1#');
+					SET rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY = SUBSTRING(SUBSTRING(retVal BEFORE '#3#') AFTER '#2#');
+					SET rEnv.Temp.AgencyInfo.OFFICE_CODE = SUBSTRING(retVal AFTER '#3#');
+				END IF;				
+			ELSEIF cPCC <> '' THEN
+				-- get agency details from cache
+				SET retVal = GetDataFromCache(cPCC || '_' || cSysName, AgencyMap, CacheConfigService);
+				
+				-- if cache get failed
+				IF STARTSWITH(retVal, 'ERROR') OR COALESCE(retVal, '') = '' THEN
+					SET cQuery = 'SELECT B.DEFAULT_CURRENCY, B.AGENCY_ID, B.AGENCY_NAME, B.OFFICE_CODE FROM SEA.AGENCY_EXTERNAL A, SEA.AGENCY B' ||
+									' WHERE A.AGENCY_ID = B.AGENCY_ID AND B.IS_ACTIVE = ''Y'' AND A.PSEUDO_CITY_CODE = ? AND A.EXTERNAL_NAMES_ID = ' ||
+									'(SELECT EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES WHERE EXTERNAL_NAME = ?)';
+	
+					SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(cPCC, cSysName));
+					
+					-- save agency details in cache
+					SET cCacheVal = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS CHARACTER) || '#1#' || rEnv.Temp.AgencyInfo.AGENCY_NAME || '#2#' || 
+									COALESCE(rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY, '') || '#3#' || COALESCE(rEnv.Temp.AgencyInfo.OFFICE_CODE, '');
+					SET retVal = SaveDataInCache(cPCC || '_' || cSysName, cCacheVal, '', AgencyMap, CacheConfigService);
+				ELSE
+					-- parse the cache value
+					SET rEnv.Temp.AgencyInfo.AGENCY_ID = SUBSTRING(retVal BEFORE '#1#');
+					SET rEnv.Temp.AgencyInfo.AGENCY_NAME = SUBSTRING(SUBSTRING(retVal BEFORE '#2#') AFTER '#1#');
+					SET rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY = SUBSTRING(SUBSTRING(retVal BEFORE '#3#') AFTER '#2#');
+					SET rEnv.Temp.AgencyInfo.OFFICE_CODE = SUBSTRING(retVal AFTER '#3#');
+				END IF;
+			END IF;
+			
+			-- get endpoint from cache
+			/*SET rEnv.Temp.GetSessionIn.Key = rSessDtlRes.MsgHeader.SessionGUID;
+			PROPAGATE TO LABEL 'Get_Session';*/
+			
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS;
+
+			CREATE FIELD OutputRoot.XMLNSC.*:NCL_CruiseGetSessionTokenRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(rIn,rOut);		
+			
+			SET rOut.Success = '';
+			SET rOut.agencyID = rEnv.Temp.AgencyInfo.AGENCY_ID;
+			SET rOut.agencyName = rEnv.Temp.AgencyInfo.AGENCY_NAME;
+			SET rOut.officeCode = rEnv.Temp.AgencyInfo.OFFICE_CODE;
+			SET rOut.agencyCurrency = rEnv.Temp.AgencyInfo.DEFAULT_CURRENCY;
+						
+			SET rOut.SessionInfo.SessionToken = rSessDtlRes.MsgHeader.SessionGUID;
+			SET rOut.SessionInfo.SessionTimeout.Inactivity = CAST(rSessDtlRes.SessionInfo.TimeOut.Inactivity AS INTEGER);
+
+			IF COALESCE(rIn.*:GetOrCreateSession,'N') = 'Y' THEN
+				--SET rOut.SessionInfo.Endpoint = GetDataFromCache(rSessDtlRes.MsgHeader.SessionGUID, SessionMap, SessionConfigService);
+				SET rOut.SessionInfo.Endpoint = COALESCE(rEnv.Temp.Endpoint, GetDataFromCache(rSessDtlRes.MsgHeader.SessionGUID, SessionMap, SessionConfigService));
+				
+				/*IF NOT STARTSWITH(rEnv.Temp.GetSessionOut.Value, 'ERROR') THEN 
+					SET rOut.SessionInfo.Endpoint = rEnv.Temp.GetSessionOut.Value;
+				END IF;*/
+			END IF;
+			
+			SET rOut.CacheOut = rEnv.Temp.CacheOut;
+			--SET cCacheVal = SaveDataInCache(rSessDtlRes.MsgHeader.SessionGUID, rEnv.SessionInfo.endpoint, '240', SessionMap, SessionConfigService);
+			--SET cCacheVal = SaveDataInCache(rIn.*:ReservationId, rSessDtlRes.MsgHeader.SessionGUID, '240', SessionMap, SessionConfigService);
+			--PROPAGATE TO TERMINAL 'out';
+
+			RETURN TRUE;								
+		END IF;
+	END;
+END MODULE;
+
+CREATE PROCEDURE SaveDataInCache(IN key CHARACTER, IN val CHARACTER, IN cacheExpiry CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.saveDataToXC10Cache";
+	
+CREATE PROCEDURE GetDataFromCache(IN key CHARACTER, IN cacheMap CHARACTER, IN connConfig CHARACTER) RETURNS CHARACTER
+LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";	

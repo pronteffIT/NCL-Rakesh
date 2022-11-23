@@ -1,0 +1,268 @@
+BROKER SCHEMA com.ncl.ais.utils
+
+DECLARE XC10CacheMap CHARACTER 'EXTERNAL_ERROR_CODE.LUT';
+DECLARE XC10ConnectionConfig CHARACTER 'XC10ConnectionConfig';
+
+-- procedure declaration to get external codes from cache
+CREATE PROCEDURE GetPortInfoFromCache(IN cPortCode CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getPortInfoFromXC10";
+	
+-- procedure declaration to get external codes from cache
+CREATE PROCEDURE GetPackageClassInfoFromCache(IN cPackageId CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getDataFromXC10Cache";
+
+-- procedure declaration to get external codes from cache
+CREATE PROCEDURE GetExternalCodeFromCache(IN cacheKey CHARACTER, IN swCode CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getExternalCodeFromXC10";		
+
+-- procedure declaration to get external codes from cache
+CREATE PROCEDURE GetSWCodeFromCache(IN cacheKey CHARACTER, IN extCode CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getSWCodeFromXC10";		
+
+-- procedure declaration to get sub external codes from cache
+CREATE PROCEDURE GetSubExternalCodeFromCache(IN cacheKey CHARACTER, IN swCode CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getSubExternalCodeFromXC10";		
+
+-- procedure declaration to get external codes from cache
+CREATE PROCEDURE GetSubSWCodeFromCache(IN cacheKey CHARACTER, IN extCode CHARACTER, IN cCacheMap CHARACTER, IN xc10ConnConfig CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.CacheUtil.getSubSWCodeFromXC10";		
+
+-- procedure to get external code from SW CODE
+CREATE PROCEDURE LookupExternalCodeUsingSWCode(IN cChannel CHARACTER, IN cErrorCode CHARACTER, IN cCodeType CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cExternalCodeInfo CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'SELECT DETAILS.EXTERNAL_CODE, DETAILS.SW_CODE, DETAILS.DESCRIPTION, DETAILS.LONG_DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, DETAILS.EXTERNAL_XREF_ID ' ||
+					'FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' || 
+					'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+					'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+					'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE = ? AND DETAILS.SW_CODE = ?';
+	
+	SET DB.ExternalCode[] = PASSTHRU(cQuery VALUES(cChannel, cCodeType, cErrorCode));
+	
+	IF EXISTS(DB.ExternalCode[]) THEN
+		SET cExternalCodeInfo = CAST(COALESCE(DB.ExternalCode.EXTERNAL_CODE, '') AS CHARACTER) || '#1#' || 
+								COALESCE(DB.ExternalCode.DESCRIPTION, '') || '#2#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_DETAIL_ID, '') AS CHARACTER) || '#3#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_ID, '') AS CHARACTER) || '#4#' ||
+								COALESCE(DB.ExternalCode.LONG_DESCRIPTION, '');
+	END IF;
+	
+	RETURN cExternalCodeInfo;
+END;
+
+-- procedure to get SW code from external CODE
+CREATE PROCEDURE LookupSWCodeUsingExternalCode(IN cChannel CHARACTER, IN cCode CHARACTER, IN cCodeType CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cSWCode CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'SELECT DETAILS.EXTERNAL_CODE, DETAILS.SW_CODE, DETAILS.DESCRIPTION, DETAILS.LONG_DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, DETAILS.EXTERNAL_XREF_ID ' ||
+					'FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' || 
+					'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+					'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+					'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE = ? AND DETAILS.EXTERNAL_CODE = ?';
+	
+	SET DB.ExternalCode[] = PASSTHRU(cQuery VALUES(cChannel, cCodeType, cCode));
+	
+	IF EXISTS(DB.ExternalCode[]) THEN
+		SET cSWCode = CAST(COALESCE(DB.ExternalCode.SW_CODE, '') AS CHARACTER) || '#1#' || 
+								COALESCE(DB.ExternalCode.DESCRIPTION, '') || '#2#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_DETAIL_ID, '') AS CHARACTER) || '#3#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_ID, '') AS CHARACTER) || '#4#' ||
+								COALESCE(DB.ExternalCode.LONG_DESCRIPTION, '');
+	END IF;
+	
+	RETURN cSWCode;
+END;
+
+-- procedure to get sub SW code from external CODE
+CREATE PROCEDURE LookupSubSWCodeUsingExternalCode(IN cChannel CHARACTER, IN cCode CHARACTER, IN cCodeType CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cSWCode CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'SELECT EXTERNAL_XREF_SUBDETAIL.EXTERNAL_CODE, EXTERNAL_XREF_SUBDETAIL.SW_CODE, EXTERNAL_XREF_SUBDETAIL.DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, ' || 
+					'DETAILS.EXTERNAL_XREF_ID, EXTERNAL_XREF_SUBDETAIL.LONG_DESCRIPTION FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' ||
+					'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+					'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+					'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID ' ||
+					'JOIN EXTERNAL_XREF_SUBDETAIL ON DETAILS.EXTERNAL_XREF_DETAIL_ID = EXTERNAL_XREF_SUBDETAIL.EXTERNAL_XREF_DETAIL_ID ' ||
+					'WHERE TEMP_JOIN.EXTERNAL_TABLE = ? AND EXTERNAL_XREF_SUBDETAIL.EXTERNAL_CODE = ?';
+	
+	SET DB.ExternalCode[] = PASSTHRU(cQuery VALUES(cChannel, cCodeType, cCode));
+	
+	IF EXISTS(DB.ExternalCode[]) THEN
+		SET cSWCode = CAST(COALESCE(DB.ExternalCode.SW_CODE, '') AS CHARACTER) || '#1#' || 
+								COALESCE(DB.ExternalCode.DESCRIPTION, '') || '#2#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_DETAIL_ID, '') AS CHARACTER) || '#3#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_ID, '') AS CHARACTER) || '#4#' ||
+								COALESCE(DB.ExternalCode.LONG_DESCRIPTION, '');
+	END IF;
+	
+	RETURN cSWCode;
+END;
+
+-- procedure to get sub SW code from external CODE
+CREATE PROCEDURE LookupSubExternalCodeUsingSWCode(IN cChannel CHARACTER, IN cCode CHARACTER, IN cCodeType CHARACTER) RETURNS CHARACTER
+BEGIN
+	DECLARE cQuery, cExtCode CHARACTER '';
+	DECLARE DB ROW;
+	
+	SET cQuery = 'SELECT EXTERNAL_XREF_SUBDETAIL.EXTERNAL_CODE, EXTERNAL_XREF_SUBDETAIL.SW_CODE, EXTERNAL_XREF_SUBDETAIL.DESCRIPTION, DETAILS.EXTERNAL_XREF_DETAIL_ID, ' || 
+					'DETAILS.EXTERNAL_XREF_ID, EXTERNAL_XREF_SUBDETAIL.LONG_DESCRIPTION FROM SEA.EXTERNAL_XREF_DETAIL DETAILS ' ||
+					'INNER JOIN(SELECT XREF.EXTERNAL_XREF_ID, XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF ' ||
+					'INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID = NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?) ' ||
+					'TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID ' ||
+					'JOIN EXTERNAL_XREF_SUBDETAIL ON DETAILS.EXTERNAL_XREF_DETAIL_ID = EXTERNAL_XREF_SUBDETAIL.EXTERNAL_XREF_DETAIL_ID ' ||
+					'WHERE TEMP_JOIN.EXTERNAL_TABLE = ? AND EXTERNAL_XREF_SUBDETAIL.SW_CODE = ?';
+	
+	SET DB.ExternalCode[] = PASSTHRU(cQuery VALUES(cChannel, cCodeType, cCode));
+	
+	IF EXISTS(DB.ExternalCode[]) THEN
+		SET cExtCode = CAST(COALESCE(DB.ExternalCode.EXTERNAL_CODE, '') AS CHARACTER) || '#1#' || 
+								COALESCE(DB.ExternalCode.DESCRIPTION, '') || '#2#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_DETAIL_ID, '') AS CHARACTER) || '#3#' ||
+								CAST(COALESCE(DB.ExternalCode.EXTERNAL_XREF_ID, '') AS CHARACTER) || '#4#' ||
+								COALESCE(DB.ExternalCode.LONG_DESCRIPTION, '');
+	END IF;
+	
+	RETURN cExtCode;
+END;
+
+-- return just external code
+CREATE PROCEDURE XrefExternalCodes(IN channel CHARACTER, IN codeType CHARACTER, IN code CHARACTER, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) RETURNS CHARACTER
+BEGIN	
+	DECLARE cLookupCode CHARACTER '';
+	
+	SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+	
+	-- get external error code from cache
+	IF COALESCE(channel, '') <> '' THEN
+		SET cLookupCode = com.ncl.ais.utils.GetExternalCodeFromCache(channel || '#' || codeType, code, XC10CacheMap, XC10ConnectionConfig);
+	END IF;
+
+	IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+		SET cLookupCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(channel, code, codeType);
+		
+		-- trigger cache loader
+		IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, codeType) AND LENGTH(cLookupCode) > 0 THEN
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = codeType;
+			
+			SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || codeType || '#';
+			
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+	END IF;
+	
+	SET cLookupCode = TRIM(SUBSTRING(cLookupCode BEFORE '#1#'));
+	
+	RETURN cLookupCode;
+END;
+
+-- return external code with default code if lookup fails
+CREATE PROCEDURE XrefExternalCodesWithDefault(IN channel CHARACTER, IN codeType CHARACTER, IN code CHARACTER, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) RETURNS CHARACTER
+BEGIN	
+	DECLARE cLookupCode CHARACTER '';
+
+	SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+	
+	-- get external error code from cache
+	IF COALESCE(channel, '') <> '' THEN
+		SET cLookupCode = com.ncl.ais.utils.GetExternalCodeFromCache(channel || '#' || codeType, code, XC10CacheMap, XC10ConnectionConfig);
+	END IF;
+
+	IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+		SET cLookupCode = com.ncl.ais.utils.LookupExternalCodeUsingSWCode(channel, code, codeType);
+		
+		-- trigger cache loader
+		IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, codeType) AND LENGTH(cLookupCode) > 0 THEN
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = codeType;
+			
+			SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || codeType || '#';
+			
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+	END IF;
+	
+	SET cLookupCode = TRIM(SUBSTRING(cLookupCode BEFORE '#1#'));
+	
+	IF COALESCE(cLookupCode, '') = '' THEN
+		SET cLookupCode = code;
+	END IF;
+	
+	RETURN cLookupCode;
+END;
+
+-- return just SW code
+CREATE PROCEDURE XrefSWCodes(IN channel CHARACTER, IN codeType CHARACTER, IN code CHARACTER, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) RETURNS CHARACTER
+BEGIN	
+	DECLARE cLookupCode CHARACTER '';
+
+	SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+		
+	-- get external error code from cache
+	IF COALESCE(channel, '') <> '' THEN
+		SET cLookupCode = com.ncl.ais.utils.GetSWCodeFromCache(channel || '#' || codeType, code, XC10CacheMap, XC10ConnectionConfig);
+	END IF;
+
+	IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+		SET cLookupCode = com.ncl.ais.utils.LookupSWCodeUsingExternalCode(channel, code, codeType);
+		
+		-- trigger cache loader
+		IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, codeType) AND LENGTH(cLookupCode) > 0 THEN		
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = codeType;
+	
+			SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || codeType || '#';
+			
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+	END IF;
+	
+	SET cLookupCode = TRIM(SUBSTRING(cLookupCode BEFORE '#1#'));
+	
+	RETURN cLookupCode;
+END;
+
+-- return SW code with default code if lookup fails
+CREATE PROCEDURE XrefSWCodesWithDefault(IN channel CHARACTER, IN codeType CHARACTER, IN code CHARACTER, INOUT rEnv REFERENCE, INOUT rOutRoot REFERENCE) RETURNS CHARACTER
+BEGIN
+	DECLARE cLookupCode CHARACTER '';
+
+	SET rEnv.Temp.CacheLoadRequested = COALESCE(rEnv.Temp.CacheLoadRequested, '#');
+	
+	-- get external error code from cache
+	IF COALESCE(channel, '') <> '' THEN
+		SET cLookupCode = com.ncl.ais.utils.GetSWCodeFromCache(channel || '#' || codeType, code, XC10CacheMap, XC10ConnectionConfig);
+	END IF;
+
+	IF COALESCE(cLookupCode, '') = '' OR STARTSWITH(cLookupCode, 'ERROR') THEN
+		SET cLookupCode = com.ncl.ais.utils.LookupSWCodeUsingExternalCode(channel, code, codeType);
+		
+		-- trigger cache loader
+		IF NOT CONTAINS(rEnv.Temp.CacheLoadRequested, codeType) AND LENGTH(cLookupCode) > 0 THEN
+			CREATE LASTCHILD OF rOutRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+			SET rOutRoot.XMLNSC.CacheMetadata.Channel = channel;
+			SET rOutRoot.XMLNSC.CacheMetadata.ErrorCodeType = codeType;
+			
+			SET rEnv.Temp.CacheLoadRequested = rEnv.Temp.CacheLoadRequested || codeType || '#';
+			
+			PROPAGATE TO LABEL 'CACHE_LOAD';
+		END IF;
+	END IF;
+
+	SET cLookupCode = TRIM(SUBSTRING(cLookupCode BEFORE '#1#'));
+	
+	IF COALESCE(cLookupCode, '') = '' THEN
+		SET cLookupCode = code;
+	END IF;
+	
+	RETURN cLookupCode;
+END;

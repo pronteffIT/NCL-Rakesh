@@ -1,0 +1,469 @@
+
+
+BROKER SCHEMA com.ncl.ais
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE DEFAULT_REPLYQ EXTERNAL CHARACTER 'NCL_CRUISE_TRANSFER_AVAIL_RESP';
+DECLARE CACHE SHARED ROW;
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseTransferAvail
+* MODULE NAME : LogIn
+* Description : This module is used for copying the initial request and create a login request.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseTransferAvail_LogIn
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseTransAvailRQ;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		-- copy the entire initial request
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		IF LENGTH(TRIM(InputRoot.MQMD.ReplyToQ)) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYQ;
+		END IF;
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		SET rEnv.MQMD.Format = MQFMT_STRING;
+		SET OutputRoot.MQMD = rEnv.MQMD ;
+		-- Logging framework
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+        -- add metadata to log event
+        CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		--CALL com.ncl.iib.log.CreateMetaData('ReservationId', rIn.*:ReservationId, 'Reservation Id', rEnv);
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												COALESCE(rIn.*:ReservationId, ''),
+												'',
+											COALESCE(rIn.*:SelectedSailing.*:SelectedSailing.(XMLNSC.Attribute)VoyageID,''),
+											 	rEnv);
+		---add payload
+		IF(LogPayLoad) THEN
+		 CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Transfer Avail input request message', 'xml', rEnv);
+	    END IF;
+	
+		CREATE LASTCHILD OF OutputRoot DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC;
+		---Prepare login parameter
+		SET rEnv.cSystemName = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+		SET rEnv.cPCC = rIn.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode;
+		SET rOut.LoginRequest.source.BookingChannel.CompanyName.Code = rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code;
+
+		RETURN TRUE;
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseTransferAvail
+* MODULE NAME : LoadAgency
+* Description : This module is used for LoadAgency.
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+
+CREATE COMPUTE MODULE NCL_CruiseTransferAvail_LoadAgency
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseTransAvailRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.*:LoginResponse;
+		DECLARE rload REFERENCE TO OutputRoot.XMLNSC.LoadAgency_IN;
+		SET rEnv.SessionId = rAgency.sessionGUID;
+		SET rEnv.EndPoint = rAgency.endpoint;
+		IF EXISTS(rAgency.loginError.(XMLNSC.Attribute)Code[])OR EXISTS(rAgency.runtimeError.(XMLNSC.Attribute)Code[] ) THEN
+			-- If error exist
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS AS rOut;
+			CALL com.ncl.ais.utils.CopyAttributes(ref,rOut);
+			IF EXISTS(rAgency.loginError[]) THEN
+				SET rOut.ns:Warnings.ns:Warning = rAgency.loginError;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.loginError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.loginError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out4';
+				RETURN FALSE;
+			ELSEIF EXISTS(rAgency.runtimeError[]) THEN
+				SET rOut.ns:Warnings.ns:Warning = rAgency.runtimeError;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.runtimeError.(XMLNSC.Attribute)Code;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.runtimeError.(XMLNSC.Attribute)ShortText;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out4';
+				RETURN FALSE;
+			END IF;
+		ELSE
+			DECLARE cQuery CHARACTER;
+			SET cQuery = 'SELECT B.DEFAULT_CURRENCY, B.AGENCY_ID, B.AGENCY_NAME, B.OFFICE_CODE FROM SEA.AGENCY_EXTERNAL A, SEA.AGENCY B' ||
+			' WHERE A.AGENCY_ID = B.AGENCY_ID AND B.IS_ACTIVE = ''Y'' AND A.PSEUDO_CITY_CODE = ? AND A.EXTERNAL_NAMES_ID = ' ||
+			'(SELECT EXTERNAL_NAMES_ID FROM SEA.EXTERNAL_NAMES WHERE EXTERNAL_NAME = ?)';
+			SET rEnv.Temp.AgencyInfo[] = PASSTHRU(cQuery VALUES(rEnv.cPCC, rEnv.cSystemName));
+			IF EXISTS(ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID[]) OR EXISTS(rEnv.Temp.AgencyInfo.AGENCY_ID[]) THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke LoadAgency', rEnv);
+				SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+				CREATE FIELD OutputRoot.XMLNSC.LoadAgency_IN AS rload;
+--				SET rload.MsgHeader.Version = VersonixAPIVersion;
+--				SET rload.MsgHeader.SessionGUID = rEnv.SessionId ;
+				CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,rload);
+				SET rload.AgencyShellOptions.AgencyID = COALESCE(ref.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID,rEnv.Temp.AgencyInfo.AGENCY_ID);
+				PROPAGATE TO TERMINAL 'out1';
+				RETURN FALSE;
+
+			ELSEIF NOT EXISTS(rEnv.Temp.AgencyInfo.AGENCY_ID[]) THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Agency Not Found', rEnv);
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS AS rOut;
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code= '12805';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText= 'Agency Pseudo City is not on file';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+				PROPAGATE TO TERMINAL 'out4';
+				RETURN FALSE;
+			END IF;
+			RETURN TRUE;
+		END IF;
+
+	END;
+END MODULE;
+/* ------------------------------------------------------------------------------------
+* *********** OWNER *********
+* ------------------------------------------------------------------------------------
+* COMPANY : Norwegian Cruise Line
+* PROJECT : WESB-AIS Migration
+* FLOW NAME : NCL_CruiseTransferAvail
+* MODULE NAME : Filter
+* Description : This module is used for Filter request .
+* ------------------------------------------------------------------------------------
+* *********** MODIFICATION HISTORY *********
+* ------------------------------------------------------------------------------------
+* Current Team Revision: $Revision$
+* VERSION CRNUM DATE Author Descr of Revision
+* 1.0 12/03/2017 Prolifics Initial version
+* 1.1
+* ------------------------------------------------------------------------------------*/
+CREATE COMPUTE MODULE NCL_CruiseTransferAvail_Filter
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE ref REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseTransAvailRQ;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS;
+		DECLARE rAgency REFERENCE TO InputRoot.XMLNSC.LoadAgency_IN;
+		DECLARE getAvail REFERENCE TO OutputRoot.XMLNSC.GetAvailTransfer_IN;
+		DECLARE rTrans REFERENCE TO getAvail.ResShell.ResTransportations.ResTransportation;
+		DECLARE guest REFERENCE TO getAvail.ResShell.ResGuests.ResGues;
+		---declaring refernce for manageAccTrans
+		-- This flow will decide the path to carryon based on the response obtained from the Callable flow.
+		IF EXISTS(rAgency.Errors.Error.ErrorMessage[]) THEN
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Error occur while LoadAgency api', rEnv);
+			SET OutputRoot.MQMD = rEnv.MQMD ;
+			CREATE FIELD  OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS AS rOut;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = rAgency.Errors.Error.ErrorCode;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = rAgency.Errors.Error.ErrorMessage;
+			SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+			PROPAGATE TO TERMINAL 'out1';
+			RETURN FALSE;
+		ELSE
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoke GetAvailTransfer', rEnv);
+			SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+			CREATE FIELD OutputRoot.XMLNSC.GetAvailTransfer_IN AS getAvail;
+			CALL com.ncl.ais.utils.CreateVersonixHeader(rEnv.SessionId,getAvail);
+--			SET getAvail.MsgHeader.Version = VersonixAPIVersion;
+--			SET getAvail.MsgHeader.SessionGUID = rEnv.SessionId;
+			SET getAvail.SearchOptions.AvailabilityMode = 'OK';
+			SET getAvail.SearchOptions.IncludeComponents = 'Y';
+			SET getAvail.SearchOptions.CalcPrices = 'Y' ;
+			SET getAvail.ResShell.ResHeader.AgencyID = CAST(rEnv.Temp.AgencyInfo.AGENCY_ID AS INTEGER);
+			SET getAvail.ResShell.ResHeader.Currency = FIELDVALUE(ref.*:SelectedSailing.*:Currency.(XMLNSC.Attribute)CurrencyCode);
+			SET getAvail.ResShell.ResHeader.ResStatus = 'WL';
+			DECLARE age,quantity INTEGER;
+			SET age = ref.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Age;
+			SET quantity = CAST(ref.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Quantity AS INTEGER);
+			WHILE quantity > 0 DO
+				CREATE LASTCHILD OF getAvail.ResShell.ResGuests As guest NAME 'ResGuest';
+				SET guest.GuestSeqN = quantity;
+				SET guest.GuestID = - quantity;
+				SET guest.GuestAge = COALESCE(age,45);
+				SET quantity = quantity -1;
+			END WHILE;
+			SET getAvail.ResShell.ResPackages.ResPackage.PackageID =CAST(FIELDVALUE( ref.*:SelectedSailing.*:SelectedSailing.(XMLNSC.Attribute)VoyageID) AS INTEGER);
+			IF LENGTH(ref.*:SelectedSailing.*:SelectedSailing.(XMLNSC.Attribute)Start) > 10 THEN
+				SET getAvail.ResShell.ResPackages.ResPackage.VacationDates.From =
+				CAST(FIELDVALUE(ref.*:SelectedSailing.*:SelectedSailing.(XMLNSC.Attribute)Start )AS DATE);
+			END IF;
+			SET getAvail.ResShell.ResPackages.ResPackage.Ship = FIELDVALUE(ref.*:SelectedSailing.*:SelectedSailing.(XMLNSC.Attribute)ShipCode);
+			IF ref.ns:GuestDetails.ns:GuestDetail[1].ns:GuestTransportation.(XMLNSC.Attribute)Mode = 14 THEN
+				FOR source AS ref.ns:GuestDetails.ns:GuestDetail[] DO
+					CREATE LASTCHILD OF getAvail.ResShell.ResTransportations AS rTrans NAME 'ResTransportation';
+					SET rTrans.GuestRefs = '1';
+					SET rTrans.Type = 'INDEPENDENT';
+					SET rTrans.Mode ='AIR';
+					SET rTrans.GateWayOut = FIELDVALUE(source.ns:GuestTransportation.ns:GatewayCity.(XMLNSC.Attribute)LocationCode);
+					SET rTrans.GateWayRet = FIELDVALUE(source.ns:GuestTransportation.ns:GatewayCity.(XMLNSC.Attribute)LocationCode);
+				END FOR;
+			END IF;
+		END IF ;
+			RETURN TRUE;
+
+		END;
+	END MODULE;
+	/* ------------------------------------------------------------------------------------
+	* *********** OWNER *********
+	* ------------------------------------------------------------------------------------
+	* COMPANY : Norwegian Cruise Line
+	* PROJECT : WESB-AIS Migration
+	* FLOW NAME : NCL_CruiseTransferAvail
+	* MODULE NAME : Response
+	* Description : This module is used for Response.
+	* ------------------------------------------------------------------------------------
+	* *********** MODIFICATION HISTORY *********
+	* ------------------------------------------------------------------------------------
+	* Current Team Revision: $Revision$
+	* VERSION CRNUM DATE Author Descr of Revision
+	* 1.0 12/03/2017 Prolifics Initial version
+	* 1.1
+	* ------------------------------------------------------------------------------------*/
+	CREATE COMPUTE MODULE NCL_CruiseTransferAvail_Response
+		CREATE FUNCTION Main() RETURNS BOOLEAN
+		BEGIN
+			DECLARE rEnv ,warns REFERENCE TO Environment.Variables;
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS;
+			DECLARE rInGetAvail REFERENCE TO InputRoot.XMLNSC.GetAvailTransfer_OUT;
+			DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseTransAvailRQ;
+			DECLARE rCount REFERENCE TO rOut.ns:GuestCounts;
+			DECLARE rOutTrans REFERENCE TO rOut.ns:Transfers;
+			
+			---------When occur Error message
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS AS rOut;
+			SET rOut.(XMLNSC.Attribute)AltLangID = rIn.(XMLNSC.Attribute)AltLangID;
+			SET rOut.(XMLNSC.Attribute)EchoToken = rIn.(XMLNSC.Attribute)EchoToken ;
+			SET rOut.(XMLNSC.Attribute)SequenceNmbr = rIn.(XMLNSC.Attribute)SequenceNmbr ;
+			SET rOut.(XMLNSC.Attribute)Target = rIn.(XMLNSC.Attribute)Target ;
+			SET rOut.(XMLNSC.Attribute)TimeStamp = CAST(CAST(rIn.(XMLNSC.Attribute)TimeStamp AS TIMESTAMP FORMAT 'IU')AS CHARACTER FORMAT 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z');
+			SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rIn.(XMLNSC.Attribute)TransactionIdentifier ;
+			SET rOut.(XMLNSC.Attribute)TransactionStatusCode = rIn.(XMLNSC.Attribute)TransactionStatusCode;
+			SET rOut.(XMLNSC.Attribute)Version = rIn.(XMLNSC.Attribute)Version ;
+			IF EXISTS(rInGetAvail.Errors.Error.ErrorMessage[]) THEN
+				FOR source AS rInGetAvail.Errors.Error[] DO
+					CREATE LASTCHILD OF rOut.ns:Warnings AS warns NAMESPACE ns NAME 'Warning';
+					SET warns.(XMLNSC.Attribute)Code = source.ErrorCode;
+					SET warns.(XMLNSC.Attribute)ShortText = source.ErrorMessage;
+					SET warns.(XMLNSC.Attribute)Type = '3';
+				END FOR;
+				--------When doesn't exsists PackageId
+			ELSEIF NOT EXISTS(rInGetAvail.AvailPackages.AvailPackage.Definition.PackageID[]) THEN
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Code = '15928';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)ShortText = 'No Pre/Post Packages available for the selected duration';
+				SET rOut.ns:Warnings.ns:Warning.(XMLNSC.Attribute)Type = '3';
+
+			ELSE
+				--------actual response
+				DETACH rOut.(XMLNSC.Attribute)SequenceNmbr ;
+				DETACH rOut.(XMLNSC.Attribute)Target;
+				CREATE LASTCHILD OF OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS NAMESPACE ns NAME 'Success';
+				FOR source AS rIn.*:GuestCounts.*:GuestCount[] DO
+					CREATE LASTCHILD OF rOut.ns:GuestCounts AS rCount NAMESPACE ns NAME 'GuestCount';
+					SET rCount.(XMLNSC.Attribute)Age = source.Age;
+					SET rCount.(XMLNSC.Attribute)Code = source.Code;
+					SET rCount.(XMLNSC.Attribute)CodeContext = source.CodeContext;
+					SET rCount.(XMLNSC.Attribute)Quantity = source.Quantity;
+					SET rEnv.quantity = rCount.(XMLNSC.Attribute)Quantity;
+					SET rCount.(XMLNSC.Attribute)URI = source.URI;
+				END FOR;
+				SET rOut.ns:SelectedSailing.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID = rIn.ns:SelectedSailing.ns:SelectedSailing.(XMLNSC.Attribute)VoyageID;
+				SET rOut.ns:SelectedSailing.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)ShipCode = rIn.ns:SelectedSailing.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)ShipCode;
+				SET rOut.ns:SelectedSailing.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorCode = rIn.ns:SelectedSailing.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorCode;
+				SET rOut.ns:SelectedSailing.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorName = rIn.ns:SelectedSailing.ns:SelectedSailing.ns:CruiseLine.(XMLNSC.Attribute)VendorName;
+				SET rOut.ns:SelectedSailing.ns:Currency.(XMLNSC.Attribute)CurrencyCode =rIn.ns:SelectedSailing.ns:Currency.(XMLNSC.Attribute)CurrencyCode;
+				SET rOut.ns:SelectedSailing.ns:Currency.(XMLNSC.Attribute)DecimalPlaces =rIn.ns:SelectedSailing.ns:Currency.(XMLNSC.Attribute)DecimalPlaces;
+				FOR rTransfer AS InputRoot.XMLNSC.GetAvailTransfer_OUT.AvailPackages.AvailPackage[] DO
+					CREATE LASTCHILD OF rOut.ns:Transfers AS rOutTrans NAMESPACE ns NAME 'Transfer';
+					SET rOutTrans.ns:TransferOption.(XMLNSC.Attribute)CruisePackageCode = rTransfer.Definition.PackageID;
+					DECLARE dateFrom , dateTo TIMESTAMP;
+					DECLARE diff INTEGER;
+					DECLARE prePostMode,Types,externalSystem ,ExtTableName,Code,querry CHARACTER;
+					SET dateFrom = CAST(TRANSLATE(rTransfer.Definition.Vacation.From,'T','') AS TIMESTAMP FORMAT 'yyyy-MM-ddHH:mm:ss.SSS');
+					SET dateTo = CAST(TRANSLATE(rTransfer.Definition.Vacation.To ,'T','') AS TIMESTAMP FORMAT 'yyyy-MM-ddHH:mm:ss.SSS');
+					SET ExtTableName ='CPK';
+					SET diff = (dateTo - dateFrom )DAY;
+					SET rOutTrans.ns:TransferOption.(XMLNSC.Attribute)Duration = 'P'||CAST(diff AS CHARACTER)||'D';
+					SET prePostMode = rTransfer.Definition.PrePostMode;
+					SET externalSystem = COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code ,'SABREXML');
+					IF (rTransfer.Definition.Components.Component.Type = 'AIRPORT TO HTL') OR
+						(rTransfer.Definition.Components.Component.Type ='AIRPORT TO PORT') OR
+						(rTransfer.Definition.Components.Component.Type ='HTL TO AIRPORT') OR
+						(rTransfer.Definition.Components.Component.Type ='HTL TO PORT') OR
+						(rTransfer.Definition.Components.Component.Type ='PORT TO AIRPORT') OR
+						(rTransfer.Definition.Components.Component.Type ='PORT TO HTL') THEN
+						SET Types ='Transfer' ;
+					ELSE
+						SET Types = rTransfer.Definition.Components.Component.Type ;
+					END IF;
+					SET Code = prePostMode||' '||Types;
+					SET querry= 'SELECT DETAILS.EXTERNAL_CODE,DETAILS.SW_CODE,DETAILS.DESCRIPTION,DETAILS.EXTERNAL_XREF_DETAIL_ID,
+					DETAILS.long_description,DETAILS.EXTERNAL_XREF_ID FROM SEA.EXTERNAL_XREF_DETAIL DETAILS
+					INNER JOIN (SELECT XREF.EXTERNAL_XREF_ID,XREF.EXTERNAL_TABLE FROM SEA.EXTERNAL_XREF XREF
+					INNER JOIN SEA.EXTERNAL_NAMES NAMES ON XREF.EXTERNAL_NAMES_ID=NAMES.EXTERNAL_NAMES_ID WHERE NAMES.EXTERNAL_NAME = ?)
+					TEMP_JOIN ON DETAILS.EXTERNAL_XREF_ID = TEMP_JOIN.EXTERNAL_XREF_ID WHERE TEMP_JOIN.EXTERNAL_TABLE=? AND UPPER(DETAILS.DESCRIPTION) = UPPER(?)';
+					SET rEnv.Temp.Externaldetails[] = PASSTHRU(querry VALUES(externalSystem,ExtTableName,Code));
+					SET rOutTrans.ns:TransferOption.(XMLNSC.Attribute)PackageTypeCode = rEnv.Temp.Externaldetails.EXTERNAL_CODE;
+					SET rOutTrans.ns:TransferOption.(XMLNSC.Attribute)Start = CAST(dateFrom AS CHARACTER FORMAT 'yyyy-MM-dd');
+					SET rOutTrans.ns:TransferOption.(XMLNSC.Attribute)Description = rTransfer.Definition.PkgComment;
+					SET rOutTrans.ns:TransferOption.ns:Location.(XMLNSC.Attribute)LocationCode = rTransfer.Definition.Components.Component.Location.To.Code;
+					SET rOutTrans.ns:TransferOption.ns:Location.(XMLNSC.Attribute)LocationName = rTransfer.Definition.Destination;
+					SET rOutTrans.ns:PriceInfo.(XMLNSC.Attribute)AgeQualifyingCode = rIn.*:GuestCounts.*:GuestCount.(XMLNSC.Attribute)Code;
+					SET rOutTrans.ns:PriceInfo.(XMLNSC.Attribute)Amount = CAST(CAST(rTransfer.PriceTotals.GuestTotal.PriceTotal AS DECIMAL)* 100 AS INTEGER);
+
+					PROPAGATE TO LABEL 'breakDown' DELETE NONE;
+					SET rEnv.Temp.BrkDwnType[] = SELECT A.Value FROM CACHE.BreakDowns.BreakDown[] AS A WHERE A.Quantity = rEnv.quantity;
+
+					SET rOutTrans.ns:PriceInfo.(XMLNSC.Attribute)BreakdownType = rEnv.Temp.BrkDwnType.Value;
+					SET rOutTrans.ns:PriceInfo.(XMLNSC.Attribute)Status = '36';
+
+				END FOR;
+				------add payload
+				DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF(LogPayLoad) THEN
+				
+				CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'TransAvail message Response', 'xml', rEnv);
+			END IF;	
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;	
+			END IF;
+			RETURN TRUE;
+		END;
+	END MODULE;
+	/* ------------------------------------------------------------------------------------
+	* *********** OWNER *********
+	* ------------------------------------------------------------------------------------
+	* COMPANY : Norwegian Cruise Line
+	* PROJECT : WESB-AIS Migration
+	* FLOW NAME : NCL_CruiseTransferAvail
+	* MODULE NAME : RunTimeExcp
+	* Description : This module is used for RunTimeExcp.
+	* ------------------------------------------------------------------------------------
+	* *********** MODIFICATION HISTORY *********
+	* ------------------------------------------------------------------------------------
+	* Current Team Revision: $Revision$
+	* VERSION CRNUM DATE Author Descr of Revision
+	* 1.0 12/03/2017 Prolifics Initial version
+	* 1.1
+	* ------------------------------------------------------------------------------------*/
+	CREATE COMPUTE MODULE NCL_CruiseTransferAvail_RunTimeExcp
+		CREATE FUNCTION Main() RETURNS BOOLEAN
+		BEGIN
+			DECLARE rEnv REFERENCE TO Environment.Variables;
+			DECLARE rExcp REFERENCE TO InputExceptionList;
+			DECLARE cErrorText CHARACTER;
+			DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS;
+			DECLARE rIn REFERENCE TO rEnv.XMLNSC.ns:NCL_CruiseTransAvailRQ;
+			IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Runtime Exception while invoking UpdateBooking api', rEnv);
+				CALL com.ncl.iib.utils.getExceptionSummary(rEnv , rExcp);
+				SET OutputRoot.MQMD = rEnv.MQMD;
+				SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+				-----Build Error Response
+				CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseTransAvailRS AS rOut;
+				call com.ncl.ais.utils.CopyAttributes(rIn ,rOut);
+				SET rOut.ns:Errors.ns:Error = cErrorText;
+				SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Code = '12228';
+				SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later';
+				SET rOut.ns:Errors.ns:Error.(XMLNSC.Attribute)Type = '3';
+				RETURN TRUE;
+			END IF;
+		END;
+	END MODULE;
+	/* ------------------------------------------------------------------------------------
+	* *********** OWNER *********
+	* ------------------------------------------------------------------------------------
+	* COMPANY : Norwegian Cruise Line
+	* PROJECT : WESB-AIS Migration
+	* FLOW NAME : NCL_CruiseTransferAvail
+	* MODULE NAME : SaveInfo
+	* Description : This module is used for retriving Breakdown value.
+	* ------------------------------------------------------------------------------------
+	* *********** MODIFICATION HISTORY *********
+	* ------------------------------------------------------------------------------------
+	* Current Team Revision: $Revision$
+	* VERSION CRNUM DATE Author Descr of Revision
+	* 1.0 12/03/2017 Prolifics Initial version
+	* 1.1
+	* ------------------------------------------------------------------------------------*/
+	CREATE COMPUTE MODULE NCL_CruiseTransferAvail_SaveInfo
+		CREATE FUNCTION Main() RETURNS BOOLEAN
+		BEGIN
+			CREATE LASTCHILD OF CACHE DOMAIN('XMLNSC') NAME 'BreakDowns';
+			SET CACHE.BreakDowns = InputRoot.XMLNSC.BreakDowns;
+			RETURN TRUE;
+		END;
+	END MODULE;
+	/* ------------------------------------------------------------------------------------
+	* *********** OWNER *********
+	* ------------------------------------------------------------------------------------
+	* COMPANY : Norwegian Cruise Line
+	* PROJECT : WESB-AIS Migration
+	* FLOW NAME : NCL_CruiseTransferAvail
+	* MODULE NAME : SaveInfo
+	* Description : This module is used for retriving Breakdown value.
+	* ------------------------------------------------------------------------------------
+	* *********** MODIFICATION HISTORY *********
+	* ------------------------------------------------------------------------------------
+	* Current Team Revision: $Revision$
+	* VERSION CRNUM DATE Author Descr of Revision
+	* 1.0 12/03/2017 Prolifics Initial version
+	* 1.1
+	* ------------------------------------------------------------------------------------*/
+	CREATE COMPUTE MODULE NCL_CruiseTransferAvail_LogOut
+		CREATE FUNCTION Main() RETURNS BOOLEAN
+		BEGIN
+			DECLARE rEnv REFERENCE TO Environment.Variables;
+
+	--		SET OutputRoot = InputRoot;
+			SET OutputRoot.MQMD = rEnv.MQMD;
+			SET OutputRoot.MQMD.Format = MQFMT_RF_HEADER_2;
+			SET OutputRoot.MQRFH2.usr.Endpoint = rEnv.EndPoint;
+			
+			IF EXISTS(InputRoot.XMLNSC[]) THEN
+				SET OutputRoot.XMLNSC = InputRoot.XMLNSC;
+			ELSE
+				SET OutputRoot.BLOB = InputRoot.BLOB;
+			END IF;
+				
+			-- send the response to queue
+			PROPAGATE;
+			-- call API to logout from session
+			IF EXISTS(rEnv.SessionId[]) THEN
+				-- add audit trail
+				CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Logging out of the session ...', rEnv);
+                SET OutputRoot.HTTPRequestHeader."x-upstream" = rEnv.EndPoint;
+                SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.Version = com.ncl.ais.utils.GetVersonixAPIVersion();
+				SET OutputRoot.XMLNSC.Logout_IN.MsgHeader.SessionGUID = rEnv.SessionId;
+
+				PROPAGATE TO LABEL 'LOGOUT';
+			END IF;
+
+			RETURN FALSE;
+		END;
+	END MODULE;
+

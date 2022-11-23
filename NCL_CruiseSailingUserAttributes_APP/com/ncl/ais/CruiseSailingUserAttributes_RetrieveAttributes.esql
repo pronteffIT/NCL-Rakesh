@@ -1,0 +1,83 @@
+BROKER SCHEMA com.ncl.ais
+-- Declaring the UDPs and NameSpaces
+DECLARE MsgExpiry EXTERNAL INTEGER 3000;
+DECLARE DefaultReplyQ EXTERNAL CHARACTER 'NCL_CRUISE_SAILING_USRATTR_RESP';
+DECLARE ns NAMESPACE 'http://nclapi/schemas';
+DECLARE LogPayLoad EXTERNAL BOOLEAN;
+
+
+CREATE COMPUTE MODULE CruiseSailingUserAttributes_RetrieveAttributes
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+		DECLARE rEnv,rOut,refOut,rUserAttrib REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		DECLARE rIn REFERENCE TO InputRoot.XMLNSC.*:NCL_CruiseSailingUserAttributesRQ;
+
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		-- create IIB log event
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rIn.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, ''),
+												COALESCE(rIn.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',	'','',rEnv);
+												
+		IF (LogPayLoad) THEN
+			-- Adding PayLoad Event		
+			DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'NCL CruiseSailingUserAttributes Request', 'xml', rEnv); 
+		END IF;
+		
+		-- save MQMD header which is used when sending reply
+		SET rEnv.Temp.Headers.MQMD = InputRoot.MQMD;
+		SET rEnv.Temp.Headers.MQMD.Expiry = MsgExpiry;
+		SET rEnv.Temp.Headers.MQMD.Format = MQFMT_STRING;
+		-- set reply-to-q if not set
+		IF COALESCE(InputRoot.MQMD.ReplyToQ, '') = '' THEN
+			SET rEnv.Temp.Headers.MQMD.ReplyToQ = DefaultReplyQ;
+		END IF;
+		-- save input message which is referenced further in the flow
+		CREATE LASTCHILD OF rEnv.Temp DOMAIN('XMLNSC') NAME 'Message';
+		SET rEnv.Temp.Message.NCL_CruiseSailingUserAttributesRQ = rIn;
+			
+		SET OutputRoot.MQMD = rEnv.Temp.Headers.MQMD;
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC') NAME 'XMLNSC';
+		CREATE LASTCHILD OF OutputRoot.XMLNSC AS rOut IDENTITY ns:NCL_CruiseSailingUserAttributesRS;
+	--	CREATE FIELD OutputRoot.XMLNSC.ns:NCL_CruiseSailingUserAttributesRS AS rOut;
+		CALL com.ncl.ais.utils.CopyAttributes (rIn,rOut);
+		CREATE FIELD rOut.Success;
+		
+		DECLARE cQuery,Attrib CHARACTER;
+		SET cQuery = 'select PD.PACKAGE_ID, PD.SAIL_ID, VCS.ROW_TYPE, VCS.FIELD_NAME, VCS.STR_VALUE from package_definition PD, VCS_ADDITIONAL_FIELD_VALUE VCS 
+						where PD.SAIL_ID = VCS.RECORD_ID AND VCS.ROW_TYPE = ''SAIL_HEADER'' AND PD.PACKAGE_ID = ?';
+		
+		SET rEnv.QueryResult.Records[] = PASSTHRU(cQuery,rIn.*:SelectedSailing.(XMLNSC.Attribute)VoyageID);
+		
+		SET rOut.SelectedSailing = rIn.*:SelectedSailing;
+		
+		SET rEnv.Holiday = FALSE;
+		FOR rResult AS rEnv.QueryResult.Records[] DO
+			
+			CREATE LASTCHILD OF rOut AS rUserAttrib NAME 'UserAttributes';
+			SET rUserAttrib.(XMLNSC.Attribute)AttributeName = rResult.FIELD_NAME;
+			SET rUserAttrib.(XMLNSC.Attribute)AttributeValue = rResult.STR_VALUE;
+			
+			
+			IF FIELDVALUE(rResult.FIELD_NAME) = 'U_HOLIDAY_SAILINGS' THEN
+				SET rEnv.Holiday = TRUE;
+			END IF;	
+		
+		END FOR;	
+
+		IF NOT rEnv.Holiday THEN
+			CREATE LASTCHILD OF rOut AS rUserAttrib NAME 'UserAttributes';
+			SET rUserAttrib.(XMLNSC.Attribute)AttributeName = 'U_HOLIDAY_SAILINGS';
+			SET rUserAttrib.(XMLNSC.Attribute)AttributeValue = 'N';
+		END IF;	
+		
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

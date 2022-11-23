@@ -1,0 +1,278 @@
+BROKER SCHEMA com.ncl.ais
+
+
+DECLARE MSG_EXPIRY EXTERNAL INTEGER '3000';
+DECLARE LogPayload EXTERNAL BOOLEAN;
+DECLARE IsRestrictedAccess EXTERNAL CHARACTER 'N';
+DECLARE ns7 NAMESPACE 'http://nclapi/schemas';
+DECLARE vx NAMESPACE 'http://versonix.com/api/schemas';
+DECLARE DEFAULT_REPLYTOQ EXTERNAL CHARACTER 'NCL_CRUISE_CREATE_AGENT_RESP';
+CREATE COMPUTE MODULE NCL_CruiseCreateAgent_EncryptDecrypt
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		CREATE LASTCHILD OF rEnv DOMAIN 'XMLNSC' NAME 'XMLNSC';
+		
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+
+		CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+		
+		IF (LogPayload) THEN
+    
+		 	CREATE LASTCHILD OF rEnv DOMAIN('XMLNSC') NAME 'LogMessage';
+		    SET rEnv.LogMessage.Request = InputRoot.XMLNSC;
+		    SET rEnv.LogMessage.Request.*:NCL_CruiseCreateAgentRQ.*:UserLogin.(XMLNSC.Attribute)Password = 'XXXXXXXX';
+		    
+		    DECLARE bPayload BLOB ASBITSTREAM(rEnv.LogMessage.Request CCSID 1208 ENCODING 546);
+		    CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Create Agent Request Message', 'xml', rEnv);
+		    
+		END IF;
+		SET rEnv.MQMD = InputRoot.MQMD;
+		SET rEnv.XMLNSC = InputRoot.XMLNSC;
+		--SET rEnv.MQMD = InputRoot.MQMD;
+		-- Uncomment the below block after GTM is finalized
+		CALL com.ncl.iib.log.CreateMetaDataSet(COALESCE(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID, COALESCE(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:POS.*:Source.(XMLNSC.Attribute)PseudoCityCode, '')),
+												COALESCE(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:POS.*:Source.*:BookingChannel.*:CompanyName.(XMLNSC.Attribute)Code, ''),
+												'',
+												'',
+												'',
+											 	rEnv);
+		SET rEnv.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ) = 0 THEN
+			SET rEnv.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		DECLARE cPassword CHARACTER FIELDVALUE(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:UserLogin.(XMLNSC.Attribute)Password);
+		DECLARE cUserName CHARACTER FIELDVALUE(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:UserLogin.(XMLNSC.Attribute)UserLoginName);		
+		IF LENGTH(COALESCE(cUserName,''))>0 AND VALIDATE_PWD(cPassword) = FALSE THEN
+				CALL BUILD_VALIDATION_ERROR('9910','Password does not meet specification','3',rEnv);
+				PROPAGATE TO TERMINAL 'out1'; 
+				RETURN FALSE;
+		END IF;
+		SET rEnv.Temp.HashPwd = createHash(FIELDVALUE(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:UserLogin.(XMLNSC.Attribute)Password));
+	END;
+	
+	CREATE PROCEDURE BUILD_VALIDATION_ERROR(IN p_Code CHARACTER,IN p_Msg CHARACTER,IN p_Type CHARACTER,IN rEnv REFERENCE)	
+	BEGIN
+	    DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns7:NCL_CruiseCreateAgentRS;
+		SET OutputRoot = NULL; 
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;   
+		CREATE FIELD OutputRoot.XMLNSC.ns7:NCL_CruiseCreateAgentRS AS rOut;	
+
+		CREATE FIELD rOut.ns7:Success;
+		SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)Code = p_Code;
+		SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)ShortText = p_Msg;
+		SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)Type = p_Type;
+	END;
+	
+	CREATE FUNCTION VALIDATE_PWD(IN password CHARACTER) RETURNS BOOLEAN
+	BEGIN
+		DECLARE I INTEGER LENGTH(password);		
+		IF (I<10 OR I>20) THEN
+			RETURN FALSE;
+		END IF;
+		DECLARE CASE_CHECK BOOLEAN FALSE; 
+		DECLARE NUMBER_CHECK BOOLEAN FALSE; 				
+		WHILE I>0
+		DO
+			DECLARE C CHARACTER SUBSTRING(password FROM I FOR 1);
+			IF CAST(C AS INTEGER DEFAULT -1) >= 0 THEN
+				SET NUMBER_CHECK = TRUE;
+			ELSE 
+				IF UPPER(C) = C THEN
+					SET CASE_CHECK = TRUE;
+				END IF;
+			END IF;
+			SET I = I -1;			
+		END WHILE;
+		IF  NUMBER_CHECK AND CASE_CHECK THEN 		
+			RETURN TRUE;
+		ELSE
+			RETURN FALSE;
+		END IF;
+	END;
+
+END MODULE;
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateAgent_Exception
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		DECLARE bPayload BLOB ASBITSTREAM(InputRoot.XMLNSC CCSID 1208 ENCODING 546);
+		DECLARE cLocalTranId CHARACTER InputRoot.MQMD.MsgId;
+		
+		SET cLocalTranId = SUBSTRING(REPLACE(cLocalTranId, '''', '') FROM 2);
+		
+		IF NOT EXISTS(Environment.Variables[]) THEN 
+			CREATE FIELD Environment.Variables AS rEnv;
+		END IF;
+		
+		IF NOT EXISTS(rEnv.GTM.LogEvent[]) THEN
+			CALL com.ncl.iib.log.CreateAuditLogEvent(rEnv, cLocalTranId, '', '');
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Create Agent input request message exception IIB...', 'xml', rEnv);
+			END IF;
+		END IF;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:AgentInfo;
+		
+		
+		SET OutputRoot = InputRoot;
+	END;		
+
+END MODULE;
+
+
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateAgent_FaultHandler
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rExcp REFERENCE TO InputExceptionList;
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		
+		DECLARE runTimeErr REFERENCE TO OutputRoot.XMLNSC.ns7:NCL_CruiseCreateAgentRS;
+		
+		DECLARE cErrorText CHARACTER 'Internal IIB Error, please check the logs';
+		
+		IF EXISTS(InputExceptionList.RecoverableException[]) THEN
+			CALL com.ncl.iib.utils.getExceptionSummary(rEnv, rExcp);
+			SET cErrorText = COALESCE(rEnv.ErrorSummary.ErrorText, '');
+		END IF;
+		
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		SET OutputRoot.MQMD.Expiry = MSG_EXPIRY;
+		IF LENGTH(InputRoot.MQMD.ReplyToQ)= 0 THEN
+		 SET OutputRoot.MQMD.ReplyToQ = DEFAULT_REPLYTOQ;
+		END IF;
+		CREATE FIELD OutputRoot.XMLNSC.ns7:NCL_CruiseCreateAgentRS AS runTimeErr;
+		
+		SET runTimeErr.ns7:Errors.ns7:Error = cErrorText;
+		SET runTimeErr.ns7:Errors.ns7:Error.(XMLNSC.Attribute)Code = '12228';
+		SET runTimeErr.ns7:Errors.ns7:Error.(XMLNSC.Attribute)ShortText = 'System error from back end. Please try again later.';
+		SET runTimeErr.ns7:Errors.ns7:Error.(XMLNSC.Attribute)Type = '3';
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE NCL_CruiseCreateAgent_CheckResponse
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE rEnv REFERENCE TO Environment.Variables;
+		CREATE FIELD Environment.Variables AS rEnv;
+		-- NCLSEA.NCL_WESB_CREATE_AGENT_V1 call this stored proc
+		SET OutputRoot.MQMD = rEnv.MQMD;
+		DECLARE rIn REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:AgentInfo;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:AgentInfo AS rIn;
+		DECLARE rOut REFERENCE TO OutputRoot.XMLNSC.ns7:NCL_CruiseCreateAgentRS;
+		CREATE FIELD OutputRoot.XMLNSC.ns7:NCL_CruiseCreateAgentRS AS rOut;
+		DECLARE httpstatuscode CHARACTER 'X-Original-HTTP-Status-Code';
+		DECLARE rInCpyAttr REFERENCE TO rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ;
+		CREATE FIELD rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ AS rInCpyAttr;
+		
+		-- proceed with the success path.
+		-- Declare list of input parameters for the stored procedure
+		DECLARE p_action,p_agencyid,p_agentid,p_agentfirst,p_agentlast,p_sex,p_username,
+		p_password,p_role,p_email,p_phone,p_contactpref,p_agentloc,p_canaccess,p_add1,
+		p_add2,p_addcity,p_state,p_zip,p_country,p_addresstype,p_Doing_Business_As,p_ErrorCode,p_ErrorMessage,p_RestrictAccess CHARACTER;
+		-- Set the inputs for the stored proc
+		SET p_action = rIn.(XMLNSC.Attribute)Action;
+		SET p_agencyid = rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:POS.*:Source.*:RequestorID.(XMLNSC.Attribute)ID;
+		SET p_agentid = rIn.*:EmployeeInfo.(XMLNSC.Attribute)EmployeeId;
+		SET p_agentfirst = rIn.*:PersonName.*:GivenName;
+		SET p_agentlast = rIn.*:PersonName.*:Surname;
+		SET p_sex = rIn.(XMLNSC.Attribute)Gender;
+--			IF UPPER(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:UserLogin.(XMLNSC.Attribute)UserLoginName) = '' THEN
+--				SET p_username = ' ';	
+--			ELSE
+				SET p_username = COALESCE(UPPER(rEnv.XMLNSC.*:NCL_CruiseCreateAgentRQ.*:UserLogin.(XMLNSC.Attribute)UserLoginName),'');
+--			END IF;			
+			-- SET p_password = FIELDVALUE(InputRoot.SOAP.Body.*:processEncryptDecryptResponse.*:Encrypt_Decrypt.*:EncryptString);
+		SET p_password = rEnv.Temp.HashPwd;	
+		SET p_role = UPPER(rIn.(XMLNSC.Attribute)SecurityLevel);
+		SET p_email = rIn.*:Email;
+		SET p_phone = rIn.*:Telephone.(XMLNSC.Attribute)PhoneNumber;
+		SET p_contactpref = rIn.*:ContactPreferences.(XMLNSC.Attribute)ContactPreference;
+		SET p_agentloc = rIn.(XMLNSC.Attribute)AgentLocation;
+		SET p_canaccess = 'Y';
+		SET p_add1 = rIn.*:Address[1].*:AddressLine[1];
+		SET p_add2 = COALESCE(rIn.*:Address[1].*:AddressLine[2],'');
+		SET p_addcity = rIn.*:Address.*:CityName;
+		SET p_state = rIn.*:Address.*:StateProv.(XMLNSC.Attribute)StateCode;
+		SET p_zip = rIn.*:Address.*:PostalCode;
+		SET p_country = rIn.*:Address.*:CountryName.(XMLNSC.Attribute)Code;
+		SET p_RestrictAccess = UPPER(COALESCE(rIn.*:RestrictAccess,IsRestrictedAccess));
+		-- set this value if addressLine2> 3
+		IF LENGTH(p_add2) > 3 THEN
+			SET p_addresstype = 'PRIMARY';
+		ELSE
+			SET p_addresstype = '';
+		END IF;
+
+		CALL createAgentSP(p_action,p_agencyid,p_agentid,p_agentfirst,p_agentlast,p_sex,p_username,p_password,p_role,p_email,p_phone,p_contactpref,p_agentloc,
+		p_canaccess,p_add1,p_add2,p_addcity,p_state,p_zip,p_country,p_addresstype,p_Doing_Business_As,p_RestrictAccess,p_ErrorCode,p_ErrorMessage);
+		CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Invoking stored procedure to create agent', rEnv);
+		-- 9915 database timeout
+		-- 9916 Database exception
+		IF SQLCODE <> 0 THEN
+--				CALL com.ncl.ais.utils.CopyAttributes(rInCpyAttr,rOut);
+				SET rOut.(XMLNSC.Attribute)Target = rInCpyAttr.(XMLNSC.Attribute)Target;
+			SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rInCpyAttr.(XMLNSC.Attribute)TransactionIdentifier;
+			SET rOut.(XMLNSC.Attribute)TransactionStatusCode = rInCpyAttr.(XMLNSC.Attribute)TransactionStatusCode;
+
+			CREATE FIELD rOut.ns7:Success;
+			SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)Code = '9916';
+			SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)ShortText = 'Database exception';
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Database exception occured', rEnv);
+		ELSEIF p_ErrorCode > '0' THEN
+--				CALL com.ncl.ais.utils.CopyAttributes(rInCpyAttr,rOut);
+				SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rInCpyAttr.(XMLNSC.Attribute)TransactionIdentifier;
+			SET rOut.(XMLNSC.Attribute)Version = rInCpyAttr.(XMLNSC.Attribute)Version;
+
+			CREATE FIELD rOut.ns7:Success;
+			SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)Code = p_ErrorCode;
+			SET rOut.ns7:Warnings.ns7:Warning.(XMLNSC.Attribute)ShortText =p_ErrorMessage;
+			CALL com.ncl.iib.log.AddLogEvent(NodeLabel, 'Database returned error code other than 0, hence sending warning message response', rEnv);				
+		ELSE
+			--CALL com.ncl.ais.utils.CopyAttributes(rInCpyAttr,rOut);
+			SET rOut.(XMLNSC.Attribute)Target = rInCpyAttr.(XMLNSC.Attribute)Target;
+			SET rOut.(XMLNSC.Attribute)TransactionIdentifier = rInCpyAttr.(XMLNSC.Attribute)TransactionIdentifier;
+			SET rOut.(XMLNSC.Attribute)Version = rInCpyAttr.(XMLNSC.Attribute)Version;
+			CREATE FIELD rOut.ns7:Success;
+			
+			DECLARE bPayload BLOB ASBITSTREAM(OutputRoot.XMLNSC CCSID 1208 ENCODING 546);
+			IF (LogPayload) THEN
+			CALL com.ncl.iib.log.AddPayloadLogEvent(bPayload, NodeLabel, 'Get session expiration time Success response payload...', 'xml', rEnv);
+			END IF;
+			SET OutputRoot.XMLNSC = NULL;
+			SET OutputRoot.BLOB.BLOB = bPayload;
+		
+		END IF;
+		
+		RETURN TRUE;
+	END;	
+	
+
+	CREATE PROCEDURE createAgentSP (IN p_action CHARACTER,IN p_agencyid CHARACTER,IN p_agentid CHARACTER,IN p_agentfirst CHARACTER,
+	IN p_agentlast CHARACTER,IN p_sex CHARACTER,IN p_username CHARACTER,IN p_password CHARACTER,IN p_role CHARACTER,
+	IN p_email CHARACTER,IN p_phone CHARACTER,IN p_contactpref CHARACTER,IN p_agentloc CHARACTER,IN p_canaccess CHARACTER,
+	IN p_add1 CHARACTER,IN p_add2 CHARACTER,IN p_addcity CHARACTER,IN p_state CHARACTER,IN p_zip CHARACTER,
+	IN p_country CHARACTER,IN p_addresstype CHARACTER,IN p_Doing_Business_As CHARACTER, IN p_RestrictAcess CHARACTER,OUT p_ErrorCode CHARACTER, OUT p_ErrorMessage CHARACTER)
+	
+	LANGUAGE DATABASE
+	EXTERNAL NAME "NCLSEA.NCL_WESB_CREATE_AGENT_V2";
+	
+	
+
+END MODULE;
+
+CREATE PROCEDURE createHash(IN cPassword CHARACTER) RETURNS CHARACTER
+	LANGUAGE JAVA EXTERNAL NAME "utilities.PasswordHash.createHash";
